@@ -37,9 +37,7 @@ local flyBodyVelocity, flyBodyGyro
 
 -- Asset & Texture IDs
 local CustomToggleImageAsset = "rbxthumb://type=Asset&id=136902684546260&w=150&h=150"
-
--- URL Raw Script Kamu (GANTI INI DENGAN LINK RAW KAMU)
-local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/LINK_RAW_SCRIPT_KAMU_DISINI.lua"
+local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/refs/heads/main/script.lua"
 
 -- =================================================================
 -- ADVANCED SERVER HOP ENGINE (ARCEUS X NEO FIXED)
