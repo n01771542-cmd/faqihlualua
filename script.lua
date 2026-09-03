@@ -798,3 +798,46 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
+-- ==================================================
+-- AUTO TELEPORT TO EGG BY RARITY ENGINE
+-- ==================================================
+local SelectedEggRarity = "Divine"
+local AutoTeleportEggEnabled = false
+
+-- Daftar Rarity yang Tersedia
+local EggRarities = {
+    "Common", "Uncommon", "Rare", "Epic", "Legendary", 
+    "Mythic", "Cosmic", "Secret", "Eternal", "Divine"
+}
+
+-- Fungsi Mencari dan Teleport ke Telur
+local function TeleportToTargetEgg()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+
+    -- Mencari folder atau model telur di Workspace
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            -- Memeriksa atribut / nama / teks yang mencantumkan rarity
+            local eggName = string.lower(obj.Name)
+            local targetRarity = string.lower(SelectedEggRarity)
+
+            if string.find(eggName, targetRarity) or (obj:FindFirstChild("Rarity") and string.lower(tostring(obj.Rarity.Value)) == targetRarity) then
+                local targetCFrame = obj:IsA("Model") and obj:GetPrimaryPartCFrame() or obj.CFrame
+                if targetCFrame then
+                    character.HumanoidRootPart.CFrame = targetCFrame + Vector3.new(0, 3, 0) -- Teleport sedikit di atas telur
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- Loop Auto Teleport
+task.spawn(function()
+    while task.wait(1) do
+        if AutoTeleportEggEnabled then
+            pcall(TeleportToTargetEgg)
+        end
+    end
+end)
