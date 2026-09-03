@@ -798,46 +798,56 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
--- ==================================================
--- AUTO TELEPORT TO EGG BY RARITY ENGINE
--- ==================================================
-local SelectedEggRarity = "Divine"
-local AutoTeleportEggEnabled = false
-
--- Daftar Rarity yang Tersedia
-local EggRarities = {
-    "Common", "Uncommon", "Rare", "Epic", "Legendary", 
-    "Mythic", "Cosmic", "Secret", "Eternal", "Divine"
+--------------------------------------------------
+-- SMART EGG TELEPORT & AUTO-STEAL ENGINE
+--------------------------------------------------
+local EggPriority = {
+    ["Common"] = 1,
+    ["Uncommon"] = 2,
+    ["Rare"] = 3,
+    ["Epic"] = 4,
+    ["Legendary"] = 5,
+    ["Mythic"] = 6,
+    ["Cosmic"] = 7,
+    ["Secret"] = 8,
+    ["Eternal"] = 9,
+    ["Divine"] = 10
 }
 
--- Fungsi Mencari dan Teleport ke Telur
-local function TeleportToTargetEgg()
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+local function SmartEggTeleport()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
-    -- Mencari folder atau model telur di Workspace
+    local minRarityLevel = EggPriority[SelectedEggRarity] or 10
+
+    -- Cari semua object di workspace
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") or obj:IsA("BasePart") then
-            -- Memeriksa atribut / nama / teks yang mencantumkan rarity
-            local eggName = string.lower(obj.Name)
-            local targetRarity = string.lower(SelectedEggRarity)
-
-            if string.find(eggName, targetRarity) or (obj:FindFirstChild("Rarity") and string.lower(tostring(obj.Rarity.Value)) == targetRarity) then
-                local targetCFrame = obj:IsA("Model") and obj:GetPrimaryPartCFrame() or obj.CFrame
-                if targetCFrame then
-                    character.HumanoidRootPart.CFrame = targetCFrame + Vector3.new(0, 3, 0) -- Teleport sedikit di atas telur
-                    break
+            local eggName = obj.Name
+            
+            -- Cek rarity objek telur
+            for rarityName, rarityLevel in pairs(EggPriority) do
+                if string.find(string.lower(eggName), string.lower(rarityName)) then
+                    -- Filter: Hanya teleport jika rarity telur SAMA atau LEBIH TINGGI dari pilihan di UI
+                    if rarityLevel >= minRarityLevel then
+                        local targetPos = obj:IsA("Model") and obj:GetPrimaryPartCFrame() or obj.CFrame
+                        if targetPos then
+                            -- Teleport tepat di atas telur buat Auto-Steal
+                            char.HumanoidRootPart.CFrame = targetPos + Vector3.new(0, 1.5, 0)
+                            return
+                        end
+                    end
                 end
             end
         end
     end
 end
 
--- Loop Auto Teleport
+-- Loop pemicu fitur
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(0.5) do
         if AutoTeleportEggEnabled then
-            pcall(TeleportToTargetEgg)
+            pcall(SmartEggTeleport)
         end
     end
 end)
