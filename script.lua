@@ -1,5 +1,5 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Config Fix)
+    Script Name: faqih lua hub | jump for a egg (Fly UI Config Fix)
     Credits: powered by faqih
 ]]--
 
@@ -28,8 +28,8 @@ local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
 
 -- Configuration State Default
 local PlayerState = {
-    FlyUIVisible = true,
-    IsFlying = false,
+    FlyUIVisible = true, -- Menyimpan status Fly Mini Controller (Muncul/Sembunyi)
+    IsFlying = false,     -- Status sedang terbang atau tidak
     FlySpeed = 350,
     Noclip = false,
     AutoFarmEgg = false,
@@ -47,11 +47,12 @@ local PlayerState = {
 }
 
 -- =================================================================
--- CONFIG SYSTEM (FIXED LOAD & SAVE)
+-- CONFIG SYSTEM (FIXED LOAD & SAVE FLY UI VISIBILITY)
 -- =================================================================
 local function SaveConfig()
     if writefile then
         local dataToSave = {
+            FlyUIVisible = PlayerState.FlyUIVisible, -- Menyimpan status UI Mini Controller
             FlySpeed = PlayerState.FlySpeed,
             Noclip = PlayerState.Noclip,
             AutoFarmEgg = PlayerState.AutoFarmEgg,
@@ -72,6 +73,7 @@ local function LoadConfig()
         end)
         
         if success and type(result) == "table" then
+            if result.FlyUIVisible ~= nil then PlayerState.FlyUIVisible = result.FlyUIVisible end
             if result.FlySpeed ~= nil then PlayerState.FlySpeed = result.FlySpeed end
             if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
             if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
@@ -88,12 +90,11 @@ local function LoadConfig()
             end
         end
     end
-    -- Reset paksa status terbang saat baru masuk server
+    -- Selalu pastikan karakter tidak langsung terbang otomatis saat baru masuk/hop server
     PlayerState.IsFlying = false
-    PlayerState.FlyUIVisible = true
 end
 
--- Panggil LoadConfig secara eksplisit
+-- Load Config Lebih Dulu
 LoadConfig()
 
 -- Variabel Engine Controller untuk Fly
@@ -811,8 +812,8 @@ local function AddInfoCard(titleText, descText)
     dLabel.ZIndex = 5
 end
 
-AddInfoCard("⚡ Auto Save Config", "Setelan Auto Farm, Rarity, Speed tersimpan otomatis & dimuat ulang saat Hop Server.")
-AddInfoCard("🕊️ Fly Reset Protection", "Fly Mini Controller otomatis disetel ke FLY : OFF saat Hop Server agar tidak langsung terbang.")
+AddInfoCard("⚡ Auto Save Config", "Setelan Fly Controller, Auto Farm, Rarity tersimpan otomatis & dimuat ulang saat Hop Server.")
+AddInfoCard("🕊️ Fly Reset Protection", "Karakter tidak akan langsung terbang setelah hop server. Tombol FLY disetel ke OFF.")
 
 -- Switch Tab Manager
 local function SetActiveTab(selectedTab)
@@ -865,6 +866,7 @@ FlyMiniFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
 FlyMiniFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 FlyMiniFrame.Active = true
 FlyMiniFrame.Draggable = true
+-- Sesuaikan tampilan dengan nilai PlayerState.FlyUIVisible dari config
 FlyMiniFrame.Visible = PlayerState.FlyUIVisible
 FlyMiniFrame.ZIndex = 100
 
@@ -1003,7 +1005,7 @@ StealToggleBtn.MouseButton1Click:Connect(function()
     SaveConfig()
 end)
 
--- Tombol Utama di Main UI
+-- Tombol Utama di Main UI (Fly Controller Engine Toggle)
 FlyMainToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
     FlyMiniFrame.Visible = PlayerState.FlyUIVisible
@@ -1017,7 +1019,7 @@ FlyMainToggleBtn.MouseButton1Click:Connect(function()
         PlayerState.IsFlying = false
         SynchronizeFlyStates()
     end
-    SaveConfig()
+    SaveConfig() -- Menyimpan status Fly Controller ke config secara langsung
 end)
 
 -- Tombol ON/OFF di Mini Controller
@@ -1076,4 +1078,3 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
-
