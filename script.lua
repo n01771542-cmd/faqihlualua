@@ -1,5 +1,5 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Fly UI Config Fix)
+    Script Name: faqih lua hub | jump for a egg (Fly & Auto 2x Clicker Fix)
     Credits: powered by faqih
 ]]--
 
@@ -9,6 +9,8 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -28,8 +30,9 @@ local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
 
 -- Configuration State Default
 local PlayerState = {
-    FlyUIVisible = true, -- Menyimpan status Fly Mini Controller (Muncul/Sembunyi)
-    IsFlying = false,     -- Status sedang terbang atau tidak
+    FlyUIVisible = true, -- Status Fly Mini Controller
+    Auto2xClicker = false, -- Fitur Auto Click 2x Multiplier
+    IsFlying = false,     
     FlySpeed = 350,
     Noclip = false,
     AutoFarmEgg = false,
@@ -47,12 +50,13 @@ local PlayerState = {
 }
 
 -- =================================================================
--- CONFIG SYSTEM (FIXED LOAD & SAVE FLY UI VISIBILITY)
+-- CONFIG SYSTEM (SAVE & LOAD)
 -- =================================================================
 local function SaveConfig()
     if writefile then
         local dataToSave = {
-            FlyUIVisible = PlayerState.FlyUIVisible, -- Menyimpan status UI Mini Controller
+            FlyUIVisible = PlayerState.FlyUIVisible,
+            Auto2xClicker = PlayerState.Auto2xClicker,
             FlySpeed = PlayerState.FlySpeed,
             Noclip = PlayerState.Noclip,
             AutoFarmEgg = PlayerState.AutoFarmEgg,
@@ -74,6 +78,7 @@ local function LoadConfig()
         
         if success and type(result) == "table" then
             if result.FlyUIVisible ~= nil then PlayerState.FlyUIVisible = result.FlyUIVisible end
+            if result.Auto2xClicker ~= nil then PlayerState.Auto2xClicker = result.Auto2xClicker end
             if result.FlySpeed ~= nil then PlayerState.FlySpeed = result.FlySpeed end
             if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
             if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
@@ -90,20 +95,14 @@ local function LoadConfig()
             end
         end
     end
-    -- Selalu pastikan karakter tidak langsung terbang otomatis saat baru masuk/hop server
     PlayerState.IsFlying = false
 end
 
--- Load Config Lebih Dulu
 LoadConfig()
 
 -- Variabel Engine Controller untuk Fly
 local flyBodyVelocity, flyBodyGyro
-
--- Asset & Texture IDs
 local CustomToggleImageAsset = "rbxthumb://type=Asset&id=136902684546260&w=150&h=150"
-
--- URL Raw Script
 local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/refs/heads/main/script.lua"
 
 -- =================================================================
@@ -184,7 +183,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- =================================================================
--- SAFE DROP ITEM ENGINE
+-- DROP ITEMS & TELEPORT SAFE ZONE
 -- =================================================================
 local function DropHeldItems()
     local char = LocalPlayer.Character
@@ -203,9 +202,6 @@ local function DropHeldItems()
     end
 end
 
--- =================================================================
--- TELEPORT INSTANT TO SAFE ZONE BLOCK
--- =================================================================
 local function TeleportToSafeZone()
     if not SafeZoneBlock or not SafeZoneBlock.Parent then 
         CreateSafeZoneAtCurrentPos()
@@ -349,6 +345,59 @@ for _, prompt in pairs(workspace:GetDescendants()) do SetupPrompt(prompt) end
 workspace.DescendantAdded:Connect(SetupPrompt)
 
 -- =================================================================
+-- ENGINE AUTO 2X CLICKER (DIRECT REMOTE & WORLD CLICK FIX)
+-- =================================================================
+task.spawn(function()
+    while task.wait(0.05) do
+        if PlayerState.Auto2xClicker then
+            pcall(function()
+                -- METODE 1: Tembak Remote Event Otomatis (Paling Ampuh & Tanpa Meleset)
+                local rep = game:GetService("ReplicatedStorage")
+                for _, obj in ipairs(rep:GetDescendants()) do
+                    if obj:IsA("RemoteEvent") then
+                        local name = string.lower(obj.Name)
+                        if string.find(name, "click") or string.find(name, "lift") or string.find(name, "train") or string.find(name, "multiplier") or string.find(name, "2x") or string.find(name, "add") then
+                            obj:FireServer()
+                        end
+                    end
+                end
+
+                -- METODE 2: Scan BillboardGui / SurfaceGui di Karakter & Workspace
+                local char = LocalPlayer.Character
+                if char then
+                    for _, gui in ipairs(char:GetDescendants()) do
+                        if gui:IsA("BillboardGui") or gui:IsA("SurfaceGui") then
+                            for _, elem in ipairs(gui:GetDescendants()) do
+                                if elem:IsA("ImageButton") or elem:IsA("TextButton") then
+                                    if getconnections then
+                                        for _, conn in pairs(getconnections(elem.MouseButton1Click)) do conn:Fire() end
+                                        for _, conn in pairs(getconnections(elem.Activated)) do conn:Fire() end
+                                        for _, conn in pairs(getconnections(elem.MouseButton1Down)) do conn:Fire() end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- METODE 3: Auto-Clicker Layar Tengah (Tepat di posisi lingkaran pink 2x)
+                local cam = workspace.CurrentCamera
+                if cam then
+                    local viewportSize = cam.ViewportSize
+                    local centerX = viewportSize.X / 2
+                    local centerY = viewportSize.Y / 2
+                    
+                    VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+                    VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+                    
+                    VirtualInputManager:SendTapEvent(centerX, centerY)
+                end
+            end)
+        end
+    end
+end)
+
+-- =================================================================
 -- FLY ENGINE
 -- =================================================================
 local function StartFlyEngine()
@@ -395,7 +444,7 @@ ScreenGui.Name = "FaluaLuaUI_v7"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = TargetGui
 
--- Toggle Button
+-- Toggle Button Logo
 local ToggleBtn = Instance.new("ImageButton", ScreenGui)
 ToggleBtn.Name = "ToggleImageBtn"
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -411,7 +460,7 @@ ToggleBtn.Visible = false
 local ToggleCorner = Instance.new("UICorner", ToggleBtn)
 ToggleCorner.CornerRadius = UDim.new(0, 8)
 
--- Panel Utama
+-- Panel Utama Window
 local TeleportWindow = Instance.new("Frame", ScreenGui)
 TeleportWindow.Name = "TeleportWindow"
 TeleportWindow.Size = UDim2.new(0, 440, 0, 280)
@@ -462,7 +511,7 @@ CloseMainBtn.Font = Enum.Font.GothamBold
 CloseMainBtn.TextSize = 13
 CloseMainBtn.ZIndex = 3
 
--- Sidebar Left Panel
+-- Sidebar
 local Sidebar = Instance.new("Frame", TeleportWindow)
 Sidebar.Size = UDim2.new(0, 110, 1, -32)
 Sidebar.Position = UDim2.new(0, 0, 0, 32)
@@ -524,6 +573,7 @@ local CardsLayout = Instance.new("UIListLayout", CardsContainer)
 CardsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 CardsLayout.Padding = UDim.new(0, 6)
 
+-- Opsi Reset Safe Zone
 local PlaceBlockBtn = Instance.new("TextButton", CardsContainer)
 PlaceBlockBtn.Size = UDim2.new(1, -10, 0, 36)
 PlaceBlockBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -544,6 +594,7 @@ PlaceTitle.TextSize = 11
 PlaceTitle.TextXAlignment = Enum.TextXAlignment.Left
 PlaceTitle.ZIndex = 4
 
+-- Opsi Fly Engine
 local FlyMainToggleBtn = Instance.new("TextButton", CardsContainer)
 FlyMainToggleBtn.Size = UDim2.new(1, -10, 0, 36)
 FlyMainToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -575,6 +626,38 @@ FlyStatusLabel.TextSize = 11
 FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 FlyStatusLabel.ZIndex = 4
 
+-- Opsi Auto 2x Clicker (DI BAWAH FLY)
+local Auto2xToggleBtn = Instance.new("TextButton", CardsContainer)
+Auto2xToggleBtn.Size = UDim2.new(1, -10, 0, 36)
+Auto2xToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+Auto2xToggleBtn.Text = ""
+Auto2xToggleBtn.ZIndex = 3
+
+local Auto2xCorner = Instance.new("UICorner", Auto2xToggleBtn)
+Auto2xCorner.CornerRadius = UDim.new(0, 6)
+
+local Auto2xTitle = Instance.new("TextLabel", Auto2xToggleBtn)
+Auto2xTitle.Size = UDim2.new(1, -70, 1, 0)
+Auto2xTitle.Position = UDim2.new(0, 10, 0, 0)
+Auto2xTitle.BackgroundTransparency = 1
+Auto2xTitle.Text = "⚡ Auto 2x Clicker"
+Auto2xTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
+Auto2xTitle.Font = Enum.Font.GothamMedium
+Auto2xTitle.TextSize = 11
+Auto2xTitle.TextXAlignment = Enum.TextXAlignment.Left
+Auto2xTitle.ZIndex = 4
+
+local Auto2xStatusLabel = Instance.new("TextLabel", Auto2xToggleBtn)
+Auto2xStatusLabel.Size = UDim2.new(0, 45, 1, 0)
+Auto2xStatusLabel.Position = UDim2.new(1, -50, 0, 0)
+Auto2xStatusLabel.BackgroundTransparency = 1
+Auto2xStatusLabel.Text = PlayerState.Auto2xClicker and "ON" or "OFF"
+Auto2xStatusLabel.TextColor3 = PlayerState.Auto2xClicker and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+Auto2xStatusLabel.Font = Enum.Font.GothamBold
+Auto2xStatusLabel.TextSize = 11
+Auto2xStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
+Auto2xStatusLabel.ZIndex = 4
+
 -- 2. EGG FARM TAB CONTENT
 local EggFarmContent = Instance.new("Frame", TeleportWindow)
 EggFarmContent.Size = UDim2.new(1, -122, 1, -40)
@@ -595,7 +678,6 @@ local ScrollEggLayout = Instance.new("UIListLayout", ScrollEgg)
 ScrollEggLayout.SortOrder = Enum.SortOrder.LayoutOrder
 ScrollEggLayout.Padding = UDim.new(0, 6)
 
--- Master Toggle Farm
 local FarmMasterBtn = Instance.new("TextButton", ScrollEgg)
 FarmMasterBtn.Size = UDim2.new(1, -10, 0, 36)
 FarmMasterBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -627,7 +709,6 @@ FarmStatusLabel.TextSize = 11
 FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 FarmStatusLabel.ZIndex = 5
 
--- Steal Toggle
 local StealToggleBtn = Instance.new("TextButton", ScrollEgg)
 StealToggleBtn.Size = UDim2.new(1, -10, 0, 32)
 StealToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -659,7 +740,6 @@ StealStatusLabel.TextSize = 10
 StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 StealStatusLabel.ZIndex = 5
 
--- Rarity Selection Info
 local RarityLabel = Instance.new("TextLabel", ScrollEgg)
 RarityLabel.Size = UDim2.new(1, -10, 0, 18)
 RarityLabel.BackgroundTransparency = 1
@@ -670,7 +750,6 @@ RarityLabel.TextSize = 10
 RarityLabel.TextXAlignment = Enum.TextXAlignment.Left
 RarityLabel.ZIndex = 4
 
--- Grid Rarity Toggles
 local RarityGrid = Instance.new("Frame", ScrollEgg)
 RarityGrid.Size = UDim2.new(1, -10, 0, 110)
 RarityGrid.BackgroundTransparency = 1
@@ -812,8 +891,8 @@ local function AddInfoCard(titleText, descText)
     dLabel.ZIndex = 5
 end
 
-AddInfoCard("⚡ Auto Save Config", "Setelan Fly Controller, Auto Farm, Rarity tersimpan otomatis & dimuat ulang saat Hop Server.")
-AddInfoCard("🕊️ Fly Reset Protection", "Karakter tidak akan langsung terbang setelah hop server. Tombol FLY disetel ke OFF.")
+AddInfoCard("⚡ Auto Save Config", "Setelan Fly Controller, Auto 2x Clicker, Auto Farm, Rarity tersimpan otomatis ke config JSON.")
+AddInfoCard("🕊️ Fly Reset Protection", "Karakter tidak akan langsung terbang otomatis saat hop server demi keamanan.")
 
 -- Switch Tab Manager
 local function SetActiveTab(selectedTab)
@@ -866,7 +945,6 @@ FlyMiniFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
 FlyMiniFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 FlyMiniFrame.Active = true
 FlyMiniFrame.Draggable = true
--- Sesuaikan tampilan dengan nilai PlayerState.FlyUIVisible dari config
 FlyMiniFrame.Visible = PlayerState.FlyUIVisible
 FlyMiniFrame.ZIndex = 100
 
@@ -947,7 +1025,7 @@ local SpeedPlusCorner = Instance.new("UICorner", SpeedPlus)
 SpeedPlusCorner.CornerRadius = UDim.new(0, 4)
 
 -- =================================================================
--- HELPER FUNCTIONS & EVENT LISTENERS
+-- HELPER FUNCTIONS & LISTENERS
 -- =================================================================
 
 local function SynchronizeFlyStates()
@@ -983,29 +1061,19 @@ end)
 
 FarmMasterBtn.MouseButton1Click:Connect(function()
     PlayerState.AutoFarmEgg = not PlayerState.AutoFarmEgg
-    if PlayerState.AutoFarmEgg then
-        FarmStatusLabel.Text = "ON"
-        FarmStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
-    else
-        FarmStatusLabel.Text = "OFF"
-        FarmStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
-    end
+    FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
+    FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
     SaveConfig()
 end)
 
 StealToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.StealPriority = not PlayerState.StealPriority
-    if PlayerState.StealPriority then
-        StealStatusLabel.Text = "ON"
-        StealStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
-    else
-        StealStatusLabel.Text = "OFF"
-        StealStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
-    end
+    StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
+    StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
     SaveConfig()
 end)
 
--- Tombol Utama di Main UI (Fly Controller Engine Toggle)
+-- Event Click Toggle Fly
 FlyMainToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
     FlyMiniFrame.Visible = PlayerState.FlyUIVisible
@@ -1019,10 +1087,17 @@ FlyMainToggleBtn.MouseButton1Click:Connect(function()
         PlayerState.IsFlying = false
         SynchronizeFlyStates()
     end
-    SaveConfig() -- Menyimpan status Fly Controller ke config secara langsung
+    SaveConfig()
 end)
 
--- Tombol ON/OFF di Mini Controller
+-- Event Click Auto 2x Clicker
+Auto2xToggleBtn.MouseButton1Click:Connect(function()
+    PlayerState.Auto2xClicker = not PlayerState.Auto2xClicker
+    Auto2xStatusLabel.Text = PlayerState.Auto2xClicker and "ON" or "OFF"
+    Auto2xStatusLabel.TextColor3 = PlayerState.Auto2xClicker and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+    SaveConfig()
+end)
+
 FlyToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.IsFlying = not PlayerState.IsFlying
     SynchronizeFlyStates()
