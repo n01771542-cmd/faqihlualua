@@ -1,5 +1,5 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Fly & Auto 2x Clicker Fix)
+    Script Name: faqih lua hub | jump for a egg (Strict Item Verification Engine)
     Credits: powered by faqih
 ]]--
 
@@ -9,12 +9,10 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Target UI Container Safe Guard
+-- Target UI Container
 local TargetGui
 pcall(function() TargetGui = CoreGui end)
 if not TargetGui then TargetGui = LocalPlayer:WaitForChild("PlayerGui") end
@@ -30,8 +28,7 @@ local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
 
 -- Configuration State Default
 local PlayerState = {
-    FlyUIVisible = true, -- Status Fly Mini Controller
-    Auto2xClicker = false, -- Fitur Auto Click 2x Multiplier
+    FlyUIVisible = true,
     IsFlying = false,     
     FlySpeed = 350,
     Noclip = false,
@@ -49,14 +46,11 @@ local PlayerState = {
     }
 }
 
--- =================================================================
--- CONFIG SYSTEM (SAVE & LOAD)
--- =================================================================
+-- CONFIG SYSTEM
 local function SaveConfig()
     if writefile then
         local dataToSave = {
             FlyUIVisible = PlayerState.FlyUIVisible,
-            Auto2xClicker = PlayerState.Auto2xClicker,
             FlySpeed = PlayerState.FlySpeed,
             Noclip = PlayerState.Noclip,
             AutoFarmEgg = PlayerState.AutoFarmEgg,
@@ -78,20 +72,15 @@ local function LoadConfig()
         
         if success and type(result) == "table" then
             if result.FlyUIVisible ~= nil then PlayerState.FlyUIVisible = result.FlyUIVisible end
-            if result.Auto2xClicker ~= nil then PlayerState.Auto2xClicker = result.Auto2xClicker end
             if result.FlySpeed ~= nil then PlayerState.FlySpeed = result.FlySpeed end
             if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
             if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
             if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
             if type(result.SelectedRarities) == "table" then
-                for k, v in pairs(result.SelectedRarities) do
-                    PlayerState.SelectedRarities[k] = v
-                end
+                for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end
             end
             if type(result.SelectedZones) == "table" then
-                for k, v in pairs(result.SelectedZones) do
-                    PlayerState.SelectedZones[k] = v
-                end
+                for k, v in pairs(result.SelectedZones) do PlayerState.SelectedZones[k] = v end
             end
         end
     end
@@ -100,67 +89,69 @@ end
 
 LoadConfig()
 
--- Variabel Engine Controller untuk Fly
 local flyBodyVelocity, flyBodyGyro
 local CustomToggleImageAsset = "rbxthumb://type=Asset&id=136902684546260&w=150&h=150"
 local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/refs/heads/main/script.lua"
 
--- =================================================================
--- ADVANCED SERVER HOP ENGINE
--- =================================================================
+-- SERVER HOP
 local function ServerHopByCount(targetPlayerCount)
     SaveConfig()
-
     local placeId = game.PlaceId
     local currentJobId = game.JobId
     
-    local queueFunc = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-    if queueFunc then
-        queueFunc(string.format([[
-            repeat task.wait(1) until game:IsLoaded()
-            task.wait(2)
-            loadstring(game:HttpGet("%s"))()
-        ]], RAW_SCRIPT_URL))
+    local queueFunc = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+    if typeof(queueFunc) == "function" then
+        pcall(function()
+            queueFunc(string.format([[
+                repeat task.wait(1) until game:IsLoaded()
+                task.wait(2)
+                loadstring(game:HttpGet("%s"))()
+            ]], RAW_SCRIPT_URL))
+        end)
     end
 
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100"))
+    local success, response = pcall(function()
+        return game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100")
     end)
     
-    if success and result and result.data then
-        local matchedServers = {}
-        local fallbackServers = {}
+    if success and response then
+        local decodeSuccess, result = pcall(function()
+            return HttpService:JSONDecode(response)
+        end)
         
-        for _, server in ipairs(result.data) do
-            if type(server) == "table" and server.id ~= currentJobId then
-                if server.playing == targetPlayerCount then
-                    table.insert(matchedServers, server.id)
-                elseif server.playing < 7 then
-                    table.insert(fallbackServers, server.id)
+        if decodeSuccess and result and result.data then
+            local matchedServers = {}
+            local fallbackServers = {}
+            
+            for _, server in ipairs(result.data) do
+                if type(server) == "table" and server.id ~= currentJobId then
+                    if server.playing == targetPlayerCount then
+                        table.insert(matchedServers, server.id)
+                    elseif server.playing < 7 then
+                        table.insert(fallbackServers, server.id)
+                    end
                 end
             end
+            
+            if #matchedServers > 0 then
+                TeleportService:TeleportToPlaceInstance(placeId, matchedServers[math.random(1, #matchedServers)], LocalPlayer)
+            elseif #fallbackServers > 0 then
+                TeleportService:TeleportToPlaceInstance(placeId, fallbackServers[math.random(1, #fallbackServers)], LocalPlayer)
+            else
+                TeleportService:Teleport(placeId, LocalPlayer)
+            end
+            return
         end
-        
-        if #matchedServers > 0 then
-            local targetServer = matchedServers[math.random(1, #matchedServers)]
-            TeleportService:TeleportToPlaceInstance(placeId, targetServer, LocalPlayer)
-        elseif #fallbackServers > 0 then
-            local targetServer = fallbackServers[math.random(1, #fallbackServers)]
-            TeleportService:TeleportToPlaceInstance(placeId, targetServer, LocalPlayer)
-        else
-            TeleportService:Teleport(placeId, LocalPlayer)
-        end
-    else
-        TeleportService:Teleport(placeId, LocalPlayer)
     end
+    TeleportService:Teleport(placeId, LocalPlayer)
 end
 
--- =================================================================
--- AUTO CREATE SAFE ZONE BLOCK
--- =================================================================
+-- SAFE ZONE SETUP
 local function CreateSafeZoneAtCurrentPos()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart")
+    if not char then return end
+    
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
     
     if hrp then
         if SafeZoneBlock then SafeZoneBlock:Destroy() end
@@ -182,50 +173,81 @@ LocalPlayer.CharacterAdded:Connect(function()
     CreateSafeZoneAtCurrentPos()
 end)
 
--- =================================================================
--- DROP ITEMS & TELEPORT SAFE ZONE
--- =================================================================
+-- DROP HELD ITEMS
 local function DropHeldItems()
     local char = LocalPlayer.Character
-    if not char then return end
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
     
-    local heldTool = char:FindFirstChildOfClass("Tool")
-    if heldTool then
-        heldTool.CanBeDropped = true
-        heldTool.Parent = workspace
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum:UnequipTools() end
+        
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") then
+                item.CanBeDropped = true
+                item.Parent = workspace
+            end
+        end
+    end
+    
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") then
+                item.CanBeDropped = true
+                item.Parent = workspace
+            end
+        end
     end
     
     local rep = game:GetService("ReplicatedStorage")
-    local dropRemote = rep:FindFirstChild("DropItem", true) or rep:FindFirstChild("Drop", true) or rep:FindFirstChild("DropTool", true)
-    if dropRemote and dropRemote:IsA("RemoteEvent") then
-        pcall(function() dropRemote:FireServer(heldTool) end)
+    for _, name in ipairs({"DropItem", "Drop", "DropTool", "DropEgg", "RemoveItem"}) do
+        local dropRemote = rep:FindFirstChild(name, true)
+        if dropRemote and dropRemote:IsA("RemoteEvent") then
+            pcall(function() dropRemote:FireServer() end)
+        end
     end
 end
 
 local function TeleportToSafeZone()
     if not SafeZoneBlock or not SafeZoneBlock.Parent then 
         CreateSafeZoneAtCurrentPos()
-        task.wait(0.1)
     end
     
     local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not char then return end
     
-    if hrp and hum and hum.Health > 0 then
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if hrp and hum and hum.Health > 0 and SafeZoneBlock then
         local targetCFrame = SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0)
-        
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
         hrp.CFrame = targetCFrame
-        
-        task.wait(0.1)
         DropHeldItems()
     end
 end
 
+-- DETEKSI HAS EGG IN INVENTORY
+local function HasEggInInventory()
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    
+    if char then
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("Tool") then return true end
+        end
+    end
+    if backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then return true end
+        end
+    end
+    return false
+end
+
 -- =================================================================
--- SMART EGG SCANNER & TELEPORT ENGINE
+-- ADVANCED STEAL & VERIFIED TELEPORT ENGINE
 -- =================================================================
 local RarityPriority = {
     Ascended = 10, Eternal = 9, Celestial = 8, Divine = 7,
@@ -290,36 +312,55 @@ local function ProcessSmartEggTeleport()
     
     if hrp then
         DropHeldItems()
-        task.wait(0.1)
+        task.wait(0.02)
         
+        -- Teleport Tepat di Posisi Telur
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
-        hrp.CFrame = target.Part.CFrame + Vector3.new(0, 1.5, 0)
-        
-        task.wait(0.25)
+        hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
         
         local prompt = target.Prompt
-        if fireproximityprompt then
-            fireproximityprompt(prompt)
-        else
-            pcall(function()
-                prompt:InputHoldBegin()
-                task.wait(0.1)
-                prompt:InputHoldEnd()
-            end)
+        prompt.HoldDuration = 0
+        prompt.RequiresLineOfSight = false
+        
+        -- SISTEM VERIFIKASI PRESISI
+        local maxRetries = 15
+        local retryCount = 0
+        local eggAcquired = false
+        
+        repeat
+            retryCount = retryCount + 1
+            
+            if fireproximityprompt then
+                fireproximityprompt(prompt)
+            else
+                pcall(function()
+                    prompt:InputHoldBegin()
+                    prompt:InputHoldEnd()
+                end)
+            end
+            
+            task.wait(0.04)
+            
+            if HasEggInInventory() or not prompt.Parent or not prompt.Enabled then
+                eggAcquired = true
+                break
+            end
+        until retryCount >= maxRetries
+        
+        if eggAcquired then
+            TeleportToSafeZone()
+            task.wait(0.04)
+            DropHeldItems()
         end
-        
-        task.wait(0.4)
-        
-        TeleportToSafeZone()
-        task.wait(0.2)
     end
     
     IsFarming = false
 end
 
+-- Loop Auto Farm
 task.spawn(function()
-    while task.wait(0.4) do
+    while task.wait(0.04) do
         if PlayerState.AutoFarmEgg then
             pcall(ProcessSmartEggTeleport)
         end
@@ -334,7 +375,6 @@ local function SetupPrompt(prompt)
         prompt.Triggered:Connect(function(playerWhoTriggered)
             if playerWhoTriggered == LocalPlayer and not PlayerState.AutoFarmEgg then
                 DropHeldItems()
-                task.wait(0.4)
                 TeleportToSafeZone()
             end
         end)
@@ -343,59 +383,6 @@ end
 
 for _, prompt in pairs(workspace:GetDescendants()) do SetupPrompt(prompt) end
 workspace.DescendantAdded:Connect(SetupPrompt)
-
--- =================================================================
--- ENGINE AUTO 2X CLICKER (DIRECT REMOTE & WORLD CLICK FIX)
--- =================================================================
-task.spawn(function()
-    while task.wait(0.05) do
-        if PlayerState.Auto2xClicker then
-            pcall(function()
-                -- METODE 1: Tembak Remote Event Otomatis (Paling Ampuh & Tanpa Meleset)
-                local rep = game:GetService("ReplicatedStorage")
-                for _, obj in ipairs(rep:GetDescendants()) do
-                    if obj:IsA("RemoteEvent") then
-                        local name = string.lower(obj.Name)
-                        if string.find(name, "click") or string.find(name, "lift") or string.find(name, "train") or string.find(name, "multiplier") or string.find(name, "2x") or string.find(name, "add") then
-                            obj:FireServer()
-                        end
-                    end
-                end
-
-                -- METODE 2: Scan BillboardGui / SurfaceGui di Karakter & Workspace
-                local char = LocalPlayer.Character
-                if char then
-                    for _, gui in ipairs(char:GetDescendants()) do
-                        if gui:IsA("BillboardGui") or gui:IsA("SurfaceGui") then
-                            for _, elem in ipairs(gui:GetDescendants()) do
-                                if elem:IsA("ImageButton") or elem:IsA("TextButton") then
-                                    if getconnections then
-                                        for _, conn in pairs(getconnections(elem.MouseButton1Click)) do conn:Fire() end
-                                        for _, conn in pairs(getconnections(elem.Activated)) do conn:Fire() end
-                                        for _, conn in pairs(getconnections(elem.MouseButton1Down)) do conn:Fire() end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-
-                -- METODE 3: Auto-Clicker Layar Tengah (Tepat di posisi lingkaran pink 2x)
-                local cam = workspace.CurrentCamera
-                if cam then
-                    local viewportSize = cam.ViewportSize
-                    local centerX = viewportSize.X / 2
-                    local centerY = viewportSize.Y / 2
-                    
-                    VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
-                    VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
-                    
-                    VirtualInputManager:SendTapEvent(centerX, centerY)
-                end
-            end)
-        end
-    end
-end)
 
 -- =================================================================
 -- FLY ENGINE
@@ -437,14 +424,13 @@ local function StopFlyEngine()
 end
 
 -- =================================================================
--- GUI BASE SETUP
+-- UI BASE SETUP
 -- =================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FaluaLuaUI_v7"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = TargetGui
 
--- Toggle Button Logo
 local ToggleBtn = Instance.new("ImageButton", ScreenGui)
 ToggleBtn.Name = "ToggleImageBtn"
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -460,7 +446,6 @@ ToggleBtn.Visible = false
 local ToggleCorner = Instance.new("UICorner", ToggleBtn)
 ToggleCorner.CornerRadius = UDim.new(0, 8)
 
--- Panel Utama Window
 local TeleportWindow = Instance.new("Frame", ScreenGui)
 TeleportWindow.Name = "TeleportWindow"
 TeleportWindow.Size = UDim2.new(0, 440, 0, 280)
@@ -479,7 +464,6 @@ local WindowStroke = Instance.new("UIStroke", TeleportWindow)
 WindowStroke.Color = Color3.fromRGB(70, 85, 110)
 WindowStroke.Thickness = 1
 
--- Header Bar
 local TopBar = Instance.new("Frame", TeleportWindow)
 TopBar.Name = "TopBar"
 TopBar.Size = UDim2.new(1, 0, 0, 32)
@@ -511,7 +495,6 @@ CloseMainBtn.Font = Enum.Font.GothamBold
 CloseMainBtn.TextSize = 13
 CloseMainBtn.ZIndex = 3
 
--- Sidebar
 local Sidebar = Instance.new("Frame", TeleportWindow)
 Sidebar.Size = UDim2.new(0, 110, 1, -32)
 Sidebar.Position = UDim2.new(0, 0, 0, 32)
@@ -541,7 +524,6 @@ local function CreateTabBtn(name)
     
     local pad = Instance.new("UIPadding", btn)
     pad.PaddingLeft = UDim.new(0, 10)
-    
     local corner = Instance.new("UICorner", btn)
     corner.CornerRadius = UDim.new(0, 6)
     return btn
@@ -552,11 +534,7 @@ local EggFarmTabBtn = CreateTabBtn("Egg Farm")
 local ServerHopTabBtn = CreateTabBtn("Server Hop")
 local InfoTabBtn = CreateTabBtn("Info / Fitur")
 
--- =================================================================
--- CONTENT PANELS
--- =================================================================
-
--- 1. MAIN TAB CONTENT
+-- PANELS
 local MainContent = Instance.new("Frame", TeleportWindow)
 MainContent.Size = UDim2.new(1, -122, 1, -40)
 MainContent.Position = UDim2.new(0, 116, 0, 36)
@@ -573,7 +551,6 @@ local CardsLayout = Instance.new("UIListLayout", CardsContainer)
 CardsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 CardsLayout.Padding = UDim.new(0, 6)
 
--- Opsi Reset Safe Zone
 local PlaceBlockBtn = Instance.new("TextButton", CardsContainer)
 PlaceBlockBtn.Size = UDim2.new(1, -10, 0, 36)
 PlaceBlockBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -594,7 +571,6 @@ PlaceTitle.TextSize = 11
 PlaceTitle.TextXAlignment = Enum.TextXAlignment.Left
 PlaceTitle.ZIndex = 4
 
--- Opsi Fly Engine
 local FlyMainToggleBtn = Instance.new("TextButton", CardsContainer)
 FlyMainToggleBtn.Size = UDim2.new(1, -10, 0, 36)
 FlyMainToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -626,39 +602,9 @@ FlyStatusLabel.TextSize = 11
 FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 FlyStatusLabel.ZIndex = 4
 
--- Opsi Auto 2x Clicker (DI BAWAH FLY)
-local Auto2xToggleBtn = Instance.new("TextButton", CardsContainer)
-Auto2xToggleBtn.Size = UDim2.new(1, -10, 0, 36)
-Auto2xToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-Auto2xToggleBtn.Text = ""
-Auto2xToggleBtn.ZIndex = 3
-
-local Auto2xCorner = Instance.new("UICorner", Auto2xToggleBtn)
-Auto2xCorner.CornerRadius = UDim.new(0, 6)
-
-local Auto2xTitle = Instance.new("TextLabel", Auto2xToggleBtn)
-Auto2xTitle.Size = UDim2.new(1, -70, 1, 0)
-Auto2xTitle.Position = UDim2.new(0, 10, 0, 0)
-Auto2xTitle.BackgroundTransparency = 1
-Auto2xTitle.Text = "⚡ Auto 2x Clicker"
-Auto2xTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-Auto2xTitle.Font = Enum.Font.GothamMedium
-Auto2xTitle.TextSize = 11
-Auto2xTitle.TextXAlignment = Enum.TextXAlignment.Left
-Auto2xTitle.ZIndex = 4
-
-local Auto2xStatusLabel = Instance.new("TextLabel", Auto2xToggleBtn)
-Auto2xStatusLabel.Size = UDim2.new(0, 45, 1, 0)
-Auto2xStatusLabel.Position = UDim2.new(1, -50, 0, 0)
-Auto2xStatusLabel.BackgroundTransparency = 1
-Auto2xStatusLabel.Text = PlayerState.Auto2xClicker and "ON" or "OFF"
-Auto2xStatusLabel.TextColor3 = PlayerState.Auto2xClicker and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-Auto2xStatusLabel.Font = Enum.Font.GothamBold
-Auto2xStatusLabel.TextSize = 11
-Auto2xStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-Auto2xStatusLabel.ZIndex = 4
-
--- 2. EGG FARM TAB CONTENT
+-- =================================================================
+-- EGG FARM TAB (UPDATED UI)
+-- =================================================================
 local EggFarmContent = Instance.new("Frame", TeleportWindow)
 EggFarmContent.Size = UDim2.new(1, -122, 1, -40)
 EggFarmContent.Position = UDim2.new(0, 116, 0, 36)
@@ -670,16 +616,23 @@ local ScrollEgg = Instance.new("ScrollingFrame", EggFarmContent)
 ScrollEgg.Size = UDim2.new(1, -5, 1, 0)
 ScrollEgg.BackgroundTransparency = 1
 ScrollEgg.BorderSizePixel = 0
-ScrollEgg.ScrollBarThickness = 3
-ScrollEgg.CanvasSize = UDim2.new(0, 0, 0, 360)
+ScrollEgg.ScrollBarThickness = 4
+ScrollEgg.ScrollBarImageColor3 = Color3.fromRGB(70, 85, 110)
+ScrollEgg.CanvasSize = UDim2.new(0, 0, 0, 480)
 ScrollEgg.ZIndex = 3
 
 local ScrollEggLayout = Instance.new("UIListLayout", ScrollEgg)
 ScrollEggLayout.SortOrder = Enum.SortOrder.LayoutOrder
 ScrollEggLayout.Padding = UDim.new(0, 6)
 
+-- Otomatis update CanvasSize ScrollingFrame berdasarkan konten
+ScrollEggLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ScrollEgg.CanvasSize = UDim2.new(0, 0, 0, ScrollEggLayout.AbsoluteContentSize.Y + 10)
+end)
+
+-- Tombol Auto Farm Master
 local FarmMasterBtn = Instance.new("TextButton", ScrollEgg)
-FarmMasterBtn.Size = UDim2.new(1, -10, 0, 36)
+FarmMasterBtn.Size = UDim2.new(1, -10, 0, 34)
 FarmMasterBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
 FarmMasterBtn.Text = ""
 FarmMasterBtn.ZIndex = 4
@@ -709,6 +662,7 @@ FarmStatusLabel.TextSize = 11
 FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 FarmStatusLabel.ZIndex = 5
 
+-- Tombol Steal Priority
 local StealToggleBtn = Instance.new("TextButton", ScrollEgg)
 StealToggleBtn.Size = UDim2.new(1, -10, 0, 32)
 StealToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
@@ -740,45 +694,94 @@ StealStatusLabel.TextSize = 10
 StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 StealStatusLabel.ZIndex = 5
 
+-- Header Filter Rarity
 local RarityLabel = Instance.new("TextLabel", ScrollEgg)
-RarityLabel.Size = UDim2.new(1, -10, 0, 18)
+RarityLabel.Size = UDim2.new(1, -10, 0, 20)
 RarityLabel.BackgroundTransparency = 1
-RarityLabel.Text = "Filter Rarity Egg:"
+RarityLabel.Text = "Filter Rarity Egg (Tertinggi -> Terendah):"
 RarityLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
 RarityLabel.Font = Enum.Font.GothamBold
 RarityLabel.TextSize = 10
 RarityLabel.TextXAlignment = Enum.TextXAlignment.Left
 RarityLabel.ZIndex = 4
 
-local RarityGrid = Instance.new("Frame", ScrollEgg)
-RarityGrid.Size = UDim2.new(1, -10, 0, 110)
-RarityGrid.BackgroundTransparency = 1
-RarityGrid.ZIndex = 4
+-- URUTAN RARITY (Dari Paling Langka ke Paling Umum)
+local OrderedRarities = {
+    "Ascended",
+    "Eternal",
+    "Celestial",
+    "Divine",
+    "Mythic",
+    "Legendary",
+    "Epic",
+    "Rare",
+    "Uncommon",
+    "Common"
+}
 
-local RarityGridLayout = Instance.new("UIGridLayout", RarityGrid)
-RarityGridLayout.CellSize = UDim2.new(0.48, -4, 0, 24)
-RarityGridLayout.CellPadding = UDim2.new(0.04, 0, 0, 4)
+-- Container List Vertikal Rarity
+local RarityListFrame = Instance.new("Frame", ScrollEgg)
+RarityListFrame.Size = UDim2.new(1, -10, 0, 0)
+RarityListFrame.BackgroundTransparency = 1
+RarityListFrame.ZIndex = 4
 
-for rName, enabled in pairs(PlayerState.SelectedRarities) do
-    local rBtn = Instance.new("TextButton", RarityGrid)
-    rBtn.BackgroundColor3 = enabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(40, 48, 64)
-    rBtn.Text = rName
-    rBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    rBtn.Font = Enum.Font.GothamMedium
-    rBtn.TextSize = 9
+local RarityListLayout = Instance.new("UIListLayout", RarityListFrame)
+RarityListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+RarityListLayout.Padding = UDim.new(0, 4)
+
+RarityListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    RarityListFrame.Size = UDim2.new(1, -10, 0, RarityListLayout.AbsoluteContentSize.Y)
+end)
+
+-- Loop Pembuatan Item Rarity secara Urut Vertikal
+for index, rName in ipairs(OrderedRarities) do
+    local isEnabled = PlayerState.SelectedRarities[rName] or false
+    
+    local rBtn = Instance.new("TextButton", RarityListFrame)
+    rBtn.Size = UDim2.new(1, 0, 0, 26)
+    rBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
+    rBtn.Text = ""
+    rBtn.LayoutOrder = index
     rBtn.ZIndex = 5
     
     local rCorner = Instance.new("UICorner", rBtn)
-    rCorner.CornerRadius = UDim.new(0, 4)
+    rCorner.CornerRadius = UDim.new(0, 5)
+    
+    local rNameLabel = Instance.new("TextLabel", rBtn)
+    rNameLabel.Size = UDim2.new(1, -50, 1, 0)
+    rNameLabel.Position = UDim2.new(0, 10, 0, 0)
+    rNameLabel.BackgroundTransparency = 1
+    rNameLabel.Text = rName
+    rNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
+    rNameLabel.Font = Enum.Font.GothamMedium
+    rNameLabel.TextSize = 10
+    rNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    rNameLabel.ZIndex = 6
+    
+    local rStatusLabel = Instance.new("TextLabel", rBtn)
+    rStatusLabel.Size = UDim2.new(0, 40, 1, 0)
+    rStatusLabel.Position = UDim2.new(1, -45, 0, 0)
+    rStatusLabel.BackgroundTransparency = 1
+    rStatusLabel.Text = isEnabled and "ON" or "OFF"
+    rStatusLabel.TextColor3 = isEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
+    rStatusLabel.Font = Enum.Font.GothamBold
+    rStatusLabel.TextSize = 9
+    rStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+    rStatusLabel.ZIndex = 6
     
     rBtn.MouseButton1Click:Connect(function()
-        PlayerState.SelectedRarities[rName] = not PlayerState.SelectedRarities[rName]
-        rBtn.BackgroundColor3 = PlayerState.SelectedRarities[rName] and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(40, 48, 64)
+        local newState = not PlayerState.SelectedRarities[rName]
+        PlayerState.SelectedRarities[rName] = newState
+        
+        rBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
+        rStatusLabel.Text = newState and "ON" or "OFF"
+        rStatusLabel.TextColor3 = newState and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
+        
         SaveConfig()
     end)
 end
 
--- 3. SERVER HOP TAB CONTENT
+-- SERVER HOP TAB
 local HopContent = Instance.new("Frame", TeleportWindow)
 HopContent.Size = UDim2.new(1, -122, 1, -40)
 HopContent.Position = UDim2.new(0, 116, 0, 36)
@@ -837,7 +840,7 @@ for i = 1, 6 do
     end)
 end
 
--- 4. INFO TAB CONTENT
+-- INFO TAB
 local InfoContent = Instance.new("Frame", TeleportWindow)
 InfoContent.Size = UDim2.new(1, -122, 1, -40)
 InfoContent.Position = UDim2.new(0, 116, 0, 36)
@@ -891,10 +894,10 @@ local function AddInfoCard(titleText, descText)
     dLabel.ZIndex = 5
 end
 
-AddInfoCard("⚡ Auto Save Config", "Setelan Fly Controller, Auto 2x Clicker, Auto Farm, Rarity tersimpan otomatis ke config JSON.")
-AddInfoCard("🕊️ Fly Reset Protection", "Karakter tidak akan langsung terbang otomatis saat hop server demi keamanan.")
+AddInfoCard("⚡ Instant Teleport & Drop", "Sistem drop otomatis mengosongkan slot hotbar agar tidak melebihi kapasitas.")
+AddInfoCard("🕊️ Safe Zone Active", "Setelah mengambil telur, karakter langsung balik ke SafeZone secara stabil.")
 
--- Switch Tab Manager
+-- TAB MANAGER
 local function SetActiveTab(selectedTab)
     MainTabBtn.BackgroundTransparency = 1
     MainTabBtn.TextColor3 = Color3.fromRGB(180, 190, 205)
@@ -935,9 +938,7 @@ ServerHopTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Hop") end)
 InfoTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Info") end)
 SetActiveTab("Main")
 
--- =================================================================
--- FLY MINI CONTROLLER FRAME
--- =================================================================
+-- FLY MINI FRAME
 local FlyMiniFrame = Instance.new("Frame", ScreenGui)
 FlyMiniFrame.Name = "FlyMiniFrame"
 FlyMiniFrame.Size = UDim2.new(0, 165, 0, 110)
@@ -1024,10 +1025,7 @@ SpeedPlus.ZIndex = 102
 local SpeedPlusCorner = Instance.new("UICorner", SpeedPlus)
 SpeedPlusCorner.CornerRadius = UDim.new(0, 4)
 
--- =================================================================
--- HELPER FUNCTIONS & LISTENERS
--- =================================================================
-
+-- LISTENERS
 local function SynchronizeFlyStates()
     if PlayerState.IsFlying then
         FlyToggleBtn.Text = "FLY : ON"
@@ -1073,7 +1071,6 @@ StealToggleBtn.MouseButton1Click:Connect(function()
     SaveConfig()
 end)
 
--- Event Click Toggle Fly
 FlyMainToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
     FlyMiniFrame.Visible = PlayerState.FlyUIVisible
@@ -1087,14 +1084,6 @@ FlyMainToggleBtn.MouseButton1Click:Connect(function()
         PlayerState.IsFlying = false
         SynchronizeFlyStates()
     end
-    SaveConfig()
-end)
-
--- Event Click Auto 2x Clicker
-Auto2xToggleBtn.MouseButton1Click:Connect(function()
-    PlayerState.Auto2xClicker = not PlayerState.Auto2xClicker
-    Auto2xStatusLabel.Text = PlayerState.Auto2xClicker and "ON" or "OFF"
-    Auto2xStatusLabel.TextColor3 = PlayerState.Auto2xClicker and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
     SaveConfig()
 end)
 
