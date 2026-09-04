@@ -1,5 +1,5 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Fly Mini Controller Fix)
+    Script Name: faqih lua hub | jump for a egg (Config Fix)
     Credits: powered by faqih
 ]]--
 
@@ -28,8 +28,8 @@ local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
 
 -- Configuration State Default
 local PlayerState = {
-    FlyUIVisible = true, -- Default Mini Controller langsung tampil saat baru masuk
-    IsFlying = false,    -- Default kondisi Fly MATI/OFF saat baru masuk
+    FlyUIVisible = true,
+    IsFlying = false,
     FlySpeed = 350,
     Noclip = false,
     AutoFarmEgg = false,
@@ -47,7 +47,7 @@ local PlayerState = {
 }
 
 -- =================================================================
--- CONFIG SYSTEM (SAVE & LOAD)
+-- CONFIG SYSTEM (FIXED LOAD & SAVE)
 -- =================================================================
 local function SaveConfig()
     if writefile then
@@ -76,16 +76,24 @@ local function LoadConfig()
             if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
             if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
             if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
-            if result.SelectedRarities ~= nil then PlayerState.SelectedRarities = result.SelectedRarities end
-            if result.SelectedZones ~= nil then PlayerState.SelectedZones = result.SelectedZones end
+            if type(result.SelectedRarities) == "table" then
+                for k, v in pairs(result.SelectedRarities) do
+                    PlayerState.SelectedRarities[k] = v
+                end
+            end
+            if type(result.SelectedZones) == "table" then
+                for k, v in pairs(result.SelectedZones) do
+                    PlayerState.SelectedZones[k] = v
+                end
+            end
         end
     end
-    -- PAKSA TERBANG DALAM KONDISI OFF SAAT BARU MASUK SERVER
+    -- Reset paksa status terbang saat baru masuk server
     PlayerState.IsFlying = false
     PlayerState.FlyUIVisible = true
 end
 
--- Muat config sebelumnya
+-- Panggil LoadConfig secara eksplisit
 LoadConfig()
 
 -- Variabel Engine Controller untuk Fly
@@ -559,8 +567,8 @@ local FlyStatusLabel = Instance.new("TextLabel", FlyMainToggleBtn)
 FlyStatusLabel.Size = UDim2.new(0, 45, 1, 0)
 FlyStatusLabel.Position = UDim2.new(1, -50, 0, 0)
 FlyStatusLabel.BackgroundTransparency = 1
-FlyStatusLabel.Text = "ON"
-FlyStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
+FlyStatusLabel.Text = PlayerState.FlyUIVisible and "ON" or "OFF"
+FlyStatusLabel.TextColor3 = PlayerState.FlyUIVisible and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
 FlyStatusLabel.Font = Enum.Font.GothamBold
 FlyStatusLabel.TextSize = 11
 FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -857,7 +865,7 @@ FlyMiniFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
 FlyMiniFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 FlyMiniFrame.Active = true
 FlyMiniFrame.Draggable = true
-FlyMiniFrame.Visible = true -- Kotak Mini Controller LANGSUNG TAMPIL saat baru masuk
+FlyMiniFrame.Visible = PlayerState.FlyUIVisible
 FlyMiniFrame.ZIndex = 100
 
 local FlyMiniCorner = Instance.new("UICorner", FlyMiniFrame)
@@ -882,7 +890,7 @@ local FlyToggleBtn = Instance.new("TextButton", FlyMiniFrame)
 FlyToggleBtn.Size = UDim2.new(0.88, 0, 0, 30)
 FlyToggleBtn.Position = UDim2.new(0.06, 0, 0, 32)
 FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
-FlyToggleBtn.Text = "FLY : OFF" -- Status awal selalu OFF
+FlyToggleBtn.Text = "FLY : OFF"
 FlyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 FlyToggleBtn.Font = Enum.Font.GothamBold
 FlyToggleBtn.TextSize = 11
@@ -995,7 +1003,7 @@ StealToggleBtn.MouseButton1Click:Connect(function()
     SaveConfig()
 end)
 
--- Tombol Utama di Main UI (Tampilkan/Sembunyikan Mini Controller Sepenuhnya)
+-- Tombol Utama di Main UI
 FlyMainToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
     FlyMiniFrame.Visible = PlayerState.FlyUIVisible
@@ -1009,9 +1017,10 @@ FlyMainToggleBtn.MouseButton1Click:Connect(function()
         PlayerState.IsFlying = false
         SynchronizeFlyStates()
     end
+    SaveConfig()
 end)
 
--- Tombol ON/OFF di Mini Controller (HANYA Ubah Mode Fly, Mini Controller TETAP MUNCUL)
+-- Tombol ON/OFF di Mini Controller
 FlyToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.IsFlying = not PlayerState.IsFlying
     SynchronizeFlyStates()
