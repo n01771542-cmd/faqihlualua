@@ -1,5 +1,5 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Auto-Execute & Smart Egg Farm Edition - Auto Drop & Fixed Interaction)
+    Script Name: faqih lua hub | jump for a egg (Fly Mini Controller Fix)
     Credits: powered by faqih
 ]]--
 
@@ -24,11 +24,12 @@ if oldUI then oldUI:Destroy() end
 -- System Variables
 local SafeZoneBlock = nil
 local IsFarming = false
+local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
 
--- Configuration State
+-- Configuration State Default
 local PlayerState = {
-    FlyUIVisible = false,
-    IsFlying = false,
+    FlyUIVisible = true, -- Default Mini Controller langsung tampil saat baru masuk
+    IsFlying = false,    -- Default kondisi Fly MATI/OFF saat baru masuk
     FlySpeed = 350,
     Noclip = false,
     AutoFarmEgg = false,
@@ -45,6 +46,48 @@ local PlayerState = {
     }
 }
 
+-- =================================================================
+-- CONFIG SYSTEM (SAVE & LOAD)
+-- =================================================================
+local function SaveConfig()
+    if writefile then
+        local dataToSave = {
+            FlySpeed = PlayerState.FlySpeed,
+            Noclip = PlayerState.Noclip,
+            AutoFarmEgg = PlayerState.AutoFarmEgg,
+            StealPriority = PlayerState.StealPriority,
+            SelectedRarities = PlayerState.SelectedRarities,
+            SelectedZones = PlayerState.SelectedZones
+        }
+        pcall(function()
+            writefile(CONFIG_FILE_NAME, HttpService:JSONEncode(dataToSave))
+        end)
+    end
+end
+
+local function LoadConfig()
+    if readfile and isfile and isfile(CONFIG_FILE_NAME) then
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(readfile(CONFIG_FILE_NAME))
+        end)
+        
+        if success and type(result) == "table" then
+            if result.FlySpeed ~= nil then PlayerState.FlySpeed = result.FlySpeed end
+            if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
+            if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
+            if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
+            if result.SelectedRarities ~= nil then PlayerState.SelectedRarities = result.SelectedRarities end
+            if result.SelectedZones ~= nil then PlayerState.SelectedZones = result.SelectedZones end
+        end
+    end
+    -- PAKSA TERBANG DALAM KONDISI OFF SAAT BARU MASUK SERVER
+    PlayerState.IsFlying = false
+    PlayerState.FlyUIVisible = true
+end
+
+-- Muat config sebelumnya
+LoadConfig()
+
 -- Variabel Engine Controller untuk Fly
 local flyBodyVelocity, flyBodyGyro
 
@@ -58,6 +101,8 @@ local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/n01771542-cmd/faqihlua
 -- ADVANCED SERVER HOP ENGINE
 -- =================================================================
 local function ServerHopByCount(targetPlayerCount)
+    SaveConfig()
+
     local placeId = game.PlaceId
     local currentJobId = game.JobId
     
@@ -175,7 +220,7 @@ local function TeleportToSafeZone()
 end
 
 -- =================================================================
--- SMART EGG SCANNER & TELEPORT ENGINE (FIXED: DROP FIRST & 1x PRESS)
+-- SMART EGG SCANNER & TELEPORT ENGINE
 -- =================================================================
 local RarityPriority = {
     Ascended = 10, Eternal = 9, Celestial = 8, Divine = 7,
@@ -239,19 +284,15 @@ local function ProcessSmartEggTeleport()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     
     if hrp then
-        -- 1. Auto Drop item sebelum TP agar slot tangan kosong
         DropHeldItems()
         task.wait(0.1)
         
-        -- 2. Teleport ke Lokasi Telur
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
         hrp.CFrame = target.Part.CFrame + Vector3.new(0, 1.5, 0)
         
-        -- 3. Jeda sejenak agar server mengonfirmasi posisi karakter
         task.wait(0.25)
         
-        -- 4. Eksekusi Interaksi 1 Kali Sahaja
         local prompt = target.Prompt
         if fireproximityprompt then
             fireproximityprompt(prompt)
@@ -263,10 +304,8 @@ local function ProcessSmartEggTeleport()
             end)
         end
         
-        -- 5. Beri waktu agar server memproses telur ke tangan
         task.wait(0.4)
         
-        -- 6. Teleport balik ke Balok Gaib / Safe Zone
         TeleportToSafeZone()
         task.wait(0.2)
     end
@@ -274,7 +313,6 @@ local function ProcessSmartEggTeleport()
     IsFarming = false
 end
 
--- Loop Auto Farm
 task.spawn(function()
     while task.wait(0.4) do
         if PlayerState.AutoFarmEgg then
@@ -283,10 +321,9 @@ task.spawn(function()
     end
 end)
 
--- Setup Manual Interaction (Bila mendekati telur secara manual/pake fly)
 local function SetupPrompt(prompt)
     if prompt:IsA("ProximityPrompt") then
-        prompt.HoldDuration = 0 -- Mempercepat interaksi manual
+        prompt.HoldDuration = 0
         prompt.RequiresLineOfSight = false
         
         prompt.Triggered:Connect(function(playerWhoTriggered)
@@ -349,7 +386,7 @@ ScreenGui.Name = "FaluaLuaUI_v7"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = TargetGui
 
--- Toggle Button (Logo Aplikasi)
+-- Toggle Button
 local ToggleBtn = Instance.new("ImageButton", ScreenGui)
 ToggleBtn.Name = "ToggleImageBtn"
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -522,8 +559,8 @@ local FlyStatusLabel = Instance.new("TextLabel", FlyMainToggleBtn)
 FlyStatusLabel.Size = UDim2.new(0, 45, 1, 0)
 FlyStatusLabel.Position = UDim2.new(1, -50, 0, 0)
 FlyStatusLabel.BackgroundTransparency = 1
-FlyStatusLabel.Text = "OFF"
-FlyStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
+FlyStatusLabel.Text = "ON"
+FlyStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
 FlyStatusLabel.Font = Enum.Font.GothamBold
 FlyStatusLabel.TextSize = 11
 FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -574,8 +611,8 @@ local FarmStatusLabel = Instance.new("TextLabel", FarmMasterBtn)
 FarmStatusLabel.Size = UDim2.new(0, 45, 1, 0)
 FarmStatusLabel.Position = UDim2.new(1, -50, 0, 0)
 FarmStatusLabel.BackgroundTransparency = 1
-FarmStatusLabel.Text = "OFF"
-FarmStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
+FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
+FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
 FarmStatusLabel.Font = Enum.Font.GothamBold
 FarmStatusLabel.TextSize = 11
 FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -606,8 +643,8 @@ local StealStatusLabel = Instance.new("TextLabel", StealToggleBtn)
 StealStatusLabel.Size = UDim2.new(0, 45, 1, 0)
 StealStatusLabel.Position = UDim2.new(1, -50, 0, 0)
 StealStatusLabel.BackgroundTransparency = 1
-StealStatusLabel.Text = "ON"
-StealStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
+StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
+StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
 StealStatusLabel.Font = Enum.Font.GothamBold
 StealStatusLabel.TextSize = 10
 StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -649,6 +686,7 @@ for rName, enabled in pairs(PlayerState.SelectedRarities) do
     rBtn.MouseButton1Click:Connect(function()
         PlayerState.SelectedRarities[rName] = not PlayerState.SelectedRarities[rName]
         rBtn.BackgroundColor3 = PlayerState.SelectedRarities[rName] and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(40, 48, 64)
+        SaveConfig()
     end)
 end
 
@@ -705,7 +743,7 @@ for i = 1, 6 do
     hCorner.CornerRadius = UDim.new(0, 6)
     
     HopOptionBtn.MouseButton1Click:Connect(function()
-        HopStatusText.Text = "⏳ Teleporting + Auto Execute..."
+        HopStatusText.Text = "⏳ Saving Config & Teleporting..."
         HopStatusText.TextColor3 = Color3.fromRGB(251, 191, 36)
         ServerHopByCount(i)
     end)
@@ -765,9 +803,8 @@ local function AddInfoCard(titleText, descText)
     dLabel.ZIndex = 5
 end
 
-AddInfoCard("⚡ Smart Egg Teleport", "Otomatis memindai Egg terdekat/paling langka, TP, hold, drop ke base, lalu TP balik.")
-AddInfoCard("🎯 Filter Rarity & Priority", "Hanya memburu Rarity Egg yang di-aktifkan dan memprioritaskan Rarity tertinggi (Steal).")
-AddInfoCard("🔄 Auto Execute", "Script otomatis berjalan kembali setelah Server Hop.")
+AddInfoCard("⚡ Auto Save Config", "Setelan Auto Farm, Rarity, Speed tersimpan otomatis & dimuat ulang saat Hop Server.")
+AddInfoCard("🕊️ Fly Reset Protection", "Fly Mini Controller otomatis disetel ke FLY : OFF saat Hop Server agar tidak langsung terbang.")
 
 -- Switch Tab Manager
 local function SetActiveTab(selectedTab)
@@ -820,7 +857,7 @@ FlyMiniFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
 FlyMiniFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 FlyMiniFrame.Active = true
 FlyMiniFrame.Draggable = true
-FlyMiniFrame.Visible = false
+FlyMiniFrame.Visible = true -- Kotak Mini Controller LANGSUNG TAMPIL saat baru masuk
 FlyMiniFrame.ZIndex = 100
 
 local FlyMiniCorner = Instance.new("UICorner", FlyMiniFrame)
@@ -845,7 +882,7 @@ local FlyToggleBtn = Instance.new("TextButton", FlyMiniFrame)
 FlyToggleBtn.Size = UDim2.new(0.88, 0, 0, 30)
 FlyToggleBtn.Position = UDim2.new(0.06, 0, 0, 32)
 FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
-FlyToggleBtn.Text = "FLY : OFF"
+FlyToggleBtn.Text = "FLY : OFF" -- Status awal selalu OFF
 FlyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 FlyToggleBtn.Font = Enum.Font.GothamBold
 FlyToggleBtn.TextSize = 11
@@ -903,19 +940,14 @@ SpeedPlusCorner.CornerRadius = UDim.new(0, 4)
 -- HELPER FUNCTIONS & EVENT LISTENERS
 -- =================================================================
 
-local function UpdateFlyUI()
+local function SynchronizeFlyStates()
     if PlayerState.IsFlying then
         FlyToggleBtn.Text = "FLY : ON"
         FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
-        FlyStatusLabel.Text = "ON"
-        FlyStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
-        FlyMiniFrame.Visible = true
         StartFlyEngine()
     else
         FlyToggleBtn.Text = "FLY : OFF"
         FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
-        FlyStatusLabel.Text = "OFF"
-        FlyStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
         StopFlyEngine()
     end
 end
@@ -948,6 +980,7 @@ FarmMasterBtn.MouseButton1Click:Connect(function()
         FarmStatusLabel.Text = "OFF"
         FarmStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
     end
+    SaveConfig()
 end)
 
 StealToggleBtn.MouseButton1Click:Connect(function()
@@ -959,31 +992,42 @@ StealToggleBtn.MouseButton1Click:Connect(function()
         StealStatusLabel.Text = "OFF"
         StealStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
     end
+    SaveConfig()
 end)
 
+-- Tombol Utama di Main UI (Tampilkan/Sembunyikan Mini Controller Sepenuhnya)
 FlyMainToggleBtn.MouseButton1Click:Connect(function()
-    PlayerState.IsFlying = not PlayerState.IsFlying
-    UpdateFlyUI()
-    if not PlayerState.IsFlying then
-        FlyMiniFrame.Visible = false
+    PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
+    FlyMiniFrame.Visible = PlayerState.FlyUIVisible
+    
+    if PlayerState.FlyUIVisible then
+        FlyStatusLabel.Text = "ON"
+        FlyStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
+    else
+        FlyStatusLabel.Text = "OFF"
+        FlyStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
+        PlayerState.IsFlying = false
+        SynchronizeFlyStates()
     end
 end)
 
+-- Tombol ON/OFF di Mini Controller (HANYA Ubah Mode Fly, Mini Controller TETAP MUNCUL)
 FlyToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.IsFlying = not PlayerState.IsFlying
-    UpdateFlyUI()
-    FlyMiniFrame.Visible = true
+    SynchronizeFlyStates()
 end)
 
 SpeedPlus.MouseButton1Click:Connect(function()
     PlayerState.FlySpeed = PlayerState.FlySpeed + 10
     SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
+    SaveConfig()
 end)
 
 SpeedMinus.MouseButton1Click:Connect(function()
     if PlayerState.FlySpeed > 10 then
         PlayerState.FlySpeed = PlayerState.FlySpeed - 10
-        SpeedLabel.Tet = "Spd: " .. tostring(PlayerState.FlySpeed)
+        SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
+        SaveConfig()
     end
 end)
 
@@ -1023,3 +1067,4 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
+
