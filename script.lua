@@ -1,7 +1,7 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Strict Multi-Select Area & Collapsible Panels - Fixed Scroll + Auto Sell)
+    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Collapsible & Mini Fly UI Update)
     Credits: powered by faqih
-    Status: Re-Layout Egg Farm & Integrated Auto Sell Engine (Independent Scrolling Panels)
+    Feature Update: Auto Hop Server After Rarity Integrated
 ]]--
 
 local Players = game:GetService("Players")
@@ -10,17 +10,15 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Validasi LocalPlayer
 if not LocalPlayer then
     warn("[FAQIH HUB] LocalPlayer tidak ditemukan!")
     return
 end
 
--- Target UI Container dengan validasi
+-- Target UI Container
 local TargetGui
 pcall(function() 
     TargetGui = CoreGui 
@@ -33,145 +31,112 @@ if not TargetGui then
     return
 end
 
--- Cleanup Old UI
-local oldUI = TargetGui:FindFirstChild("FaluaLuaUI_v7")
+-- Cleanup Old UI Instances
+local oldUI = TargetGui:FindFirstChild("FaqihHubUI_v10") or TargetGui:FindFirstChild("FaluaLuaUI_v9")
 if oldUI then oldUI:Destroy() end
 
--- System Variables
+-- System Variables & Constants
 local SafeZoneBlock = nil
 local IsFarming = false
-local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
+local IsHopping = false
+local CONFIG_FILE_NAME = "FaqihHub_AutoSteal_Config.json"
 
--- Konstanta Bounds untuk FlySpeed
 local FLY_SPEED_MIN = 10
 local FLY_SPEED_MAX = 1000
-local FLY_SPEED_DEFAULT = 350
+local FLY_SPEED_DEFAULT = 100
 
--- Area Names - DEFINISI AUTHORITATIVE (Internal Keys)
+-- Authoritative Areas
 local VALID_AREAS = {
-    "Meadow",
-    "CoralReef",
-    "Winter",
-    "Desert",
-    "CrystalMines",
-    "Jungle",
-    "MysticIsles",
-    "Prehistoric",
-    "CelestialHeights",
-    "Savannah"
+    "Meadow", "CoralReef", "Winter", "Desert", "CrystalMines",
+    "Jungle", "MysticIsles", "Prehistoric", "CelestialHeights", "Savannah"
 }
 
--- Area Display Names
 local AREA_DISPLAY_NAMES = {
-    Meadow = "Meadow Area",
-    CoralReef = "Coral Reef Area",
-    Winter = "Winter Area",
-    Desert = "Desert Area",
-    CrystalMines = "Crystal Mines Area",
-    Jungle = "Jungle Area",
-    MysticIsles = "Mystic Isles Area",
-    Prehistoric = "Prehistoric Area",
-    CelestialHeights = "Celestial Heights Area",
-    Savannah = "Savannah Area"
+    Meadow = "🍃 Meadow", CoralReef = "🪸 Coral Reef", Winter = "❄️ Winter",
+    Desert = "🌵 Desert", CrystalMines = "💎 Crystal Mines", Jungle = "🌴 Jungle",
+    MysticIsles = "🎯 Mystic Isles", Prehistoric = "🦖 Prehistoric",
+    CelestialHeights = "☁️ Celestial Heights", Savannah = "🦁 Savannah"
 }
 
--- Area Detection Patterns (Flexible Matching)
 local AREA_PATTERNS = {
-    Meadow = {"meadow"},
-    CoralReef = {"coral", "reef"},
-    Winter = {"winter", "snow", "ice", "frozen"},
-    Desert = {"desert", "sand", "dune"},
-    CrystalMines = {"crystal", "mine", "gem"},
-    Jungle = {"jungle", "rainforest", "tropical"},
-    MysticIsles = {"mystic", "isle", "island"},
-    Prehistoric = {"prehistoric", "dino", "ancient"},
-    CelestialHeights = {"celestial", "heaven", "sky", "cloud"},
-    Savannah = {"savannah", "safari", "grassland"}
+    Meadow = {"meadow"}, CoralReef = {"coral", "reef"}, Winter = {"winter", "snow", "ice"},
+    Desert = {"desert", "sand"}, CrystalMines = {"crystal", "mine"}, Jungle = {"jungle"},
+    MysticIsles = {"mystic", "isle"}, Prehistoric = {"prehistoric", "dino"},
+    CelestialHeights = {"celestial", "sky"}, Savannah = {"savannah"}
+}
+
+local OrderedRarities = {
+    "Ascended", "Eternal", "Celestial", "Divine", "Mythic",
+    "Legendary", "Epic", "Rare", "Uncommon", "Common"
+}
+
+local RarityPriority = {
+    Ascended = 10, Eternal = 9, Celestial = 8, Divine = 7,
+    Mythic = 6, Legendary = 5, Epic = 4, Rare = 3, Uncommon = 2, Common = 1
+}
+
+local RarityColors = {
+    Common = Color3.fromRGB(203, 213, 225), Uncommon = Color3.fromRGB(34, 197, 94),
+    Rare = Color3.fromRGB(59, 130, 246), Epic = Color3.fromRGB(168, 85, 247),
+    Legendary = Color3.fromRGB(251, 191, 36), Mythic = Color3.fromRGB(239, 68, 68),
+    Divine = Color3.fromRGB(236, 72, 153), Celestial = Color3.fromRGB(6, 182, 212),
+    Eternal = Color3.fromRGB(99, 102, 241), Ascended = Color3.fromRGB(244, 63, 94)
 }
 
 -- Configuration State Default
 local PlayerState = {
-    FlyUIVisible = true,
+    FlyUIVisible = false,
     IsFlying = false,     
     FlySpeed = FLY_SPEED_DEFAULT,
-    Noclip = false,
-    AutoFarmEgg = false,
-    AutoSellEgg = false,
+    AutoSteal = true,
     StealPriority = true,
+    TargetMaxPlayers = 1,
+    AutoHopAfterRarity = false,
+    HopRarities = {
+        Common = false, Uncommon = false, Rare = false, Epic = false, Legendary = false,
+        Mythic = false, Divine = false, Celestial = false, Eternal = false, Ascended = false
+    },
     SelectedAreas = {
-        Meadow = true,
-        CoralReef = true,
-        Winter = true,
-        Desert = true,
-        CrystalMines = true,
-        Jungle = true,
-        MysticIsles = true,
-        Prehistoric = true,
-        CelestialHeights = true,
-        Savannah = true
+        Meadow = true, CoralReef = true, Winter = true, Desert = true, CrystalMines = true,
+        Jungle = true, MysticIsles = true, Prehistoric = true, CelestialHeights = true, Savannah = true
     },
     SelectedRarities = {
-        Common = true, Uncommon = true, Rare = true, Epic = true,
-        Legendary = true, Mythic = true, Divine = true, Celestial = true,
-        Eternal = true, Ascended = true
-    },
-    SelectedSellRarities = {
-        Common = false, Uncommon = false, Rare = false, Epic = false,
-        Legendary = false, Mythic = false, Divine = false, Celestial = false,
-        Eternal = false, Ascended = false
+        Common = true, Uncommon = true, Rare = true, Epic = true, Legendary = true,
+        Mythic = true, Divine = true, Celestial = true, Eternal = true, Ascended = true
     }
 }
 
 -- CONFIG SYSTEM
 local function SaveConfig()
     if not writefile then return end
-    
     local dataToSave = {
         FlyUIVisible = PlayerState.FlyUIVisible,
         FlySpeed = math.clamp(PlayerState.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX),
-        Noclip = PlayerState.Noclip,
-        AutoFarmEgg = PlayerState.AutoFarmEgg,
-        AutoSellEgg = PlayerState.AutoSellEgg,
+        AutoSteal = PlayerState.AutoSteal,
         StealPriority = PlayerState.StealPriority,
+        TargetMaxPlayers = PlayerState.TargetMaxPlayers,
+        AutoHopAfterRarity = PlayerState.AutoHopAfterRarity,
+        HopRarities = PlayerState.HopRarities,
         SelectedAreas = PlayerState.SelectedAreas,
-        SelectedRarities = PlayerState.SelectedRarities,
-        SelectedSellRarities = PlayerState.SelectedSellRarities
+        SelectedRarities = PlayerState.SelectedRarities
     }
-    
-    pcall(function()
-        writefile(CONFIG_FILE_NAME, HttpService:JSONEncode(dataToSave))
-    end)
+    pcall(function() writefile(CONFIG_FILE_NAME, HttpService:JSONEncode(dataToSave)) end)
 end
 
 local function LoadConfig()
-    if not (readfile and isfile and isfile(CONFIG_FILE_NAME)) then
-        return
-    end
-    
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(readfile(CONFIG_FILE_NAME))
-    end)
-    
+    if not (readfile and isfile and isfile(CONFIG_FILE_NAME)) then return end
+    local success, result = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE_NAME)) end)
     if success and type(result) == "table" then
         if result.FlyUIVisible ~= nil then PlayerState.FlyUIVisible = result.FlyUIVisible end
-        if result.FlySpeed ~= nil then 
-            PlayerState.FlySpeed = math.clamp(result.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX)
-        end
-        if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
-        if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
-        if result.AutoSellEgg ~= nil then PlayerState.AutoSellEgg = result.AutoSellEgg end
+        if result.FlySpeed ~= nil then PlayerState.FlySpeed = math.clamp(result.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX) end
+        if result.AutoSteal ~= nil then PlayerState.AutoSteal = result.AutoSteal end
         if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
-        if type(result.SelectedAreas) == "table" then
-            for k, v in pairs(result.SelectedAreas) do PlayerState.SelectedAreas[k] = v end
-        end
-        if type(result.SelectedRarities) == "table" then
-            for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end
-        end
-        if type(result.SelectedSellRarities) == "table" then
-            for k, v in pairs(result.SelectedSellRarities) do PlayerState.SelectedSellRarities[k] = v end
-        end
+        if result.TargetMaxPlayers ~= nil then PlayerState.TargetMaxPlayers = math.clamp(result.TargetMaxPlayers, 1, 6) end
+        if result.AutoHopAfterRarity ~= nil then PlayerState.AutoHopAfterRarity = result.AutoHopAfterRarity end
+        if type(result.HopRarities) == "table" then for k, v in pairs(result.HopRarities) do PlayerState.HopRarities[k] = v end end
+        if type(result.SelectedAreas) == "table" then for k, v in pairs(result.SelectedAreas) do PlayerState.SelectedAreas[k] = v end end
+        if type(result.SelectedRarities) == "table" then for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end end
     end
-    
     PlayerState.IsFlying = false
 end
 
@@ -181,18 +146,23 @@ local flyBodyVelocity, flyBodyGyro
 local CustomToggleImageAsset = "rbxthumb://type=Asset&id=136902684546260&w=150&h=150"
 local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/refs/heads/main/script.lua"
 
--- SERVER HOP
+-- SERVER HOP ENGINE
 local HopStatusText = nil
-
-local function ServerHopByCount(targetPlayerCount)
+local function PerformServerHop(overrideTargetPlayers)
+    if IsHopping then return end
+    IsHopping = true
     SaveConfig()
     
-    local placeId = game.PlaceId
-    local currentJobId = game.JobId
+    local targetPlayers = overrideTargetPlayers or PlayerState.TargetMaxPlayers
+    local placeId, currentJobId = game.PlaceId, game.JobId
+    if not placeId or not currentJobId then 
+        IsHopping = false
+        return 
+    end
     
-    if not placeId or not currentJobId then
-        warn("[FAQIH HUB] PlaceId atau JobId tidak valid!")
-        return
+    if HopStatusText then
+        HopStatusText.Text = string.format("⏳ Searching (%d Player)...", targetPlayers)
+        HopStatusText.TextColor3 = Color3.fromRGB(251, 191, 36)
     end
     
     local queueFunc = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
@@ -206,96 +176,53 @@ local function ServerHopByCount(targetPlayerCount)
         end)
     end
 
-    local success, response = pcall(function()
-        return game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100")
-    end)
-    
-    if not success or not response then
-        warn("[FAQIH HUB] Gagal mengambil data server dari Roblox API")
-        if HopStatusText then
-            HopStatusText.Text = "❌ Error: Gagal koneksi ke server API"
-            HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
-        end
-        return
-    end
-    
-    local decodeSuccess, result = pcall(function()
-        return HttpService:JSONDecode(response)
-    end)
-    
-    if decodeSuccess and result and result.data and type(result.data) == "table" then
-        local matchedServers = {}
-        local fallbackServers = {}
+    local maxRetries = 3
+    for attempt = 1, maxRetries do
+        local success, response = pcall(function()
+            return game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100")
+        end)
         
-        for _, server in ipairs(result.data) do
-            if type(server) == "table" and server.id and server.id ~= currentJobId and server.playing then
-                if server.playing == targetPlayerCount then
-                    table.insert(matchedServers, server.id)
-                elseif server.playing < 7 then
-                    table.insert(fallbackServers, server.id)
+        if success and response then
+            local decodeSuccess, result = pcall(function() return HttpService:JSONDecode(response) end)
+            if decodeSuccess and result and result.data then
+                local validServers = {}
+                for _, server in ipairs(result.data) do
+                    if server.id and server.id ~= currentJobId and server.playing then
+                        if server.playing <= targetPlayers and server.playing < server.maxPlayers then
+                            table.insert(validServers, server.id)
+                        end
+                    end
+                end
+                
+                if #validServers > 0 then
+                    if HopStatusText then
+                        HopStatusText.Text = "✅ Teleporting..."
+                        HopStatusText.TextColor3 = Color3.fromRGB(34, 197, 94)
+                    end
+                    task.wait(0.5)
+                    TeleportService:TeleportToPlaceInstance(placeId, validServers[math.random(1, #validServers)], LocalPlayer)
+                    return
                 end
             end
         end
-        
-        if #matchedServers > 0 then
-            if HopStatusText then
-                HopStatusText.Text = "✅ Server ditemukan! Teleporting..."
-                HopStatusText.TextColor3 = Color3.fromRGB(34, 197, 94)
-            end
-            task.wait(0.5)
-            pcall(function()
-                TeleportService:TeleportToPlaceInstance(placeId, matchedServers[math.random(1, #matchedServers)], LocalPlayer)
-            end)
-            return
-        elseif #fallbackServers > 0 then
-            if HopStatusText then
-                HopStatusText.Text = "⚠️ Server kepenuhan, menggunakan server alternatif..."
-                HopStatusText.TextColor3 = Color3.fromRGB(251, 191, 36)
-            end
-            task.wait(0.5)
-            pcall(function()
-                TeleportService:TeleportToPlaceInstance(placeId, fallbackServers[math.random(1, #fallbackServers)], LocalPlayer)
-            end)
-            return
-        else
-            warn("[FAQIH HUB] Tidak ada server yang tersedia untuk kriteria yang diminta")
-            if HopStatusText then
-                HopStatusText.Text = "❌ Tidak ada server tersedia untuk kriteria ini"
-                HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
-            end
-            return
-        end
-    else
-        warn("[FAQIH HUB] Gagal mendecode response dari API")
-        if HopStatusText then
-            HopStatusText.Text = "❌ Error: Data server tidak valid"
-            HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
-        end
-        return
+        task.wait(1)
     end
+
+    if HopStatusText then
+        HopStatusText.Text = "❌ Server Tidak Ditemukan"
+        HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
+    end
+    IsHopping = false
 end
 
--- SAFE ZONE SETUP
+-- SAFE ZONE ENGINE
 local function CreateSafeZoneAtCurrentPos()
-    local char = LocalPlayer.Character
-    if not char then
-        char = LocalPlayer.CharacterAdded:Wait()
-    end
-    
-    if not char then return end
-    
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        hrp = char:WaitForChild("HumanoidRootPart", 5)
-    end
-    
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
     if hrp then
-        if SafeZoneBlock and SafeZoneBlock.Parent then 
-            SafeZoneBlock:Destroy() 
-        end
-        
+        if SafeZoneBlock and SafeZoneBlock.Parent then SafeZoneBlock:Destroy() end
         SafeZoneBlock = Instance.new("Part")
-        SafeZoneBlock.Name = "SafeZoneBlock_Abdillah"
+        SafeZoneBlock.Name = "SafeZoneBlock_FaqihHub"
         SafeZoneBlock.Size = Vector3.new(12, 1, 12)
         SafeZoneBlock.CFrame = hrp.CFrame - Vector3.new(0, 2.5, 0)
         SafeZoneBlock.Anchored = true
@@ -311,201 +238,58 @@ LocalPlayer.CharacterAdded:Connect(function()
     CreateSafeZoneAtCurrentPos()
 end)
 
--- DROP HELD ITEMS
 local function DropHeldItems()
     local char = LocalPlayer.Character
     if not char then return end
-    
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then 
-            pcall(function()
-                hum:UnequipTools()
-            end)
-        end
-        
-        for _, item in ipairs(char:GetChildren()) do
-            if item and item:IsA("Tool") then
-                pcall(function()
-                    item.CanBeDropped = true
-                    item.Parent = workspace
-                end)
-            end
-        end
-    end
-    
-    if backpack then
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item and item:IsA("Tool") then
-                pcall(function()
-                    item.CanBeDropped = true
-                    item.Parent = workspace
-                end)
-            end
-        end
-    end
-    
-    local rep = ReplicatedStorage
-    if rep then
-        for _, name in ipairs({"DropItem", "Drop", "DropTool", "DropEgg", "RemoveItem"}) do
-            local dropRemote = rep:FindFirstChild(name, true)
-            if dropRemote and dropRemote:IsA("RemoteEvent") then
-                pcall(function() dropRemote:FireServer() end)
-            end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum:UnequipTools() end) end
+    for _, item in ipairs(char:GetChildren()) do
+        if item:IsA("Tool") then
+            pcall(function() item.CanBeDropped = true item.Parent = workspace end)
         end
     end
 end
-
--- AUTO SELL SYSTEM (DENGAN FILTER SELECTED SELL RARITIES)
-local function AutoSellEggs()
-    if not PlayerState.AutoSellEgg then return end
-    
-    local char = LocalPlayer.Character
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    if not char then return end
-    
-    -- Remote Detection
-    local sellRemote = nil
-    for _, name in ipairs({"SellEgg", "SellEggs", "SellItem", "Sell", "SellAll", "SellTools", "EggSell"}) do
-        local remote = ReplicatedStorage:FindFirstChild(name, true)
-        if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
-            sellRemote = remote
-            break
-        end
-    end
-
-    local itemsToProcess = {}
-    
-    local function CheckAndInsert(item)
-        if not item or not item:IsA("Tool") then return end
-        
-        local rarity = item:GetAttribute("Rarity")
-        if not rarity or type(rarity) ~= "string" then
-            local lowerName = string.lower(item.Name)
-            for rName, _ in pairs(PlayerState.SelectedSellRarities) do
-                if string.find(lowerName, string.lower(rName)) then 
-                    rarity = rName
-                    break
-                end
-            end
-        end
-        
-        if not rarity then rarity = "Common" end
-        
-        -- Hanya masukkan jika SelectedSellRarities[rarity] == true
-        if PlayerState.SelectedSellRarities[rarity] == true then
-            table.insert(itemsToProcess, item)
-        end
-    end
-
-    for _, item in ipairs(char:GetChildren()) do CheckAndInsert(item) end
-    if backpack then
-        for _, item in ipairs(backpack:GetChildren()) do CheckAndInsert(item) end
-    end
-
-    if #itemsToProcess == 0 then return end
-
-    for _, item in ipairs(itemsToProcess) do
-        if not PlayerState.AutoSellEgg then break end
-        pcall(function()
-            if sellRemote then
-                if sellRemote:IsA("RemoteEvent") then
-                    sellRemote:FireServer(item)
-                elseif sellRemote:IsA("RemoteFunction") then
-                    sellRemote:InvokeServer(item)
-                end
-            else
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum and item.Parent == backpack then
-                    hum:EquipTool(item)
-                    task.wait(0.02)
-                end
-                
-                local interactRemote = item:FindFirstChildWhichIsA("RemoteEvent", true) or item:FindFirstChildWhichIsA("RemoteFunction", true)
-                if interactRemote then
-                    if interactRemote:IsA("RemoteEvent") then
-                        interactRemote:FireServer("Sell")
-                    else
-                        interactRemote:InvokeServer("Sell")
-                    end
-                end
-            end
-        end)
-    end
-end
-
--- Loop Auto Sell
-task.spawn(function()
-    while task.wait(0.1) do
-        if PlayerState.AutoSellEgg then
-            pcall(AutoSellEggs)
-        end
-    end
-end)
 
 local function TeleportToSafeZone()
-    if not SafeZoneBlock or not SafeZoneBlock.Parent then 
-        CreateSafeZoneAtCurrentPos()
-    end
-    
+    if not SafeZoneBlock or not SafeZoneBlock.Parent then CreateSafeZoneAtCurrentPos() end
     local char = LocalPlayer.Character
-    if not char then return end
-    
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hrp and hum and hum.Health > 0 and SafeZoneBlock then
         pcall(function()
-            local targetCFrame = SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0)
             hrp.AssemblyLinearVelocity = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
-            hrp.CFrame = targetCFrame
+            hrp.CFrame = SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0)
         end)
-        
-        if PlayerState.AutoSellEgg then
-            AutoSellEggs()
-        else
-            DropHeldItems()
-        end
+        DropHeldItems()
     end
 end
 
--- DETEKSI EGG IN INVENTORY
 local function HasEggInInventory()
     local char = LocalPlayer.Character
-    if not char then return false end
-    
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    
     if char then
         for _, child in ipairs(char:GetChildren()) do
-            if child and child:IsA("Tool") then return true end
+            if child:IsA("Tool") then return true end
         end
     end
-    
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
     if backpack then
         for _, child in ipairs(backpack:GetChildren()) do
-            if child and child:IsA("Tool") then return true end
+            if child:IsA("Tool") then return true end
         end
     end
-    
     return false
 end
 
--- AREA ZONE DETECTION
+-- AREA DETECTION ENGINE
 local function DetectEggZone(eggModel)
     if not eggModel then return nil end
-    
     local function MatchPattern(str)
-        if not str or type(str) ~= "string" then return nil end
+        if not str then return nil end
         local lowerStr = string.lower(str)
         for areaKey, patterns in pairs(AREA_PATTERNS) do
             for _, pattern in ipairs(patterns) do
-                if string.find(lowerStr, pattern) then
-                    return areaKey
-                end
+                if string.find(lowerStr, pattern) then return areaKey end
             end
         end
         return nil
@@ -521,262 +305,212 @@ local function DetectEggZone(eggModel)
         if matched then return matched end
         parent = parent.Parent
     end
-    
-    matched = MatchPattern(eggModel.Name)
-    if matched then return matched end
-    
-    return nil
+    return MatchPattern(eggModel.Name)
 end
 
--- ADVANCED STEAL & VERIFIED TELEPORT ENGINE
-local RarityPriority = {
-    Ascended = 10, Eternal = 9, Celestial = 8, Divine = 7,
-    Mythic = 6, Legendary = 5, Epic = 4, Rare = 3,
-    Uncommon = 2, Common = 1
-}
-
+-- AUTO STEAL ENGINE
 local function GetValidEggTargets()
     local validTargets = {}
-    
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if not obj or not obj:IsA("ProximityPrompt") or not obj.Enabled then
-            continue
-        end
-        
+        if not obj:IsA("ProximityPrompt") or not obj.Enabled then continue end
         local eggModel = obj.Parent
-        while eggModel and eggModel ~= workspace and not eggModel:IsA("Model") do
-            eggModel = eggModel.Parent
-        end
-        
-        if not eggModel then continue end
+        while eggModel and eggModel ~= workspace and not eggModel:IsA("Model") do eggModel = eggModel.Parent end
+        if not eggModel or not eggModel.Parent then continue end
         
         local zone = DetectEggZone(eggModel)
-        if not zone or PlayerState.SelectedAreas[zone] ~= true then
-            continue
-        end
+        if not zone or PlayerState.SelectedAreas[zone] ~= true then continue end
         
-        local rarity = eggModel:GetAttribute("Rarity")
-        if not rarity or type(rarity) ~= "string" then
-            rarity = "Common"
-        end
-        
+        local rarity = eggModel:GetAttribute("Rarity") or "Common"
         local modelName = string.lower(eggModel.Name)
         for rName, _ in pairs(PlayerState.SelectedRarities) do
-            if string.find(modelName, string.lower(rName)) then 
-                rarity = rName 
-            end
+            if string.find(modelName, string.lower(rName)) then rarity = rName end
         end
         
-        if PlayerState.SelectedRarities[rarity] ~= true then
-            continue
-        end
+        if PlayerState.SelectedRarities[rarity] ~= true then continue end
         
-        local part = nil
-        if obj.Parent:IsA("BasePart") then
-            part = obj.Parent
-        else
-            part = eggModel:FindFirstChildWhichIsA("BasePart")
-        end
-        
-        if part then
+        local part = obj.Parent:IsA("BasePart") and obj.Parent or eggModel:FindFirstChildWhichIsA("BasePart")
+        if part and part.Parent then
             table.insert(validTargets, {
-                Prompt = obj,
-                Model = eggModel,
-                Rarity = rarity,
-                Zone = zone,
-                Priority = RarityPriority[rarity] or 1,
-                Part = part
+                Prompt = obj, Model = eggModel, Rarity = rarity, Zone = zone,
+                Priority = RarityPriority[rarity] or 1, Part = part
             })
         end
     end
     
     if PlayerState.StealPriority then
-        table.sort(validTargets, function(a, b) 
-            return a.Priority > b.Priority 
-        end)
+        table.sort(validTargets, function(a, b) return a.Priority > b.Priority end)
     end
-    
     return validTargets
 end
 
-local function ProcessSmartEggTeleport()
-    if IsFarming or not PlayerState.AutoFarmEgg then return end
+local function ProcessAutoSteal()
+    if IsFarming or IsHopping or not PlayerState.AutoSteal then return end
     
-    local targets = GetValidEggTargets()
-    if #targets == 0 then return end
-    
-    local target = targets[1]
-    if not target or not target.Part or not target.Prompt then return end
-    
+    -- Lock Thread/Target Engine
     IsFarming = true
+
+    local targets = GetValidEggTargets()
+    if #targets == 0 then 
+        IsFarming = false 
+        return 
+    end
+    
+    -- Lock 1 Target
+    local target = targets[1]
+    if not target or not target.Part or not target.Prompt or not target.Prompt.Enabled then 
+        IsFarming = false 
+        return 
+    end
     
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
     
-    if hrp then
-        pcall(function()
-            if not PlayerState.AutoSellEgg then
-                DropHeldItems()
-            end
-            task.wait(0.02)
-            
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.AssemblyAngularVelocity = Vector3.zero
-            hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
-            
-            local prompt = target.Prompt
-            if prompt then
-                prompt.HoldDuration = 0
-                prompt.RequiresLineOfSight = false
-            end
-            
-            local maxRetries = 15
-            local retryCount = 0
-            local eggAcquired = false
-            
-            repeat
-                retryCount = retryCount + 1
-                
-                if fireproximityprompt then
-                    fireproximityprompt(prompt)
-                else
-                    if prompt then
-                        prompt:InputHoldBegin()
-                        prompt:InputHoldEnd()
-                    end
-                end
-                
-                task.wait(0.04)
-                
-                if HasEggInInventory() or not prompt or not prompt.Parent or not prompt.Enabled then
-                    eggAcquired = true
-                    break
-                end
-            until retryCount >= maxRetries
-            
-            if eggAcquired then
-                TeleportToSafeZone()
-                task.wait(0.04)
-                if PlayerState.AutoSellEgg then
-                    AutoSellEggs()
-                else
-                    DropHeldItems()
-                end
-            end
-        end)
+    if not hrp or not hum or hum.Health <= 0 then 
+        IsFarming = false 
+        return 
     end
     
+    local stolenSuccessfully = false
+    local stolenRarity = target.Rarity
+
+    pcall(function()
+        DropHeldItems()
+        
+        -- 1. TELEPORT KE EGG
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
+        
+        -- 2. CEK POSISI (PASTIKAN SUDAH SAMPAI DEKAT EGG)
+        local arrived = false
+        local timeout = 0
+        repeat
+            task.wait(0.05)
+            timeout = timeout + 0.05
+            if not PlayerState.AutoSteal then break end
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local currentDist = (char.HumanoidRootPart.Position - target.Part.Position).Magnitude
+                if currentDist <= 12 then
+                    arrived = true
+                    break
+                else
+                    -- Re-teleport jika belum sampai
+                    char.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+                    char.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+                    char.HumanoidRootPart.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
+                end
+            end
+        until timeout >= 1.5
+
+        -- 3. JIKA BERHASIL SAMPAI, TUNGGU ±1 DETIK DULU
+        if arrived and PlayerState.AutoSteal then
+            task.wait(1.0)
+            
+            -- 4. AMBIL / STEAL EGG
+            if PlayerState.AutoSteal and target.Prompt and target.Prompt.Parent and target.Prompt.Enabled then
+                local prompt = target.Prompt
+                prompt.HoldDuration = 0
+                prompt.RequiresLineOfSight = false
+                
+                if fireproximityprompt then 
+                    fireproximityprompt(prompt)
+                else 
+                    prompt:InputHoldBegin() 
+                    prompt:InputHoldEnd() 
+                end
+                
+                -- WAKTU SANGAT SINGKAT AGAR PROSES DITERIMA SERVER
+                task.wait(0.15)
+                stolenSuccessfully = true
+            end
+        end
+
+        -- 5. TELEPORT KEMBALI KE SAFE ZONE
+        TeleportToSafeZone()
+    end)
+    
+    -- 6. CEK EVALUASI AUTO HOP AFTER RARITY
+    if stolenSuccessfully and PlayerState.AutoSteal and PlayerState.AutoHopAfterRarity then
+        local hasSelectedHopRarity = false
+        for _, selected in pairs(PlayerState.HopRarities) do
+            if selected == true then
+                hasSelectedHopRarity = true
+                break
+            end
+        end
+
+        if hasSelectedHopRarity and PlayerState.HopRarities[stolenRarity] == true then
+            task.wait(0.5)
+            IsFarming = false
+            PerformServerHop(1) -- Prioritaskan server tepat 1 player
+            return
+        end
+    end
+
+    -- 7. WAIT SEMINIMAL MUNGKIN SEBELUM PROSES NEXT TARGET
+    task.wait(0.05)
     IsFarming = false
 end
 
--- Loop Auto Farm
 task.spawn(function()
-    while task.wait(0.04) do
-        if PlayerState.AutoFarmEgg then
-            pcall(ProcessSmartEggTeleport)
+    while task.wait(0.05) do
+        if PlayerState.AutoSteal and not IsFarming and not IsHopping then 
+            pcall(ProcessAutoSteal) 
         end
     end
 end)
 
-local function SetupPrompt(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") then return end
-    
-    prompt.HoldDuration = 0
-    prompt.RequiresLineOfSight = false
-    
-    pcall(function()
-        prompt.Triggered:Connect(function(playerWhoTriggered)
-            if playerWhoTriggered == LocalPlayer and not PlayerState.AutoFarmEgg then
-                if PlayerState.AutoSellEgg then
-                    AutoSellEggs()
-                else
-                    DropHeldItems()
-                end
-                TeleportToSafeZone()
-            end
-        end)
-    end)
-end
-
-for _, prompt in pairs(workspace:GetDescendants()) do SetupPrompt(prompt) end
-workspace.DescendantAdded:Connect(SetupPrompt)
-
 -- FLY ENGINE
 local function StartFlyEngine()
     local char = LocalPlayer.Character
-    if not char then return end
-    
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
 
     pcall(function()
         hum.PlatformStand = true
+        if not flyBodyVelocity or not flyBodyVelocity.Parent then
+            flyBodyVelocity = Instance.new("BodyVelocity")
+            flyBodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            flyBodyVelocity.Velocity = Vector3.zero
+            flyBodyVelocity.Parent = hrp
+        end
 
-        flyBodyVelocity = Instance.new("BodyVelocity")
-        flyBodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-        flyBodyVelocity.Velocity = Vector3.zero
-        flyBodyVelocity.Parent = hrp
-
-        flyBodyGyro = Instance.new("BodyGyro")
-        flyBodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-        flyBodyGyro.P = 9e4
-        flyBodyGyro.CFrame = hrp.CFrame
-        flyBodyGyro.Parent = hrp
+        if not flyBodyGyro or not flyBodyGyro.Parent then
+            flyBodyGyro = Instance.new("BodyGyro")
+            flyBodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+            flyBodyGyro.P = 9e4
+            flyBodyGyro.CFrame = hrp.CFrame
+            flyBodyGyro.Parent = hrp
+        end
     end)
 end
 
 local function StopFlyEngine()
     pcall(function()
-        if flyBodyVelocity and flyBodyVelocity.Parent then 
-            flyBodyVelocity:Destroy() 
-        end
-        flyBodyVelocity = nil
-        
-        if flyBodyGyro and flyBodyGyro.Parent then 
-            flyBodyGyro:Destroy() 
-        end
-        flyBodyGyro = nil
+        if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+        if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = false end
     end)
-    
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then 
-            pcall(function()
-                hum.PlatformStand = false
-            end)
-        end
-        
-        if not PlayerState.Noclip then
-            for _, part in ipairs(char:GetChildren()) do
-                if part and part:IsA("BasePart") then 
-                    pcall(function()
-                        part.CanCollide = true
-                    end)
-                end
-            end
-        end
-    end
 end
 
 -- =================================================================
--- UI BASE SETUP
+-- ROBLOX GUI ENGINE
 -- =================================================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FaluaLuaUI_v7"
+ScreenGui.Name = "FaqihHubUI_v10"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = TargetGui
 
+-- Mini Icon Toggle Button
 local ToggleBtn = Instance.new("ImageButton", ScreenGui)
 ToggleBtn.Name = "ToggleImageBtn"
 ToggleBtn.Size = UDim2.new(0, 42, 0, 42)
-ToggleBtn.Position = UDim2.new(0.02, 0, 0.2, 0)
+ToggleBtn.Position = UDim2.new(0.02, 0, 0.15, 0)
 ToggleBtn.BackgroundTransparency = 1
-ToggleBtn.BorderSizePixel = 0
 ToggleBtn.Image = CustomToggleImageAsset
-ToggleBtn.ScaleType = Enum.ScaleType.Fit
 ToggleBtn.Active = true
 ToggleBtn.Draggable = true
 ToggleBtn.Visible = false
@@ -784,938 +518,874 @@ ToggleBtn.Visible = false
 local ToggleCorner = Instance.new("UICorner", ToggleBtn)
 ToggleCorner.CornerRadius = UDim.new(0, 8)
 
-local TeleportWindow = Instance.new("Frame", ScreenGui)
-TeleportWindow.Name = "TeleportWindow"
-TeleportWindow.Size = UDim2.new(0, 470, 0, 330)
-TeleportWindow.Position = UDim2.new(0.2, 0, 0.15, 0)
-TeleportWindow.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
-TeleportWindow.ClipsDescendants = true
-TeleportWindow.BorderSizePixel = 0
-TeleportWindow.Active = true
-TeleportWindow.Draggable = true
-TeleportWindow.Visible = true
+-- Main Container Window
+local MainWindow = Instance.new("Frame", ScreenGui)
+MainWindow.Name = "MainWindow"
+MainWindow.Size = UDim2.new(0, 520, 0, 410)
+MainWindow.Position = UDim2.new(0.5, -260, 0.5, -205)
+MainWindow.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+MainWindow.BorderSizePixel = 0
+MainWindow.Active = true
+MainWindow.Draggable = true
 
-local WindowCorner = Instance.new("UICorner", TeleportWindow)
-WindowCorner.CornerRadius = UDim.new(0, 10)
+local WindowCorner = Instance.new("UICorner", MainWindow)
+WindowCorner.CornerRadius = UDim.new(0, 16)
 
-local WindowStroke = Instance.new("UIStroke", TeleportWindow)
-WindowStroke.Color = Color3.fromRGB(70, 85, 110)
+local WindowStroke = Instance.new("UIStroke", MainWindow)
+WindowStroke.Color = Color3.fromRGB(30, 41, 59)
 WindowStroke.Thickness = 1
 
-local TopBar = Instance.new("Frame", TeleportWindow)
-TopBar.Name = "TopBar"
-TopBar.Size = UDim2.new(1, 0, 0, 28)
-TopBar.BackgroundColor3 = Color3.fromRGB(12, 15, 22)
-TopBar.BorderSizePixel = 0
-TopBar.ZIndex = 2
+-- Header
+local Header = Instance.new("Frame", MainWindow)
+Header.Size = UDim2.new(1, -32, 0, 40)
+Header.Position = UDim2.new(0, 16, 0, 12)
+Header.BackgroundTransparency = 1
 
-local TopBarCorner = Instance.new("UICorner", TopBar)
-TopBarCorner.CornerRadius = UDim.new(0, 10)
+local IconBox = Instance.new("Frame", Header)
+IconBox.Size = UDim2.new(0, 28, 0, 28)
+IconBox.Position = UDim2.new(0, 0, 0.5, -14)
+IconBox.BackgroundColor3 = Color3.fromRGB(37, 99, 235)
 
-local AppTitle = Instance.new("TextLabel", TopBar)
-AppTitle.Size = UDim2.new(1, -40, 1, 0)
-AppTitle.Position = UDim2.new(0, 10, 0, 0)
-AppTitle.BackgroundTransparency = 1
-AppTitle.Text = "faqih lua hub  |  jump for a egg"
-AppTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-AppTitle.Font = Enum.Font.GothamMedium
-AppTitle.TextSize = 10
-AppTitle.TextXAlignment = Enum.TextXAlignment.Left
-AppTitle.ZIndex = 3
+local IconCorner = Instance.new("UICorner", IconBox)
+IconCorner.CornerRadius = UDim.new(0, 8)
 
-local CloseMainBtn = Instance.new("TextButton", TopBar)
-CloseMainBtn.Size = UDim2.new(0, 20, 0, 20)
-CloseMainBtn.Position = UDim2.new(1, -24, 0.5, -10)
-CloseMainBtn.BackgroundTransparency = 1
-CloseMainBtn.Text = "x"
-CloseMainBtn.TextColor3 = Color3.fromRGB(220, 225, 235)
-CloseMainBtn.Font = Enum.Font.GothamBold
-CloseMainBtn.TextSize = 12
-CloseMainBtn.ZIndex = 3
+local IconLabel = Instance.new("TextLabel", IconBox)
+IconLabel.Size = UDim2.new(1, 0, 1, 0)
+IconLabel.BackgroundTransparency = 1
+IconLabel.Text = "🧊"
+IconLabel.TextSize = 14
 
-local Sidebar = Instance.new("Frame", TeleportWindow)
-Sidebar.Size = UDim2.new(0, 100, 1, -28)
-Sidebar.Position = UDim2.new(0, 0, 0, 28)
-Sidebar.BackgroundColor3 = Color3.fromRGB(14, 17, 24)
-Sidebar.BorderSizePixel = 0
-Sidebar.ZIndex = 2
+local TitleLabel = Instance.new("TextLabel", Header)
+TitleLabel.Size = UDim2.new(1, -80, 1, 0)
+TitleLabel.Position = UDim2.new(0, 36, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "FAQIH HUB <font color=\"#3B82F6\">— AUTO STEAL MASTER</font>"
+TitleLabel.RichText = true
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 13
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local SidebarLayout = Instance.new("UIListLayout", Sidebar)
-SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-SidebarLayout.Padding = UDim.new(0, 2)
+local CloseBtn = Instance.new("TextButton", Header)
+CloseBtn.Size = UDim2.new(0, 26, 0, 26)
+CloseBtn.Position = UDim2.new(1, -26, 0.5, -13)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+CloseBtn.Text = "—"
+CloseBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 12
 
-local SidebarPadding = Instance.new("UIPadding", Sidebar)
-SidebarPadding.PaddingTop = UDim.new(0, 6)
-SidebarPadding.PaddingLeft = UDim.new(0, 5)
+local CloseCorner = Instance.new("UICorner", CloseBtn)
+CloseCorner.CornerRadius = UDim.new(0, 6)
 
-local function CreateTabBtn(name)
-    local btn = Instance.new("TextButton", Sidebar)
-    btn.Size = UDim2.new(1, -5, 0, 26)
-    btn.BackgroundTransparency = 1
-    btn.BackgroundColor3 = Color3.fromRGB(35, 42, 58)
-    btn.Text = name
-    btn.TextColor3 = Color3.fromRGB(180, 190, 205)
-    btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 10
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.ZIndex = 3
+-- Main 2-Column Container
+local ContentGrid = Instance.new("Frame", MainWindow)
+ContentGrid.Size = UDim2.new(1, -32, 1, -68)
+ContentGrid.Position = UDim2.new(0, 16, 0, 56)
+ContentGrid.BackgroundTransparency = 1
+
+local LeftCol = Instance.new("ScrollingFrame", ContentGrid)
+LeftCol.Size = UDim2.new(0.485, 0, 1, 0)
+LeftCol.BackgroundTransparency = 1
+LeftCol.BorderSizePixel = 0
+LeftCol.ScrollBarThickness = 2
+LeftCol.ScrollBarImageColor3 = Color3.fromRGB(51, 65, 85)
+
+local LeftLayout = Instance.new("UIListLayout", LeftCol)
+LeftLayout.SortOrder = Enum.SortOrder.LayoutOrder
+LeftLayout.Padding = UDim.new(0, 10)
+
+local RightCol = Instance.new("ScrollingFrame", ContentGrid)
+RightCol.Size = UDim2.new(0.485, 0, 1, 0)
+RightCol.Position = UDim2.new(0.515, 0, 0, 0)
+RightCol.BackgroundTransparency = 1
+RightCol.BorderSizePixel = 0
+RightCol.ScrollBarThickness = 2
+RightCol.ScrollBarImageColor3 = Color3.fromRGB(51, 65, 85)
+
+local RightLayout = Instance.new("UIListLayout", RightCol)
+RightLayout.SortOrder = Enum.SortOrder.LayoutOrder
+RightLayout.Padding = UDim.new(0, 10)
+
+-- Helpers
+local function CreateCardBox(parent, height)
+    local box = Instance.new("Frame", parent)
+    box.Size = UDim2.new(1, -6, 0, height or 80)
+    box.BackgroundColor3 = Color3.fromRGB(17, 25, 39)
     
-    local pad = Instance.new("UIPadding", btn)
-    pad.PaddingLeft = UDim.new(0, 8)
-    local corner = Instance.new("UICorner", btn)
-    corner.CornerRadius = UDim.new(0, 5)
-    return btn
+    local corner = Instance.new("UICorner", box)
+    corner.CornerRadius = UDim.new(0, 12)
+    
+    local stroke = Instance.new("UIStroke", box)
+    stroke.Color = Color3.fromRGB(30, 41, 59)
+    stroke.Thickness = 1
+    return box
 end
 
-local MainTabBtn = CreateTabBtn("Main")
-local EggFarmTabBtn = CreateTabBtn("Egg Farm")
-local ServerHopTabBtn = CreateTabBtn("Server Hop")
-local InfoTabBtn = CreateTabBtn("Info / Fitur")
-
--- MAIN TAB
-local MainContent = Instance.new("Frame", TeleportWindow)
-MainContent.Size = UDim2.new(1, -106, 1, -34)
-MainContent.Position = UDim2.new(0, 103, 0, 30)
-MainContent.BackgroundTransparency = 1
-MainContent.Visible = true
-MainContent.ZIndex = 2
-
-local CardsContainer = Instance.new("Frame", MainContent)
-CardsContainer.Size = UDim2.new(1, 0, 1, 0)
-CardsContainer.BackgroundTransparency = 1
-CardsContainer.ZIndex = 2
-
-local CardsLayout = Instance.new("UIListLayout", CardsContainer)
-CardsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-CardsLayout.Padding = UDim.new(0, 6)
-
-local WelcomeCard = Instance.new("Frame", CardsContainer)
-WelcomeCard.Size = UDim2.new(1, -10, 0, 70)
-WelcomeCard.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-WelcomeCard.ZIndex = 3
-
-local WelcomeCorner = Instance.new("UICorner", WelcomeCard)
-WelcomeCorner.CornerRadius = UDim.new(0, 6)
-
-local WelcomeTitle = Instance.new("TextLabel", WelcomeCard)
-WelcomeTitle.Size = UDim2.new(1, -16, 0, 20)
-WelcomeTitle.Position = UDim2.new(0, 10, 0, 8)
-WelcomeTitle.BackgroundTransparency = 1
-WelcomeTitle.Text = "Welcome to Faqih Lua Hub! 👋"
-WelcomeTitle.TextColor3 = Color3.fromRGB(147, 197, 253)
-WelcomeTitle.Font = Enum.Font.GothamBold
-WelcomeTitle.TextSize = 11
-WelcomeTitle.TextXAlignment = Enum.TextXAlignment.Left
-WelcomeTitle.ZIndex = 4
-
-local WelcomeDesc = Instance.new("TextLabel", WelcomeCard)
-WelcomeDesc.Size = UDim2.new(1, -16, 0, 36)
-WelcomeDesc.Position = UDim2.new(0, 10, 0, 28)
-WelcomeDesc.BackgroundTransparency = 1
-WelcomeDesc.Text = "Semua kontrol Egg Farm, Fly Engine, Auto Sell, & Balok Gaib telah disatukan di tab 'Egg Farm' agar lebih praktis."
-WelcomeDesc.TextColor3 = Color3.fromRGB(200, 210, 225)
-WelcomeDesc.Font = Enum.Font.Gotham
-WelcomeDesc.TextSize = 9
-WelcomeDesc.TextWrapped = true
-WelcomeDesc.TextXAlignment = Enum.TextXAlignment.Left
-WelcomeDesc.ZIndex = 4
-
--- =================================================================
--- EGG FARM TAB
--- =================================================================
-local EggFarmContent = Instance.new("Frame", TeleportWindow)
-EggFarmContent.Size = UDim2.new(1, -106, 1, -34)
-EggFarmContent.Position = UDim2.new(0, 103, 0, 30)
-EggFarmContent.BackgroundTransparency = 1
-EggFarmContent.Visible = false
-EggFarmContent.ZIndex = 2
-EggFarmContent.ClipsDescendants = true
-
---------------------------------------------------------------------
--- SISI KIRI: CONTAINER FILTER (RARITY & AREA FILTER)
---------------------------------------------------------------------
-local LeftFiltersFrame = Instance.new("Frame", EggFarmContent)
-LeftFiltersFrame.Size = UDim2.new(0.48, -4, 1, -6)
-LeftFiltersFrame.Position = UDim2.new(0, 2, 0, 3)
-LeftFiltersFrame.BackgroundTransparency = 1
-LeftFiltersFrame.ZIndex = 3
-
-local LeftFiltersLayout = Instance.new("UIListLayout", LeftFiltersFrame)
-LeftFiltersLayout.SortOrder = Enum.SortOrder.LayoutOrder
-LeftFiltersLayout.Padding = UDim.new(0, 5)
-
--- HELPER: PEMBUATAN PANEL DENGAN INTERNAL SCROLLINGFRAME SENDIRI
-local function CreateScrollableCollapsiblePanel(parentFrame, titleText, layoutOrder, maxHeight)
-    maxHeight = maxHeight or 80
-
-    local panelFrame = Instance.new("Frame", parentFrame)
-    panelFrame.Size = UDim2.new(1, 0, 0, 26)
-    panelFrame.BackgroundColor3 = Color3.fromRGB(24, 30, 42)
-    panelFrame.BorderSizePixel = 0
-    panelFrame.LayoutOrder = layoutOrder
-    panelFrame.ClipsDescendants = true
-    panelFrame.ZIndex = 4
-
-    local panelCorner = Instance.new("UICorner", panelFrame)
-    panelCorner.CornerRadius = UDim.new(0, 6)
-
-    local panelStroke = Instance.new("UIStroke", panelFrame)
-    panelStroke.Color = Color3.fromRGB(45, 55, 75)
-    panelStroke.Thickness = 1
-
-    -- Header Button
-    local headerBtn = Instance.new("TextButton", panelFrame)
-    headerBtn.Size = UDim2.new(1, 0, 0, 26)
-    headerBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-    headerBtn.Text = ""
-    headerBtn.ZIndex = 5
-
-    local headerCorner = Instance.new("UICorner", headerBtn)
-    headerCorner.CornerRadius = UDim.new(0, 6)
-
-    local headerTitle = Instance.new("TextLabel", headerBtn)
-    headerTitle.Size = UDim2.new(1, -25, 1, 0)
-    headerTitle.Position = UDim2.new(0, 8, 0, 0)
-    headerTitle.BackgroundTransparency = 1
-    headerTitle.Text = titleText
-    headerTitle.TextColor3 = Color3.fromRGB(147, 197, 253)
-    headerTitle.Font = Enum.Font.GothamBold
-    headerTitle.TextSize = 8.5
-    headerTitle.TextXAlignment = Enum.TextXAlignment.Left
-    headerTitle.ZIndex = 6
-
-    local arrowLabel = Instance.new("TextLabel", headerBtn)
-    arrowLabel.Size = UDim2.new(0, 20, 1, 0)
-    arrowLabel.Position = UDim2.new(1, -22, 0, 0)
-    arrowLabel.BackgroundTransparency = 1
-    arrowLabel.Text = "<>"
-    arrowLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
-    arrowLabel.Font = Enum.Font.GothamBold
-    arrowLabel.TextSize = 8.5
-    arrowLabel.TextXAlignment = Enum.TextXAlignment.Center
-    arrowLabel.ZIndex = 6
-
-    -- Internal ScrollingFrame
-    local scrollFrame = Instance.new("ScrollingFrame", panelFrame)
-    scrollFrame.Size = UDim2.new(1, -6, 0, maxHeight)
-    scrollFrame.Position = UDim2.new(0, 3, 0, 28)
-    scrollFrame.BackgroundTransparency = 1
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 3
-    scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(129, 140, 248)
-    scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-    scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scrollFrame.Visible = false
-    scrollFrame.ZIndex = 5
-
-    local listLayout = Instance.new("UIListLayout", scrollFrame)
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 3)
-
-    local listPadding = Instance.new("UIPadding", scrollFrame)
-    listPadding.PaddingRight = UDim.new(0, 3)
-
-    local isOpen = false
-    headerBtn.MouseButton1Click:Connect(function()
-        isOpen = not isOpen
-        scrollFrame.Visible = isOpen
-        
-        local targetSize = isOpen and UDim2.new(1, 0, 0, 32 + maxHeight) or UDim2.new(1, 0, 0, 26)
-        TweenService:Create(panelFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Size = targetSize
+local function CreateSwitchToggle(parent, initialState, callback)
+    local switchBg = Instance.new("TextButton", parent)
+    switchBg.Size = UDim2.new(0, 40, 0, 20)
+    switchBg.BackgroundColor3 = initialState and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(51, 65, 85)
+    switchBg.Text = ""
+    
+    local swCorner = Instance.new("UICorner", switchBg)
+    swCorner.CornerRadius = UDim.new(1, 0)
+    
+    local knob = Instance.new("Frame", switchBg)
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = initialState and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    
+    local knobCorner = Instance.new("UICorner", knob)
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    
+    local state = initialState
+    switchBg.MouseButton1Click:Connect(function()
+        state = not state
+        switchBg.BackgroundColor3 = state and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(51, 65, 85)
+        TweenService:Create(knob, TweenInfo.new(0.15), {
+            Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
         }):Play()
+        if callback then callback(state) end
     end)
-
-    return scrollFrame
+    return switchBg
 end
-
--- 1. EGG RARITY FILTER PANEL (AUTO FARM)
-local RarityScroll = CreateScrollableCollapsiblePanel(LeftFiltersFrame, "Egg Rarity Filter", 1, 75)
-
-local OrderedRarities = {
-    "Ascended", "Eternal", "Celestial", "Divine", "Mythic",
-    "Legendary", "Epic", "Rare", "Uncommon", "Common"
-}
-
-for index, rName in ipairs(OrderedRarities) do
-    local isEnabled = PlayerState.SelectedRarities[rName] == true
-    
-    local rBtn = Instance.new("TextButton", RarityScroll)
-    rBtn.Size = UDim2.new(1, -4, 0, 20)
-    rBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
-    rBtn.Text = ""
-    rBtn.LayoutOrder = index
-    rBtn.ZIndex = 6
-    
-    local rCorner = Instance.new("UICorner", rBtn)
-    rCorner.CornerRadius = UDim.new(0, 4)
-    
-    local rNameLabel = Instance.new("TextLabel", rBtn)
-    rNameLabel.Size = UDim2.new(1, -32, 1, 0)
-    rNameLabel.Position = UDim2.new(0, 6, 0, 0)
-    rNameLabel.BackgroundTransparency = 1
-    rNameLabel.Text = rName
-    rNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
-    rNameLabel.Font = Enum.Font.GothamMedium
-    rNameLabel.TextSize = 8.5
-    rNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    rNameLabel.ZIndex = 7
-    
-    local rStatusLabel = Instance.new("TextLabel", rBtn)
-    rStatusLabel.Size = UDim2.new(0, 28, 1, 0)
-    rStatusLabel.Position = UDim2.new(1, -30, 0, 0)
-    rStatusLabel.BackgroundTransparency = 1
-    rStatusLabel.Text = isEnabled and "ON" or "OFF"
-    rStatusLabel.TextColor3 = isEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
-    rStatusLabel.Font = Enum.Font.GothamBold
-    rStatusLabel.TextSize = 8
-    rStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-    rStatusLabel.ZIndex = 7
-    
-    rBtn.MouseButton1Click:Connect(function()
-        local newState = not PlayerState.SelectedRarities[rName]
-        PlayerState.SelectedRarities[rName] = newState
-        
-        rBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
-        rStatusLabel.Text = newState and "ON" or "OFF"
-        rStatusLabel.TextColor3 = newState and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
-        
-        SaveConfig()
-    end)
-end
-
--- 2. AREA FILTER PANEL
-local AreaScroll = CreateScrollableCollapsiblePanel(LeftFiltersFrame, "Area Filter", 2, 75)
-
-for index, areaKey in ipairs(VALID_AREAS) do
-    local isSelected = PlayerState.SelectedAreas[areaKey] == true
-    local displayName = AREA_DISPLAY_NAMES[areaKey] or areaKey
-    
-    local aBtn = Instance.new("TextButton", AreaScroll)
-    aBtn.Size = UDim2.new(1, -4, 0, 20)
-    aBtn.BackgroundColor3 = isSelected and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
-    aBtn.Text = ""
-    aBtn.LayoutOrder = index
-    aBtn.ZIndex = 6
-    
-    local aCorner = Instance.new("UICorner", aBtn)
-    aCorner.CornerRadius = UDim.new(0, 4)
-    
-    local aNameLabel = Instance.new("TextLabel", aBtn)
-    aNameLabel.Size = UDim2.new(1, -6, 1, 0)
-    aNameLabel.Position = UDim2.new(0, 6, 0, 0)
-    aNameLabel.BackgroundTransparency = 1
-    aNameLabel.Text = (isSelected and "☑ " or "☐ ") .. displayName
-    aNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
-    aNameLabel.Font = Enum.Font.GothamMedium
-    aNameLabel.TextSize = 8.5
-    aNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    aNameLabel.ZIndex = 7
-    
-    aBtn.MouseButton1Click:Connect(function()
-        local newState = not PlayerState.SelectedAreas[areaKey]
-        PlayerState.SelectedAreas[areaKey] = newState
-        
-        aBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
-        aNameLabel.Text = (newState and "☑ " or "☐ ") .. displayName
-        
-        SaveConfig()
-    end)
-end
-
--- 3. EGG RARITY TO SELL PANEL (DESAIN BARU UNTUK AUTO SELL FILTER)
-local SellRarityScroll = CreateScrollableCollapsiblePanel(LeftFiltersFrame, "Egg Rarity to Sell", 3, 75)
-
-for index, rName in ipairs(OrderedRarities) do
-    local isEnabled = PlayerState.SelectedSellRarities[rName] == true
-    
-    local srBtn = Instance.new("TextButton", SellRarityScroll)
-    srBtn.Size = UDim2.new(1, -4, 0, 20)
-    srBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
-    srBtn.Text = ""
-    srBtn.LayoutOrder = index
-    srBtn.ZIndex = 6
-    
-    local srCorner = Instance.new("UICorner", srBtn)
-    srCorner.CornerRadius = UDim.new(0, 4)
-    
-    local srNameLabel = Instance.new("TextLabel", srBtn)
-    srNameLabel.Size = UDim2.new(1, -32, 1, 0)
-    srNameLabel.Position = UDim2.new(0, 6, 0, 0)
-    srNameLabel.BackgroundTransparency = 1
-    srNameLabel.Text = (isEnabled and "☑ " or "☐ ") .. rName
-    srNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
-    srNameLabel.Font = Enum.Font.GothamMedium
-    srNameLabel.TextSize = 8.5
-    srNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    srNameLabel.ZIndex = 7
-    
-    srBtn.MouseButton1Click:Connect(function()
-        local newState = not PlayerState.SelectedSellRarities[rName]
-        PlayerState.SelectedSellRarities[rName] = newState
-        
-        srBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
-        srNameLabel.Text = (newState and "☑ " or "☐ ") .. rName
-        
-        SaveConfig()
-    end)
-end
-
---------------------------------------------------------------------
--- SISI KANAN: CONTROLS
---------------------------------------------------------------------
-local RightControlsFrame = Instance.new("Frame", EggFarmContent)
-RightControlsFrame.Size = UDim2.new(0.50, -4, 1, -6)
-RightControlsFrame.Position = UDim2.new(0.50, 2, 0, 3)
-RightControlsFrame.BackgroundTransparency = 1
-RightControlsFrame.ZIndex = 3
-
-local RightControlsLayout = Instance.new("UIListLayout", RightControlsFrame)
-RightControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-RightControlsLayout.Padding = UDim.new(0, 5)
-
--- 1. Auto Farm Master Toggle
-local FarmMasterBtn = Instance.new("TextButton", RightControlsFrame)
-FarmMasterBtn.Size = UDim2.new(1, -4, 0, 28)
-FarmMasterBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-FarmMasterBtn.Text = ""
-FarmMasterBtn.LayoutOrder = 1
-FarmMasterBtn.ZIndex = 4
-
-local FarmMasterCorner = Instance.new("UICorner", FarmMasterBtn)
-FarmMasterCorner.CornerRadius = UDim.new(0, 6)
-
-local FarmMasterTitle = Instance.new("TextLabel", FarmMasterBtn)
-FarmMasterTitle.Size = UDim2.new(1, -45, 1, 0)
-FarmMasterTitle.Position = UDim2.new(0, 8, 0, 0)
-FarmMasterTitle.BackgroundTransparency = 1
-FarmMasterTitle.Text = "⚡ Auto Farm"
-FarmMasterTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-FarmMasterTitle.Font = Enum.Font.GothamBold
-FarmMasterTitle.TextSize = 9.5
-FarmMasterTitle.TextXAlignment = Enum.TextXAlignment.Left
-FarmMasterTitle.ZIndex = 5
-
-local FarmStatusLabel = Instance.new("TextLabel", FarmMasterBtn)
-FarmStatusLabel.Size = UDim2.new(0, 35, 1, 0)
-FarmStatusLabel.Position = UDim2.new(1, -40, 0, 0)
-FarmStatusLabel.BackgroundTransparency = 1
-FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
-FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-FarmStatusLabel.Font = Enum.Font.GothamBold
-FarmStatusLabel.TextSize = 9.5
-FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-FarmStatusLabel.ZIndex = 5
-
--- 2. Auto Sell Egg Toggle
-local SellToggleBtn = Instance.new("TextButton", RightControlsFrame)
-SellToggleBtn.Size = UDim2.new(1, -4, 0, 28)
-SellToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-SellToggleBtn.Text = ""
-SellToggleBtn.LayoutOrder = 2
-SellToggleBtn.ZIndex = 4
-
-local SellCorner = Instance.new("UICorner", SellToggleBtn)
-SellCorner.CornerRadius = UDim.new(0, 6)
-
-local SellTitle = Instance.new("TextLabel", SellToggleBtn)
-SellTitle.Size = UDim2.new(1, -45, 1, 0)
-SellTitle.Position = UDim2.new(0, 8, 0, 0)
-SellTitle.BackgroundTransparency = 1
-SellTitle.Text = "💰 Auto Sell Egg"
-SellTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-SellTitle.Font = Enum.Font.GothamBold
-SellTitle.TextSize = 9.5
-SellTitle.TextXAlignment = Enum.TextXAlignment.Left
-SellTitle.ZIndex = 5
-
-local SellStatusLabel = Instance.new("TextLabel", SellToggleBtn)
-SellStatusLabel.Size = UDim2.new(0, 35, 1, 0)
-SellStatusLabel.Position = UDim2.new(1, -40, 0, 0)
-SellStatusLabel.BackgroundTransparency = 1
-SellStatusLabel.Text = PlayerState.AutoSellEgg and "ON" or "OFF"
-SellStatusLabel.TextColor3 = PlayerState.AutoSellEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-SellStatusLabel.Font = Enum.Font.GothamBold
-SellStatusLabel.TextSize = 9.5
-SellStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-SellStatusLabel.ZIndex = 5
-
--- 3. Steal Priority Toggle
-local StealToggleBtn = Instance.new("TextButton", RightControlsFrame)
-StealToggleBtn.Size = UDim2.new(1, -4, 0, 28)
-StealToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-StealToggleBtn.Text = ""
-StealToggleBtn.LayoutOrder = 3
-StealToggleBtn.ZIndex = 4
-
-local StealCorner = Instance.new("UICorner", StealToggleBtn)
-StealCorner.CornerRadius = UDim.new(0, 6)
-
-local StealTitle = Instance.new("TextLabel", StealToggleBtn)
-StealTitle.Size = UDim2.new(1, -45, 1, 0)
-StealTitle.Position = UDim2.new(0, 8, 0, 0)
-StealTitle.BackgroundTransparency = 1
-StealTitle.Text = "🔥 Steal Priority"
-StealTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-StealTitle.Font = Enum.Font.GothamMedium
-StealTitle.TextSize = 9.5
-StealTitle.TextXAlignment = Enum.TextXAlignment.Left
-StealTitle.ZIndex = 5
-
-local StealStatusLabel = Instance.new("TextLabel", StealToggleBtn)
-StealStatusLabel.Size = UDim2.new(0, 35, 1, 0)
-StealStatusLabel.Position = UDim2.new(1, -40, 0, 0)
-StealStatusLabel.BackgroundTransparency = 1
-StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
-StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-StealStatusLabel.Font = Enum.Font.GothamBold
-StealStatusLabel.TextSize = 9.5
-StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-StealStatusLabel.ZIndex = 5
-
--- 4. Fly Controller Engine Toggle
-local FlyMainToggleBtn = Instance.new("TextButton", RightControlsFrame)
-FlyMainToggleBtn.Size = UDim2.new(1, -4, 0, 28)
-FlyMainToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-FlyMainToggleBtn.Text = ""
-FlyMainToggleBtn.LayoutOrder = 4
-FlyMainToggleBtn.ZIndex = 4
-
-local FlyMainCorner = Instance.new("UICorner", FlyMainToggleBtn)
-FlyMainCorner.CornerRadius = UDim.new(0, 6)
-
-local FlyMainTitle = Instance.new("TextLabel", FlyMainToggleBtn)
-FlyMainTitle.Size = UDim2.new(1, -55, 1, 0)
-FlyMainTitle.Position = UDim2.new(0, 8, 0, 0)
-FlyMainTitle.BackgroundTransparency = 1
-FlyMainTitle.Text = "🕊️ Fly Controller Engine"
-FlyMainTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-FlyMainTitle.Font = Enum.Font.GothamMedium
-FlyMainTitle.TextSize = 9.5
-FlyMainTitle.TextXAlignment = Enum.TextXAlignment.Left
-FlyMainTitle.ZIndex = 5
-
-local FlyStatusLabel = Instance.new("TextLabel", FlyMainToggleBtn)
-FlyStatusLabel.Size = UDim2.new(0, 40, 1, 0)
-FlyStatusLabel.Position = UDim2.new(1, -45, 0, 0)
-FlyStatusLabel.BackgroundTransparency = 1
-FlyStatusLabel.Text = PlayerState.FlyUIVisible and "ON" or "OFF"
-FlyStatusLabel.TextColor3 = PlayerState.FlyUIVisible and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-FlyStatusLabel.Font = Enum.Font.GothamBold
-FlyStatusLabel.TextSize = 9.5
-FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-FlyStatusLabel.ZIndex = 5
-
--- 5. Reset/Atur Ulang Balok Gaib
-local PlaceBlockBtn = Instance.new("TextButton", RightControlsFrame)
-PlaceBlockBtn.Size = UDim2.new(1, -4, 0, 28)
-PlaceBlockBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-PlaceBlockBtn.Text = ""
-PlaceBlockBtn.LayoutOrder = 5
-PlaceBlockBtn.ZIndex = 4
-
-local PlaceCorner = Instance.new("UICorner", PlaceBlockBtn)
-PlaceCorner.CornerRadius = UDim.new(0, 6)
-
-local PlaceTitle = Instance.new("TextLabel", PlaceBlockBtn)
-PlaceTitle.Size = UDim2.new(1, -10, 1, 0)
-PlaceTitle.Position = UDim2.new(0, 8, 0, 0)
-PlaceTitle.BackgroundTransparency = 1
-PlaceTitle.Text = "🧱 Reset/Atur Balok Gaib"
-PlaceTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-PlaceTitle.Font = Enum.Font.GothamMedium
-PlaceTitle.TextSize = 9.5
-PlaceTitle.TextXAlignment = Enum.TextXAlignment.Left
-PlaceTitle.ZIndex = 5
 
 -- =================================================================
--- SERVER HOP TAB
+-- INDEPENDENT FLY MINI CONTROLLER WINDOW (FLOATING)
 -- =================================================================
-local HopContent = Instance.new("Frame", TeleportWindow)
-HopContent.Size = UDim2.new(1, -106, 1, -34)
-HopContent.Position = UDim2.new(0, 103, 0, 30)
-HopContent.BackgroundTransparency = 1
-HopContent.Visible = false
-HopContent.ZIndex = 2
+local FlyMiniUI = Instance.new("Frame", ScreenGui)
+FlyMiniUI.Name = "FlyMiniController"
+FlyMiniUI.Size = UDim2.new(0, 210, 0, 65)
+FlyMiniUI.Position = UDim2.new(0.05, 0, 0.25, 0)
+FlyMiniUI.BackgroundColor3 = Color3.fromRGB(17, 25, 39)
+FlyMiniUI.Active = true
+FlyMiniUI.Draggable = true
+FlyMiniUI.Visible = PlayerState.FlyUIVisible
 
-local HopTitle = Instance.new("TextLabel", HopContent)
-HopTitle.Size = UDim2.new(1, 0, 0, 18)
+local MiniCorner = Instance.new("UICorner", FlyMiniUI)
+MiniCorner.CornerRadius = UDim.new(0, 10)
+
+local MiniStroke = Instance.new("UIStroke", FlyMiniUI)
+MiniStroke.Color = Color3.fromRGB(37, 99, 235)
+MiniStroke.Thickness = 1.5
+
+local MiniTitle = Instance.new("TextLabel", FlyMiniUI)
+MiniTitle.Size = UDim2.new(1, -12, 0, 16)
+MiniTitle.Position = UDim2.new(0, 8, 0, 4)
+MiniTitle.BackgroundTransparency = 1
+MiniTitle.Text = "🕊️ Fly Mini Controller"
+MiniTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+MiniTitle.Font = Enum.Font.GothamBold
+MiniTitle.TextSize = 9.5
+MiniTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local MiniActiveBtn = Instance.new("TextButton", FlyMiniUI)
+MiniActiveBtn.Size = UDim2.new(0, 95, 0, 26)
+MiniActiveBtn.Position = UDim2.new(0, 8, 0, 26)
+MiniActiveBtn.BackgroundColor3 = PlayerState.IsFlying and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(225, 29, 72)
+MiniActiveBtn.Text = PlayerState.IsFlying and "FLYING : ON" or "FLYING : OFF"
+MiniActiveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MiniActiveBtn.Font = Enum.Font.GothamBold
+MiniActiveBtn.TextSize = 8.5
+
+local MiniActiveCorner = Instance.new("UICorner", MiniActiveBtn)
+MiniActiveCorner.CornerRadius = UDim.new(0, 6)
+
+local MiniSpeedBox = Instance.new("TextBox", FlyMiniUI)
+MiniSpeedBox.Size = UDim2.new(0, 85, 0, 26)
+MiniSpeedBox.Position = UDim2.new(0, 110, 0, 26)
+MiniSpeedBox.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+MiniSpeedBox.Text = tostring(PlayerState.FlySpeed)
+MiniSpeedBox.TextColor3 = Color3.fromRGB(59, 130, 246)
+MiniSpeedBox.Font = Enum.Font.GothamBold
+MiniSpeedBox.TextSize = 9.5
+
+local MiniSpeedCorner = Instance.new("UICorner", MiniSpeedBox)
+MiniSpeedCorner.CornerRadius = UDim.new(0, 6)
+
+local MiniSpeedStroke = Instance.new("UIStroke", MiniSpeedBox)
+MiniSpeedStroke.Color = Color3.fromRGB(30, 41, 59)
+
+-- Function Sync Helper
+local function SyncFlyStateUI()
+    MiniActiveBtn.BackgroundColor3 = PlayerState.IsFlying and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(225, 29, 72)
+    MiniActiveBtn.Text = PlayerState.IsFlying and "FLYING : ON" or "FLYING : OFF"
+    MiniSpeedBox.Text = tostring(PlayerState.FlySpeed)
+end
+
+MiniActiveBtn.MouseButton1Click:Connect(function()
+    PlayerState.IsFlying = not PlayerState.IsFlying
+    SyncFlyStateUI()
+    if PlayerState.IsFlying then StartFlyEngine() else StopFlyEngine() end
+end)
+
+MiniSpeedBox.FocusLost:Connect(function()
+    local val = tonumber(MiniSpeedBox.Text)
+    if val then
+        PlayerState.FlySpeed = math.clamp(val, FLY_SPEED_MIN, FLY_SPEED_MAX)
+        SaveConfig()
+    end
+    SyncFlyStateUI()
+end)
+
+-- =================================================================
+-- LEFT COLUMN CONTENT
+-- =================================================================
+
+-- 1. Fly Switch Box (Main Window)
+local FlyBox = CreateCardBox(LeftCol, 60)
+
+local FlyHeader = Instance.new("Frame", FlyBox)
+FlyHeader.Size = UDim2.new(1, -20, 0, 36)
+FlyHeader.Position = UDim2.new(0, 10, 0.5, -18)
+FlyHeader.BackgroundTransparency = 1
+
+local FlyBadge = Instance.new("TextLabel", FlyHeader)
+FlyBadge.Size = UDim2.new(0, 30, 0, 30)
+FlyBadge.BackgroundColor3 = Color3.fromRGB(30, 58, 138)
+FlyBadge.Text = "🕊️"
+FlyBadge.TextSize = 14
+
+local FlyBadgeCorner = Instance.new("UICorner", FlyBadge)
+FlyBadgeCorner.CornerRadius = UDim.new(1, 0)
+
+local FlyTitle = Instance.new("TextLabel", FlyHeader)
+FlyTitle.Size = UDim2.new(1, -85, 0, 16)
+FlyTitle.Position = UDim2.new(0, 36, 0, 0)
+FlyTitle.BackgroundTransparency = 1
+FlyTitle.Text = "Fly Controller"
+FlyTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlyTitle.Font = Enum.Font.GothamBold
+FlyTitle.TextSize = 11
+FlyTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local FlySub = Instance.new("TextLabel", FlyHeader)
+FlySub.Size = UDim2.new(1, -85, 0, 12)
+FlySub.Position = UDim2.new(0, 36, 0, 16)
+FlySub.BackgroundTransparency = 1
+FlySub.Text = "Tampilkan Fly Controller melayang"
+FlySub.TextColor3 = Color3.fromRGB(148, 163, 184)
+FlySub.Font = Enum.Font.Gotham
+FlySub.TextSize = 8
+FlySub.TextXAlignment = Enum.TextXAlignment.Left
+
+local FlySwitchHolder = Instance.new("Frame", FlyHeader)
+FlySwitchHolder.Size = UDim2.new(0, 40, 0, 20)
+FlySwitchHolder.Position = UDim2.new(1, -40, 0.5, -10)
+FlySwitchHolder.BackgroundTransparency = 1
+
+CreateSwitchToggle(FlySwitchHolder, PlayerState.FlyUIVisible, function(val)
+    PlayerState.FlyUIVisible = val
+    FlyMiniUI.Visible = val
+    if not val then
+        PlayerState.IsFlying = false
+        StopFlyEngine()
+        SyncFlyStateUI()
+    end
+    SaveConfig()
+end)
+
+-- 2. Safe Zone Box
+local SafeBox = CreateCardBox(LeftCol, 60)
+
+local SafeIcon = Instance.new("TextLabel", SafeBox)
+SafeIcon.Size = UDim2.new(0, 30, 0, 30)
+SafeIcon.Position = UDim2.new(0, 10, 0.5, -15)
+SafeIcon.BackgroundColor3 = Color3.fromRGB(88, 28, 135)
+SafeIcon.Text = "🔄"
+SafeIcon.TextSize = 13
+
+local SafeIconCorner = Instance.new("UICorner", SafeIcon)
+SafeIconCorner.CornerRadius = UDim.new(1, 0)
+
+local SafeTitle = Instance.new("TextLabel", SafeBox)
+SafeTitle.Size = UDim2.new(1, -130, 0, 16)
+SafeTitle.Position = UDim2.new(0, 48, 0, 13)
+SafeTitle.BackgroundTransparency = 1
+SafeTitle.Text = "Menaruh Ulang Balok"
+SafeTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+SafeTitle.Font = Enum.Font.GothamBold
+SafeTitle.TextSize = 10
+SafeTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local SafeSub = Instance.new("TextLabel", SafeBox)
+SafeSub.Size = UDim2.new(1, -130, 0, 12)
+SafeSub.Position = UDim2.new(0, 48, 0, 29)
+SafeSub.BackgroundTransparency = 1
+SafeSub.Text = "Letakkan balok ke posisi"
+SafeSub.TextColor3 = Color3.fromRGB(148, 163, 184)
+SafeSub.Font = Enum.Font.Gotham
+SafeSub.TextSize = 8
+SafeSub.TextXAlignment = Enum.TextXAlignment.Left
+
+local ResetBalokBtn = Instance.new("TextButton", SafeBox)
+ResetBalokBtn.Size = UDim2.new(0, 65, 0, 26)
+ResetBalokBtn.Position = UDim2.new(1, -73, 0.5, -13)
+ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(79, 70, 229)
+ResetBalokBtn.Text = "Reset"
+ResetBalokBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ResetBalokBtn.Font = Enum.Font.GothamBold
+ResetBalokBtn.TextSize = 9
+
+local ResetCorner = Instance.new("UICorner", ResetBalokBtn)
+ResetCorner.CornerRadius = UDim.new(0, 6)
+
+ResetBalokBtn.MouseButton1Click:Connect(function()
+    CreateSafeZoneAtCurrentPos()
+    ResetBalokBtn.Text = "✔ Done!"
+    ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
+    task.wait(1.2)
+    ResetBalokBtn.Text = "Reset"
+    ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(79, 70, 229)
+end)
+
+-- 3. Server Hop Box
+local HopBox = CreateCardBox(LeftCol, 115)
+
+local HopHeader = Instance.new("Frame", HopBox)
+HopHeader.Size = UDim2.new(1, -20, 0, 36)
+HopHeader.Position = UDim2.new(0, 10, 0, 8)
+HopHeader.BackgroundTransparency = 1
+
+local HopIcon = Instance.new("TextLabel", HopHeader)
+HopIcon.Size = UDim2.new(0, 30, 0, 30)
+HopIcon.BackgroundColor3 = Color3.fromRGB(6, 78, 59)
+HopIcon.Text = "🌐"
+HopIcon.TextSize = 13
+
+local HopIconCorner = Instance.new("UICorner", HopIcon)
+HopIconCorner.CornerRadius = UDim.new(1, 0)
+
+local HopTitle = Instance.new("TextLabel", HopHeader)
+HopTitle.Size = UDim2.new(1, -40, 0, 16)
+HopTitle.Position = UDim2.new(0, 38, 0, 0)
 HopTitle.BackgroundTransparency = 1
-HopTitle.Text = "Server Hop (Pilih Jumlah Player)"
+HopTitle.Text = "Server Hop"
 HopTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 HopTitle.Font = Enum.Font.GothamBold
-HopTitle.TextSize = 10.5
+HopTitle.TextSize = 11
 HopTitle.TextXAlignment = Enum.TextXAlignment.Left
-HopTitle.ZIndex = 3
 
-HopStatusText = Instance.new("TextLabel", HopContent)
-HopStatusText.Size = UDim2.new(1, -10, 0, 16)
-HopStatusText.Position = UDim2.new(0, 0, 0, 18)
+local HopSub = Instance.new("TextLabel", HopHeader)
+HopSub.Size = UDim2.new(1, -40, 0, 12)
+HopSub.Position = UDim2.new(0, 38, 0, 16)
+HopSub.BackgroundTransparency = 1
+HopSub.Text = "Cari server lain dengan pemain baru"
+HopSub.TextColor3 = Color3.fromRGB(148, 163, 184)
+HopSub.Font = Enum.Font.Gotham
+HopSub.TextSize = 8
+HopSub.TextXAlignment = Enum.TextXAlignment.Left
+
+local HopSelector = Instance.new("Frame", HopBox)
+HopSelector.Size = UDim2.new(1, -20, 0, 26)
+HopSelector.Position = UDim2.new(0, 10, 0, 46)
+HopSelector.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+
+local HopSelectorCorner = Instance.new("UICorner", HopSelector)
+HopSelectorCorner.CornerRadius = UDim.new(0, 6)
+
+local BtnPrev = Instance.new("TextButton", HopSelector)
+BtnPrev.Size = UDim2.new(0, 24, 1, 0)
+BtnPrev.BackgroundTransparency = 1
+BtnPrev.Text = "◄"
+BtnPrev.TextColor3 = Color3.fromRGB(148, 163, 184)
+BtnPrev.Font = Enum.Font.GothamBold
+BtnPrev.TextSize = 9
+
+local BtnNext = Instance.new("TextButton", HopSelector)
+BtnNext.Size = UDim2.new(0, 24, 1, 0)
+BtnNext.Position = UDim2.new(1, -24, 0, 0)
+BtnNext.BackgroundTransparency = 1
+BtnNext.Text = "►"
+BtnNext.TextColor3 = Color3.fromRGB(148, 163, 184)
+BtnNext.Font = Enum.Font.GothamBold
+BtnNext.TextSize = 9
+
+local PlayerCountText = Instance.new("TextLabel", HopSelector)
+PlayerCountText.Size = UDim2.new(1, -48, 1, 0)
+PlayerCountText.Position = UDim2.new(0, 24, 0, 0)
+PlayerCountText.BackgroundTransparency = 1
+PlayerCountText.Text = string.format("%d Player", PlayerState.TargetMaxPlayers)
+PlayerCountText.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerCountText.Font = Enum.Font.GothamMedium
+PlayerCountText.TextSize = 9
+
+BtnPrev.MouseButton1Click:Connect(function()
+    if PlayerState.TargetMaxPlayers > 1 then
+        PlayerState.TargetMaxPlayers = PlayerState.TargetMaxPlayers - 1
+        PlayerCountText.Text = string.format("%d Player", PlayerState.TargetMaxPlayers)
+        SaveConfig()
+    end
+end)
+
+BtnNext.MouseButton1Click:Connect(function()
+    if PlayerState.TargetMaxPlayers < 6 then
+        PlayerState.TargetMaxPlayers = PlayerState.TargetMaxPlayers + 1
+        PlayerCountText.Text = string.format("%d Player", PlayerState.TargetMaxPlayers)
+        SaveConfig()
+    end
+end)
+
+local ExecuteHopBtn = Instance.new("TextButton", HopBox)
+ExecuteHopBtn.Size = UDim2.new(1, -20, 0, 24)
+ExecuteHopBtn.Position = UDim2.new(0, 10, 0, 78)
+ExecuteHopBtn.BackgroundColor3 = Color3.fromRGB(37, 99, 235)
+ExecuteHopBtn.Text = "Cari Server"
+ExecuteHopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ExecuteHopBtn.Font = Enum.Font.GothamBold
+ExecuteHopBtn.TextSize = 9
+
+local ExecuteCorner = Instance.new("UICorner", ExecuteHopBtn)
+ExecuteCorner.CornerRadius = UDim.new(0, 6)
+
+HopStatusText = Instance.new("TextLabel", HopBox)
+HopStatusText.Size = UDim2.new(1, 0, 0, 10)
+HopStatusText.Position = UDim2.new(0, 0, 1, -12)
 HopStatusText.BackgroundTransparency = 1
-HopStatusText.Text = "Pilih server berdasarkan target pemain:"
-HopStatusText.TextColor3 = Color3.fromRGB(180, 190, 205)
+HopStatusText.Text = "Pilih jumlah pemain (1 - 6)"
+HopStatusText.TextColor3 = Color3.fromRGB(100, 116, 139)
 HopStatusText.Font = Enum.Font.Gotham
-HopStatusText.TextSize = 8.5
-HopStatusText.TextXAlignment = Enum.TextXAlignment.Left
-HopStatusText.ZIndex = 3
+HopStatusText.TextSize = 7.5
 
-local GridHopContainer = Instance.new("Frame", HopContent)
-GridHopContainer.Size = UDim2.new(1, -10, 1, -40)
-GridHopContainer.Position = UDim2.new(0, 0, 0, 36)
-GridHopContainer.BackgroundTransparency = 1
-GridHopContainer.ZIndex = 3
+ExecuteHopBtn.MouseButton1Click:Connect(function()
+    PerformServerHop()
+end)
 
-local GridHopLayout = Instance.new("UIGridLayout", GridHopContainer)
-GridHopLayout.CellSize = UDim2.new(0.48, -4, 0, 30)
-GridHopLayout.CellPadding = UDim2.new(0.04, 0, 0, 6)
+-- 4. Auto Hop Server After Rarity Box
+local HopRarityBox = CreateCardBox(LeftCol, 175)
 
-for i = 1, 6 do
-    local HopOptionBtn = Instance.new("TextButton", GridHopContainer)
-    HopOptionBtn.Name = "HopBtn_" .. tostring(i)
-    HopOptionBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-    HopOptionBtn.Text = "👤 " .. tostring(i) .. " Player"
-    HopOptionBtn.TextColor3 = Color3.fromRGB(240, 245, 255)
-    HopOptionBtn.Font = Enum.Font.GothamMedium
-    HopOptionBtn.TextSize = 9.5
-    HopOptionBtn.ZIndex = 4
+local HopRarityHeader = Instance.new("Frame", HopRarityBox)
+HopRarityHeader.Size = UDim2.new(1, -20, 0, 36)
+HopRarityHeader.Position = UDim2.new(0, 10, 0, 8)
+HopRarityHeader.BackgroundTransparency = 1
+
+local HopRarityIcon = Instance.new("TextLabel", HopRarityHeader)
+HopRarityIcon.Size = UDim2.new(0, 30, 0, 30)
+HopRarityIcon.BackgroundColor3 = Color3.fromRGB(217, 119, 6)
+HopRarityIcon.Text = "⚡"
+HopRarityIcon.TextSize = 13
+
+local HopRarityIconCorner = Instance.new("UICorner", HopRarityIcon)
+HopRarityIconCorner.CornerRadius = UDim.new(1, 0)
+
+local HopRarityTitle = Instance.new("TextLabel", HopRarityHeader)
+HopRarityTitle.Size = UDim2.new(1, -90, 0, 16)
+HopRarityTitle.Position = UDim2.new(0, 38, 0, 0)
+HopRarityTitle.BackgroundTransparency = 1
+HopRarityTitle.Text = "Auto Hop Server"
+HopRarityTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+HopRarityTitle.Font = Enum.Font.GothamBold
+HopRarityTitle.TextSize = 10
+HopRarityTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local HopRaritySub = Instance.new("TextLabel", HopRarityHeader)
+HopRaritySub.Size = UDim2.new(1, -90, 0, 12)
+HopRaritySub.Position = UDim2.new(0, 38, 0, 16)
+HopRaritySub.BackgroundTransparency = 1
+HopRaritySub.Text = "Hop saat dapat Rarity tertentu"
+HopRaritySub.TextColor3 = Color3.fromRGB(148, 163, 184)
+HopRaritySub.Font = Enum.Font.Gotham
+HopRaritySub.TextSize = 8
+HopRaritySub.TextXAlignment = Enum.TextXAlignment.Left
+
+local HopRaritySwitchHolder = Instance.new("Frame", HopRarityHeader)
+HopRaritySwitchHolder.Size = UDim2.new(0, 40, 0, 20)
+HopRaritySwitchHolder.Position = UDim2.new(1, -40, 0.5, -10)
+HopRaritySwitchHolder.BackgroundTransparency = 1
+
+CreateSwitchToggle(HopRaritySwitchHolder, PlayerState.AutoHopAfterRarity, function(val)
+    PlayerState.AutoHopAfterRarity = val
+    SaveConfig()
+end)
+
+local HopRarityCollapseBtn = Instance.new("TextButton", HopRarityHeader)
+HopRarityCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+HopRarityCollapseBtn.Position = UDim2.new(1, -70, 0.5, -12)
+HopRarityCollapseBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+HopRarityCollapseBtn.Text = "v"
+HopRarityCollapseBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+HopRarityCollapseBtn.Font = Enum.Font.GothamBold
+HopRarityCollapseBtn.TextSize = 10
+
+local HopRarityBtnCorner = Instance.new("UICorner", HopRarityCollapseBtn)
+HopRarityBtnCorner.CornerRadius = UDim.new(0, 6)
+
+local HopRarityScroll = Instance.new("ScrollingFrame", HopRarityBox)
+HopRarityScroll.Size = UDim2.new(1, -20, 0, 120)
+HopRarityScroll.Position = UDim2.new(0, 10, 0, 46)
+HopRarityScroll.BackgroundTransparency = 1
+HopRarityScroll.BorderSizePixel = 0
+HopRarityScroll.ScrollBarThickness = 2
+
+local HopRarityGrid = Instance.new("UIGridLayout", HopRarityScroll)
+HopRarityGrid.CellSize = UDim2.new(0.48, 0, 0, 24)
+HopRarityGrid.CellPadding = UDim2.new(0.04, 0, 0, 4)
+
+local isHopRarityExpanded = true
+HopRarityCollapseBtn.MouseButton1Click:Connect(function()
+    isHopRarityExpanded = not isHopRarityExpanded
+    HopRarityScroll.Visible = isHopRarityExpanded
+    HopRarityCollapseBtn.Text = isHopRarityExpanded and "v" or "^"
+    TweenService:Create(HopRarityBox, TweenInfo.new(0.2), {
+        Size = isHopRarityExpanded and UDim2.new(1, -6, 0, 175) or UDim2.new(1, -6, 0, 52)
+    }):Play()
+end)
+
+for _, rName in ipairs(OrderedRarities) do
+    local isChecked = PlayerState.HopRarities[rName] == true
     
-    local hCorner = Instance.new("UICorner", HopOptionBtn)
-    hCorner.CornerRadius = UDim.new(0, 6)
+    local itemFrame = Instance.new("TextButton", HopRarityScroll)
+    itemFrame.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+    itemFrame.Text = ""
     
-    HopOptionBtn.MouseButton1Click:Connect(function()
-        HopStatusText.Text = "⏳ Saving Config & Teleporting..."
-        HopStatusText.TextColor3 = Color3.fromRGB(251, 191, 36)
-        ServerHopByCount(i)
+    local itemCorner = Instance.new("UICorner", itemFrame)
+    itemCorner.CornerRadius = UDim.new(0, 6)
+    
+    local dot = Instance.new("Frame", itemFrame)
+    dot.Size = UDim2.new(0, 6, 0, 6)
+    dot.Position = UDim2.new(0, 8, 0.5, -3)
+    dot.BackgroundColor3 = RarityColors[rName] or Color3.fromRGB(255, 255, 255)
+    
+    local dotCorner = Instance.new("UICorner", dot)
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    
+    local itemLabel = Instance.new("TextLabel", itemFrame)
+    itemLabel.Size = UDim2.new(1, -34, 1, 0)
+    itemLabel.Position = UDim2.new(0, 18, 0, 0)
+    itemLabel.BackgroundTransparency = 1
+    itemLabel.Text = rName
+    itemLabel.TextColor3 = Color3.fromRGB(226, 232, 240)
+    itemLabel.Font = Enum.Font.GothamMedium
+    itemLabel.TextSize = 8
+    itemLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local chkBox = Instance.new("Frame", itemFrame)
+    chkBox.Size = UDim2.new(0, 12, 0, 12)
+    chkBox.Position = UDim2.new(1, -16, 0.5, -6)
+    chkBox.BackgroundColor3 = isChecked and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(30, 41, 59)
+    
+    local chkCorner = Instance.new("UICorner", chkBox)
+    chkCorner.CornerRadius = UDim.new(0, 3)
+    
+    itemFrame.MouseButton1Click:Connect(function()
+        local newState = not PlayerState.HopRarities[rName]
+        PlayerState.HopRarities[rName] = newState
+        chkBox.BackgroundColor3 = newState and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(30, 41, 59)
+        SaveConfig()
     end)
 end
 
 -- =================================================================
--- INFO TAB
+-- RIGHT COLUMN CONTENT
 -- =================================================================
-local InfoContent = Instance.new("Frame", TeleportWindow)
-InfoContent.Size = UDim2.new(1, -106, 1, -34)
-InfoContent.Position = UDim2.new(0, 103, 0, 30)
-InfoContent.BackgroundTransparency = 1
-InfoContent.Visible = false
-InfoContent.ZIndex = 2
 
-local ScrollInfo = Instance.new("ScrollingFrame", InfoContent)
-ScrollInfo.Size = UDim2.new(1, -5, 1, 0)
-ScrollInfo.BackgroundTransparency = 1
-ScrollInfo.BorderSizePixel = 0
-ScrollInfo.ScrollBarThickness = 3
-ScrollInfo.CanvasSize = UDim2.new(0, 0, 0, 260)
-ScrollInfo.ZIndex = 3
+-- 1. Auto Steal Box
+local StealBox = CreateCardBox(RightCol, 60)
 
-local InfoLayout = Instance.new("UIListLayout", ScrollInfo)
-InfoLayout.SortOrder = Enum.SortOrder.LayoutOrder
-InfoLayout.Padding = UDim.new(0, 5)
+local StealIcon = Instance.new("TextLabel", StealBox)
+StealIcon.Size = UDim2.new(0, 30, 0, 30)
+StealIcon.Position = UDim2.new(0, 10, 0.5, -15)
+StealIcon.BackgroundColor3 = Color3.fromRGB(6, 78, 59)
+StealIcon.Text = "🥷"
+StealIcon.TextSize = 13
 
-local function AddInfoCard(titleText, descText)
-    local card = Instance.new("Frame", ScrollInfo)
-    card.Size = UDim2.new(1, -10, 0, 46)
-    card.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-    card.ZIndex = 4
+local StealIconCorner = Instance.new("UICorner", StealIcon)
+StealIconCorner.CornerRadius = UDim.new(1, 0)
+
+local StealTitle = Instance.new("TextLabel", StealBox)
+StealTitle.Size = UDim2.new(1, -90, 0, 16)
+StealTitle.Position = UDim2.new(0, 48, 0, 13)
+StealTitle.BackgroundTransparency = 1
+StealTitle.Text = "Auto Steal"
+StealTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+StealTitle.Font = Enum.Font.GothamBold
+StealTitle.TextSize = 10
+StealTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local StealSub = Instance.new("TextLabel", StealBox)
+StealSub.Size = UDim2.new(1, -90, 0, 12)
+StealSub.Position = UDim2.new(0, 48, 0, 29)
+StealSub.BackgroundTransparency = 1
+StealSub.Text = "Otomatis mencuri Egg"
+StealSub.TextColor3 = Color3.fromRGB(148, 163, 184)
+StealSub.Font = Enum.Font.Gotham
+StealSub.TextSize = 8
+StealSub.TextXAlignment = Enum.TextXAlignment.Left
+
+local StealSwitchHolder = Instance.new("Frame", StealBox)
+StealSwitchHolder.Size = UDim2.new(0, 40, 0, 20)
+StealSwitchHolder.Position = UDim2.new(1, -48, 0.5, -10)
+StealSwitchHolder.BackgroundTransparency = 1
+
+CreateSwitchToggle(StealSwitchHolder, PlayerState.AutoSteal, function(val)
+    PlayerState.AutoSteal = val
+    SaveConfig()
+end)
+
+-- 2. Collapsible Area Filter Box
+local AreaBox = CreateCardBox(RightCol, 175)
+
+local AreaHeader = Instance.new("Frame", AreaBox)
+AreaHeader.Size = UDim2.new(1, -20, 0, 36)
+AreaHeader.Position = UDim2.new(0, 10, 0, 8)
+AreaHeader.BackgroundTransparency = 1
+
+local AreaIcon = Instance.new("TextLabel", AreaHeader)
+AreaIcon.Size = UDim2.new(0, 30, 0, 30)
+AreaIcon.BackgroundColor3 = Color3.fromRGB(30, 58, 138)
+AreaIcon.Text = "📍"
+AreaIcon.TextSize = 13
+
+local AreaIconCorner = Instance.new("UICorner", AreaIcon)
+AreaIconCorner.CornerRadius = UDim.new(1, 0)
+
+local AreaTitle = Instance.new("TextLabel", AreaHeader)
+AreaTitle.Size = UDim2.new(1, -70, 0, 16)
+AreaTitle.Position = UDim2.new(0, 38, 0, 0)
+AreaTitle.BackgroundTransparency = 1
+AreaTitle.Text = "Area Egg"
+AreaTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+AreaTitle.Font = Enum.Font.GothamBold
+AreaTitle.TextSize = 10
+AreaTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local AreaSub = Instance.new("TextLabel", AreaHeader)
+AreaSub.Size = UDim2.new(1, -70, 0, 12)
+AreaSub.Position = UDim2.new(0, 38, 0, 16)
+AreaSub.BackgroundTransparency = 1
+AreaSub.Text = "Pilih area yang diizinkan"
+AreaSub.TextColor3 = Color3.fromRGB(148, 163, 184)
+AreaSub.Font = Enum.Font.Gotham
+AreaSub.TextSize = 8
+AreaSub.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Area Collapse Toggle Button (<>)
+local AreaCollapseBtn = Instance.new("TextButton", AreaHeader)
+AreaCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+AreaCollapseBtn.Position = UDim2.new(1, -24, 0.5, -12)
+AreaCollapseBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+AreaCollapseBtn.Text = "v"
+AreaCollapseBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+AreaCollapseBtn.Font = Enum.Font.GothamBold
+AreaCollapseBtn.TextSize = 10
+
+local AreaBtnCorner = Instance.new("UICorner", AreaCollapseBtn)
+AreaBtnCorner.CornerRadius = UDim.new(0, 6)
+
+local AreaScroll = Instance.new("ScrollingFrame", AreaBox)
+AreaScroll.Size = UDim2.new(1, -20, 0, 120)
+AreaScroll.Position = UDim2.new(0, 10, 0, 46)
+AreaScroll.BackgroundTransparency = 1
+AreaScroll.BorderSizePixel = 0
+AreaScroll.ScrollBarThickness = 2
+
+local AreaGrid = Instance.new("UIGridLayout", AreaScroll)
+AreaGrid.CellSize = UDim2.new(0.48, 0, 0, 24)
+AreaGrid.CellPadding = UDim2.new(0.04, 0, 0, 4)
+
+local isAreaExpanded = true
+AreaCollapseBtn.MouseButton1Click:Connect(function()
+    isAreaExpanded = not isAreaExpanded
+    AreaScroll.Visible = isAreaExpanded
+    AreaCollapseBtn.Text = isAreaExpanded and "v" or "^"
+    TweenService:Create(AreaBox, TweenInfo.new(0.2), {
+        Size = isAreaExpanded and UDim2.new(1, -6, 0, 175) or UDim2.new(1, -6, 0, 52)
+    }):Play()
+end)
+
+for _, areaKey in ipairs(VALID_AREAS) do
+    local isChecked = PlayerState.SelectedAreas[areaKey] == true
+    local dispName = AREA_DISPLAY_NAMES[areaKey] or areaKey
     
-    local cCorner = Instance.new("UICorner", card)
-    cCorner.CornerRadius = UDim.new(0, 6)
+    local itemFrame = Instance.new("TextButton", AreaScroll)
+    itemFrame.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+    itemFrame.Text = ""
     
-    local tLabel = Instance.new("TextLabel", card)
-    tLabel.Size = UDim2.new(1, -12, 0, 16)
-    tLabel.Position = UDim2.new(0, 6, 0, 4)
-    tLabel.BackgroundTransparency = 1
-    tLabel.Text = titleText
-    tLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
-    tLabel.Font = Enum.Font.GothamBold
-    tLabel.TextSize = 8.5
-    tLabel.TextXAlignment = Enum.TextXAlignment.Left
-    tLabel.ZIndex = 5
+    local itemCorner = Instance.new("UICorner", itemFrame)
+    itemCorner.CornerRadius = UDim.new(0, 6)
     
-    local dLabel = Instance.new("TextLabel", card)
-    dLabel.Size = UDim2.new(1, -12, 0, 22)
-    dLabel.Position = UDim2.new(0, 6, 0, 18)
-    dLabel.BackgroundTransparency = 1
-    dLabel.Text = descText
-    dLabel.TextColor3 = Color3.fromRGB(220, 225, 235)
-    dLabel.Font = Enum.Font.Gotham
-    dLabel.TextSize = 7.5
-    dLabel.TextWrapped = true
-    dLabel.TextXAlignment = Enum.TextXAlignment.Left
-    dLabel.TextYAlignment = Enum.TextYAlignment.Top
-    dLabel.ZIndex = 5
+    local itemLabel = Instance.new("TextLabel", itemFrame)
+    itemLabel.Size = UDim2.new(1, -22, 1, 0)
+    itemLabel.Position = UDim2.new(0, 6, 0, 0)
+    itemLabel.BackgroundTransparency = 1
+    itemLabel.Text = dispName
+    itemLabel.TextColor3 = Color3.fromRGB(226, 232, 240)
+    itemLabel.Font = Enum.Font.GothamMedium
+    itemLabel.TextSize = 8
+    itemLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local chkBox = Instance.new("Frame", itemFrame)
+    chkBox.Size = UDim2.new(0, 12, 0, 12)
+    chkBox.Position = UDim2.new(1, -16, 0.5, -6)
+    chkBox.BackgroundColor3 = isChecked and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(30, 41, 59)
+    
+    local chkCorner = Instance.new("UICorner", chkBox)
+    chkCorner.CornerRadius = UDim.new(0, 3)
+    
+    itemFrame.MouseButton1Click:Connect(function()
+        local newState = not PlayerState.SelectedAreas[areaKey]
+        PlayerState.SelectedAreas[areaKey] = newState
+        chkBox.BackgroundColor3 = newState and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(30, 41, 59)
+        SaveConfig()
+    end)
 end
 
-AddInfoCard("💰 Independent Auto Sell Engine", "Menjual egg secara selektif menggunakan filter 'Egg Rarity to Sell' terpisah.")
-AddInfoCard("⚡ Instant Teleport & Drop", "Sistem drop otomatis mengosongkan slot hotbar agar tidak melebihi kapasitas.")
-AddInfoCard("🕊️ Safe Zone Active", "Setelah mengambil telur, karakter langsung balik ke SafeZone secara stabil.")
-AddInfoCard("🎯 Independent Scroll Filter", "Panel Area & Rarity masing-masing memiliki ScrollBar internal sendiri.")
-AddInfoCard("✅ Strict Validation", "Auto Steal memfilter area & rarity secara bersamaan sebelum memilih target.")
+-- 3. Collapsible Rarity Filter Box
+local RarityBox = CreateCardBox(RightCol, 175)
 
--- TAB MANAGER
-local function SetActiveTab(selectedTab)
-    MainTabBtn.BackgroundTransparency = 1
-    MainTabBtn.TextColor3 = Color3.fromRGB(180, 190, 205)
-    EggFarmTabBtn.BackgroundTransparency = 1
-    EggFarmTabBtn.TextColor3 = Color3.fromRGB(180, 190, 205)
-    ServerHopTabBtn.BackgroundTransparency = 1
-    ServerHopTabBtn.TextColor3 = Color3.fromRGB(180, 190, 205)
-    InfoTabBtn.BackgroundTransparency = 1
-    InfoTabBtn.TextColor3 = Color3.fromRGB(180, 190, 205)
+local RarityHeader = Instance.new("Frame", RarityBox)
+RarityHeader.Size = UDim2.new(1, -20, 0, 36)
+RarityHeader.Position = UDim2.new(0, 10, 0, 8)
+RarityHeader.BackgroundTransparency = 1
+
+local RarityIcon = Instance.new("TextLabel", RarityHeader)
+RarityIcon.Size = UDim2.new(0, 30, 0, 30)
+RarityIcon.BackgroundColor3 = Color3.fromRGB(88, 28, 135)
+RarityIcon.Text = "💎"
+RarityIcon.TextSize = 13
+
+local RarityIconCorner = Instance.new("UICorner", RarityIcon)
+RarityIconCorner.CornerRadius = UDim.new(1, 0)
+
+local RarityTitle = Instance.new("TextLabel", RarityHeader)
+RarityTitle.Size = UDim2.new(1, -70, 0, 16)
+RarityTitle.Position = UDim2.new(0, 38, 0, 0)
+RarityTitle.BackgroundTransparency = 1
+RarityTitle.Text = "Egg Rarity"
+RarityTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+RarityTitle.Font = Enum.Font.GothamBold
+RarityTitle.TextSize = 10
+RarityTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local RaritySub = Instance.new("TextLabel", RarityHeader)
+RaritySub.Size = UDim2.new(1, -70, 0, 12)
+RaritySub.Position = UDim2.new(0, 38, 0, 16)
+RaritySub.BackgroundTransparency = 1
+RaritySub.Text = "Pilih rarity Egg yang diizinkan"
+RaritySub.TextColor3 = Color3.fromRGB(148, 163, 184)
+RaritySub.Font = Enum.Font.Gotham
+RaritySub.TextSize = 8
+RaritySub.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Rarity Collapse Toggle Button (<>)
+local RarityCollapseBtn = Instance.new("TextButton", RarityHeader)
+RarityCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
+RarityCollapseBtn.Position = UDim2.new(1, -24, 0.5, -12)
+RarityCollapseBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+RarityCollapseBtn.Text = "v"
+RarityCollapseBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+RarityCollapseBtn.Font = Enum.Font.GothamBold
+RarityCollapseBtn.TextSize = 10
+
+local RarityBtnCorner = Instance.new("UICorner", RarityCollapseBtn)
+RarityBtnCorner.CornerRadius = UDim.new(0, 6)
+
+local RarityScroll = Instance.new("ScrollingFrame", RarityBox)
+RarityScroll.Size = UDim2.new(1, -20, 0, 120)
+RarityScroll.Position = UDim2.new(0, 10, 0, 46)
+RarityScroll.BackgroundTransparency = 1
+RarityScroll.BorderSizePixel = 0
+RarityScroll.ScrollBarThickness = 2
+
+local RarityGrid = Instance.new("UIGridLayout", RarityScroll)
+RarityGrid.CellSize = UDim2.new(0.48, 0, 0, 24)
+RarityGrid.CellPadding = UDim2.new(0.04, 0, 0, 4)
+
+local isRarityExpanded = true
+RarityCollapseBtn.MouseButton1Click:Connect(function()
+    isRarityExpanded = not isRarityExpanded
+    RarityScroll.Visible = isRarityExpanded
+    RarityCollapseBtn.Text = isRarityExpanded and "v" or "^"
+    TweenService:Create(RarityBox, TweenInfo.new(0.2), {
+        Size = isRarityExpanded and UDim2.new(1, -6, 0, 175) or UDim2.new(1, -6, 0, 52)
+    }):Play()
+end)
+
+for _, rName in ipairs(OrderedRarities) do
+    local isChecked = PlayerState.SelectedRarities[rName] == true
     
-    MainContent.Visible = false
-    EggFarmContent.Visible = false
-    HopContent.Visible = false
-    InfoContent.Visible = false
+    local itemFrame = Instance.new("TextButton", RarityScroll)
+    itemFrame.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+    itemFrame.Text = ""
     
-    if selectedTab == "Main" then
-        MainTabBtn.BackgroundTransparency = 0
-        MainTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        MainContent.Visible = true
-    elseif selectedTab == "Farm" then
-        EggFarmTabBtn.BackgroundTransparency = 0
-        EggFarmTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        EggFarmContent.Visible = true
-    elseif selectedTab == "Hop" then
-        ServerHopTabBtn.BackgroundTransparency = 0
-        ServerHopTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        HopContent.Visible = true
-    elseif selectedTab == "Info" then
-        InfoTabBtn.BackgroundTransparency = 0
-        InfoTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        InfoContent.Visible = true
-    end
+    local itemCorner = Instance.new("UICorner", itemFrame)
+    itemCorner.CornerRadius = UDim.new(0, 6)
+    
+    local dot = Instance.new("Frame", itemFrame)
+    dot.Size = UDim2.new(0, 6, 0, 6)
+    dot.Position = UDim2.new(0, 8, 0.5, -3)
+    dot.BackgroundColor3 = RarityColors[rName] or Color3.fromRGB(255, 255, 255)
+    
+    local dotCorner = Instance.new("UICorner", dot)
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    
+    local itemLabel = Instance.new("TextLabel", itemFrame)
+    itemLabel.Size = UDim2.new(1, -34, 1, 0)
+    itemLabel.Position = UDim2.new(0, 18, 0, 0)
+    itemLabel.BackgroundTransparency = 1
+    itemLabel.Text = rName
+    itemLabel.TextColor3 = Color3.fromRGB(226, 232, 240)
+    itemLabel.Font = Enum.Font.GothamMedium
+    itemLabel.TextSize = 8
+    itemLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local chkBox = Instance.new("Frame", itemFrame)
+    chkBox.Size = UDim2.new(0, 12, 0, 12)
+    chkBox.Position = UDim2.new(1, -16, 0.5, -6)
+    chkBox.BackgroundColor3 = isChecked and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(30, 41, 59)
+    
+    local chkCorner = Instance.new("UICorner", chkBox)
+    chkCorner.CornerRadius = UDim.new(0, 3)
+    
+    itemFrame.MouseButton1Click:Connect(function()
+        local newState = not PlayerState.SelectedRarities[rName]
+        PlayerState.SelectedRarities[rName] = newState
+        chkBox.BackgroundColor3 = newState and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(30, 41, 59)
+        SaveConfig()
+    end)
 end
 
-MainTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Main") end)
-EggFarmTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Farm") end)
-ServerHopTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Hop") end)
-InfoTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Info") end)
-SetActiveTab("Farm")
-
--- FLY MINI FRAME
-local FlyMiniFrame = Instance.new("Frame", ScreenGui)
-FlyMiniFrame.Name = "FlyMiniFrame"
-FlyMiniFrame.Size = UDim2.new(0, 140, 0, 95)
-FlyMiniFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
-FlyMiniFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
-FlyMiniFrame.Active = true
-FlyMiniFrame.Draggable = true
-FlyMiniFrame.Visible = PlayerState.FlyUIVisible
-FlyMiniFrame.ZIndex = 100
-
-local FlyMiniCorner = Instance.new("UICorner", FlyMiniFrame)
-FlyMiniCorner.CornerRadius = UDim.new(0, 8)
-
-local FlyStroke = Instance.new("UIStroke", FlyMiniFrame)
-FlyStroke.Color = Color3.fromRGB(129, 140, 248)
-FlyStroke.Thickness = 1.5
-
-local FlyMiniTitle = Instance.new("TextLabel", FlyMiniFrame)
-FlyMiniTitle.Size = UDim2.new(1, -10, 0, 22)
-FlyMiniTitle.Position = UDim2.new(0, 8, 0, 2)
-FlyMiniTitle.BackgroundTransparency = 1
-FlyMiniTitle.Text = "🕊️ Fly Controller"
-FlyMiniTitle.TextColor3 = Color3.fromRGB(240, 240, 255)
-FlyMiniTitle.Font = Enum.Font.GothamBold
-FlyMiniTitle.TextSize = 9.5
-FlyMiniTitle.TextXAlignment = Enum.TextXAlignment.Left
-FlyMiniTitle.ZIndex = 101
-
-local FlyToggleBtn = Instance.new("TextButton", FlyMiniFrame)
-FlyToggleBtn.Size = UDim2.new(0.88, 0, 0, 24)
-FlyToggleBtn.Position = UDim2.new(0.06, 0, 0, 26)
-FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
-FlyToggleBtn.Text = "FLY : OFF"
-FlyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-FlyToggleBtn.Font = Enum.Font.GothamBold
-FlyToggleBtn.TextSize = 9.5
-FlyToggleBtn.BorderSizePixel = 0
-FlyToggleBtn.ZIndex = 101
-
-local FlyToggleCorner = Instance.new("UICorner", FlyToggleBtn)
-FlyToggleCorner.CornerRadius = UDim.new(0, 5)
-
-local SpeedFrame = Instance.new("Frame", FlyMiniFrame)
-SpeedFrame.Size = UDim2.new(0.88, 0, 0, 22)
-SpeedFrame.Position = UDim2.new(0.06, 0, 0, 58)
-SpeedFrame.BackgroundTransparency = 1
-SpeedFrame.ZIndex = 101
-
-local SpeedMinus = Instance.new("TextButton", SpeedFrame)
-SpeedMinus.Size = UDim2.new(0.28, 0, 1, 0)
-SpeedMinus.Position = UDim2.new(0, 0, 0, 0)
-SpeedMinus.BackgroundColor3 = Color3.fromRGB(27, 33, 45)
-SpeedMinus.Text = "-"
-SpeedMinus.TextColor3 = Color3.fromRGB(255, 255, 255)
-SpeedMinus.Font = Enum.Font.GothamBold
-SpeedMinus.TextSize = 11
-SpeedMinus.BorderSizePixel = 0
-SpeedMinus.ZIndex = 102
-
-local SpeedMinusCorner = Instance.new("UICorner", SpeedMinus)
-SpeedMinusCorner.CornerRadius = UDim.new(0, 4)
-
-local SpeedLabel = Instance.new("TextLabel", SpeedFrame)
-SpeedLabel.Size = UDim2.new(0.44, 0, 1, 0)
-SpeedLabel.Position = UDim2.new(0.28, 0, 0, 0)
-SpeedLabel.BackgroundTransparency = 1
-SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
-SpeedLabel.TextColor3 = Color3.fromRGB(129, 140, 248)
-SpeedLabel.Font = Enum.Font.GothamBold
-SpeedLabel.TextSize = 8.5
-SpeedLabel.ZIndex = 102
-
-local SpeedPlus = Instance.new("TextButton", SpeedFrame)
-SpeedPlus.Size = UDim2.new(0.28, 0, 1, 0)
-SpeedPlus.Position = UDim2.new(0.72, 0, 0, 0)
-SpeedPlus.BackgroundColor3 = Color3.fromRGB(27, 33, 45)
-SpeedPlus.Text = "+"
-SpeedPlus.TextColor3 = Color3.fromRGB(255, 255, 255)
-SpeedPlus.Font = Enum.Font.GothamBold
-SpeedPlus.TextSize = 11
-SpeedPlus.BorderSizePixel = 0
-SpeedPlus.ZIndex = 102
-
-local SpeedPlusCorner = Instance.new("UICorner", SpeedPlus)
-SpeedPlusCorner.CornerRadius = UDim.new(0, 4)
-
--- EVENT LISTENERS
-local function SynchronizeFlyStates()
-    if PlayerState.IsFlying then
-        FlyToggleBtn.Text = "FLY : ON"
-        FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
-        StartFlyEngine()
-    else
-        FlyToggleBtn.Text = "FLY : OFF"
-        FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
-        StopFlyEngine()
-    end
-end
+-- =================================================================
+-- TOGGLE MAIN WINDOW LOGIC
+-- =================================================================
+CloseBtn.MouseButton1Click:Connect(function()
+    MainWindow.Visible = false
+    ToggleBtn.Visible = true
+end)
 
 ToggleBtn.MouseButton1Click:Connect(function()
-    if TeleportWindow then
-        TeleportWindow.Visible = true
-        ToggleBtn.Visible = false
-    end
+    MainWindow.Visible = true
+    ToggleBtn.Visible = false
 end)
 
-CloseMainBtn.MouseButton1Click:Connect(function()
-    if TeleportWindow then
-        TeleportWindow.Visible = false
-        ToggleBtn.Visible = true
-    end
-end)
-
-PlaceBlockBtn.MouseButton1Click:Connect(function()
-    CreateSafeZoneAtCurrentPos()
-    PlaceTitle.Text = "✔ Balok Gaib Diperbarui!"
-    PlaceTitle.TextColor3 = Color3.fromRGB(16, 185, 129)
-    task.wait(1.2)
-    PlaceTitle.Text = "🧱 Reset/Atur Balok Gaib"
-    PlaceTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-end)
-
-FarmMasterBtn.MouseButton1Click:Connect(function()
-    PlayerState.AutoFarmEgg = not PlayerState.AutoFarmEgg
-    FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
-    FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-    SaveConfig()
-end)
-
-SellToggleBtn.MouseButton1Click:Connect(function()
-    PlayerState.AutoSellEgg = not PlayerState.AutoSellEgg
-    SellStatusLabel.Text = PlayerState.AutoSellEgg and "ON" or "OFF"
-    SellStatusLabel.TextColor3 = PlayerState.AutoSellEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-    SaveConfig()
-end)
-
-StealToggleBtn.MouseButton1Click:Connect(function()
-    PlayerState.StealPriority = not PlayerState.StealPriority
-    StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
-    StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-    SaveConfig()
-end)
-
-FlyMainToggleBtn.MouseButton1Click:Connect(function()
-    PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
-    if FlyMiniFrame then
-        FlyMiniFrame.Visible = PlayerState.FlyUIVisible
-    end
-    
-    if PlayerState.FlyUIVisible then
-        FlyStatusLabel.Text = "ON"
-        FlyStatusLabel.TextColor3 = Color3.fromRGB(16, 185, 129)
-    else
-        FlyStatusLabel.Text = "OFF"
-        FlyStatusLabel.TextColor3 = Color3.fromRGB(239, 68, 68)
-        PlayerState.IsFlying = false
-        SynchronizeFlyStates()
-    end
-    SaveConfig()
-end)
-
-FlyToggleBtn.MouseButton1Click:Connect(function()
-    PlayerState.IsFlying = not PlayerState.IsFlying
-    SynchronizeFlyStates()
-end)
-
-SpeedPlus.MouseButton1Click:Connect(function()
-    PlayerState.FlySpeed = math.clamp(PlayerState.FlySpeed + 10, FLY_SPEED_MIN, FLY_SPEED_MAX)
-    SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
-    SaveConfig()
-end)
-
-SpeedMinus.MouseButton1Click:Connect(function()
-    PlayerState.FlySpeed = math.clamp(PlayerState.FlySpeed - 10, FLY_SPEED_MIN, FLY_SPEED_MAX)
-    SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
-    SaveConfig()
-end)
-
+-- RUNSERVICE ENGINE LOOPS
 RunService.RenderStepped:Connect(function()
     if PlayerState.IsFlying and LocalPlayer.Character then
         local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         local cam = workspace.CurrentCamera
         
-        if not hum or not cam then return end
+        if hrp and hum and cam then
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
 
-        pcall(function()
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.AssemblyAngularVelocity = Vector3.zero
-
-            if flyBodyVelocity and flyBodyGyro then
-                flyBodyGyro.CFrame = cam.CFrame
-                local moveDir = hum.MoveDirection
-                if moveDir.Magnitude > 0 then
-                    local camFrame = cam.CFrame
-                    local localMove = camFrame:VectorToObjectSpace(moveDir)
-                    local finalVelocity = (camFrame.LookVector * -localMove.Z) + (camFrame.RightVector * localMove.X)
-                    flyBodyVelocity.Velocity = finalVelocity.Unit * math.clamp(PlayerState.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX)
-                else
-                    flyBodyVelocity.Velocity = Vector3.zero
+                if flyBodyVelocity and flyBodyGyro then
+                    flyBodyGyro.CFrame = cam.CFrame
+                    local moveDir = hum.MoveDirection
+                    if moveDir.Magnitude > 0 then
+                        local camFrame = cam.CFrame
+                        local localMove = camFrame:VectorToObjectSpace(moveDir)
+                        local finalVelocity = (camFrame.LookVector * -localMove.Z) + (camFrame.RightVector * localMove.X)
+                        flyBodyVelocity.Velocity = finalVelocity.Unit * math.clamp(PlayerState.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX)
+                    else
+                        flyBodyVelocity.Velocity = Vector3.zero
+                    end
                 end
-            end
-        end)
-    end
-end)
-
-RunService.Stepped:Connect(function()
-    local char = LocalPlayer.Character
-    if not char then return end
-
-    if PlayerState.IsFlying or PlayerState.Noclip then
-        for _, part in ipairs(char:GetChildren()) do
-            if part and part:IsA("BasePart") then 
-                pcall(function()
-                    part.CanCollide = false
-                end)
-            end
+            end)
         end
     end
 end)
 
-print("[FAQIH HUB] Script loaded successfully! ✅")
-print("[EggFarm UI] Auto Sell Engine, Dynamic Config & Compact Internal Scroll UI Implemented!")
+print("[FAQIH HUB] Script Updated! Collapsible Area & Rarity + Independent Fly Controller + Auto Hop After Rarity Ready. ✅")
