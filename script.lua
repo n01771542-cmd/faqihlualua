@@ -1,6 +1,7 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Strict Item Verification Engine)
+    Script Name: faqih lua hub | jump for a egg (Strict Multi-Select Area & Collapsible Panels)
     Credits: powered by faqih
+    Status: Side-by-Side Horizontal Layout for Filters Integrated
 ]]--
 
 local Players = game:GetService("Players")
@@ -12,10 +13,24 @@ local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Target UI Container
+-- Validasi LocalPlayer
+if not LocalPlayer then
+    warn("[FAQIH HUB] LocalPlayer tidak ditemukan!")
+    return
+end
+
+-- Target UI Container dengan validasi
 local TargetGui
-pcall(function() TargetGui = CoreGui end)
-if not TargetGui then TargetGui = LocalPlayer:WaitForChild("PlayerGui") end
+pcall(function() 
+    TargetGui = CoreGui 
+end)
+if not TargetGui then 
+    TargetGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+end
+if not TargetGui then
+    warn("[FAQIH HUB] TargetGui tidak dapat diakses!")
+    return
+end
 
 -- Cleanup Old UI
 local oldUI = TargetGui:FindFirstChild("FaluaLuaUI_v7")
@@ -26,64 +41,124 @@ local SafeZoneBlock = nil
 local IsFarming = false
 local CONFIG_FILE_NAME = "FaqihHub_JumpForEgg_Config.json"
 
--- Configuration State Default
+-- Konstanta Bounds untuk FlySpeed
+local FLY_SPEED_MIN = 10
+local FLY_SPEED_MAX = 1000
+local FLY_SPEED_DEFAULT = 350
+
+-- Area Names - DEFINISI AUTHORITATIVE (Internal Keys)
+local VALID_AREAS = {
+    "Meadow",
+    "CoralReef",
+    "Winter",
+    "Desert",
+    "CrystalMines",
+    "Jungle",
+    "MysticIsles",
+    "Prehistoric",
+    "CelestialHeights",
+    "Savannah"
+}
+
+-- Area Display Names
+local AREA_DISPLAY_NAMES = {
+    Meadow = "Meadow Area",
+    CoralReef = "Coral Reef Area",
+    Winter = "Winter Area",
+    Desert = "Desert Area",
+    CrystalMines = "Crystal Mines Area",
+    Jungle = "Jungle Area",
+    MysticIsles = "Mystic Isles Area",
+    Prehistoric = "Prehistoric Area",
+    CelestialHeights = "Celestial Heights Area",
+    Savannah = "Savannah Area"
+}
+
+-- Area Detection Patterns (Flexible Matching)
+local AREA_PATTERNS = {
+    Meadow = {"meadow"},
+    CoralReef = {"coral", "reef"},
+    Winter = {"winter", "snow", "ice", "frozen"},
+    Desert = {"desert", "sand", "dune"},
+    CrystalMines = {"crystal", "mine", "gem"},
+    Jungle = {"jungle", "rainforest", "tropical"},
+    MysticIsles = {"mystic", "isle", "island"},
+    Prehistoric = {"prehistoric", "dino", "ancient"},
+    CelestialHeights = {"celestial", "heaven", "sky", "cloud"},
+    Savannah = {"savannah", "safari", "grassland"}
+}
+
+-- Configuration State Default (MULTI-SELECT DEFAULT ALL TRUE)
 local PlayerState = {
     FlyUIVisible = true,
     IsFlying = false,     
-    FlySpeed = 350,
+    FlySpeed = FLY_SPEED_DEFAULT,
     Noclip = false,
     AutoFarmEgg = false,
     StealPriority = true,
+    SelectedAreas = {
+        Meadow = true,
+        CoralReef = true,
+        Winter = true,
+        Desert = true,
+        CrystalMines = true,
+        Jungle = true,
+        MysticIsles = true,
+        Prehistoric = true,
+        CelestialHeights = true,
+        Savannah = true
+    },
     SelectedRarities = {
         Common = true, Uncommon = true, Rare = true, Epic = true,
         Legendary = true, Mythic = true, Divine = true, Celestial = true,
         Eternal = true, Ascended = true
-    },
-    SelectedZones = {
-        Meadow = true, CoralReef = true, Winter = true, Desert = true,
-        CrystalMines = true, Jungle = true, MysticIsles = true,
-        Prehistoric = true, CelestialHeights = true
     }
 }
 
 -- CONFIG SYSTEM
 local function SaveConfig()
-    if writefile then
-        local dataToSave = {
-            FlyUIVisible = PlayerState.FlyUIVisible,
-            FlySpeed = PlayerState.FlySpeed,
-            Noclip = PlayerState.Noclip,
-            AutoFarmEgg = PlayerState.AutoFarmEgg,
-            StealPriority = PlayerState.StealPriority,
-            SelectedRarities = PlayerState.SelectedRarities,
-            SelectedZones = PlayerState.SelectedZones
-        }
-        pcall(function()
-            writefile(CONFIG_FILE_NAME, HttpService:JSONEncode(dataToSave))
-        end)
-    end
+    if not writefile then return end
+    
+    local dataToSave = {
+        FlyUIVisible = PlayerState.FlyUIVisible,
+        FlySpeed = math.clamp(PlayerState.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX),
+        Noclip = PlayerState.Noclip,
+        AutoFarmEgg = PlayerState.AutoFarmEgg,
+        StealPriority = PlayerState.StealPriority,
+        SelectedAreas = PlayerState.SelectedAreas,
+        SelectedRarities = PlayerState.SelectedRarities
+    }
+    
+    pcall(function()
+        writefile(CONFIG_FILE_NAME, HttpService:JSONEncode(dataToSave))
+    end)
 end
 
 local function LoadConfig()
-    if readfile and isfile and isfile(CONFIG_FILE_NAME) then
-        local success, result = pcall(function()
-            return HttpService:JSONDecode(readfile(CONFIG_FILE_NAME))
-        end)
-        
-        if success and type(result) == "table" then
-            if result.FlyUIVisible ~= nil then PlayerState.FlyUIVisible = result.FlyUIVisible end
-            if result.FlySpeed ~= nil then PlayerState.FlySpeed = result.FlySpeed end
-            if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
-            if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
-            if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
-            if type(result.SelectedRarities) == "table" then
-                for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end
-            end
-            if type(result.SelectedZones) == "table" then
-                for k, v in pairs(result.SelectedZones) do PlayerState.SelectedZones[k] = v end
-            end
+    if not (readfile and isfile and isfile(CONFIG_FILE_NAME)) then
+        return
+    end
+    
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(readfile(CONFIG_FILE_NAME))
+    end)
+    
+    if success and type(result) == "table" then
+        if result.FlyUIVisible ~= nil then PlayerState.FlyUIVisible = result.FlyUIVisible end
+        if result.FlySpeed ~= nil then 
+            PlayerState.FlySpeed = math.clamp(result.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX)
+        end
+        if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
+        if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
+        if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
+        if type(result.SelectedAreas) == "table" then
+            for k, v in pairs(result.SelectedAreas) do PlayerState.SelectedAreas[k] = v end
+        end
+        if type(result.SelectedRarities) == "table" then
+            for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end
         end
     end
+    
     PlayerState.IsFlying = false
 end
 
@@ -94,10 +169,18 @@ local CustomToggleImageAsset = "rbxthumb://type=Asset&id=136902684546260&w=150&h
 local RAW_SCRIPT_URL = "https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/refs/heads/main/script.lua"
 
 -- SERVER HOP
+local HopStatusText = nil
+
 local function ServerHopByCount(targetPlayerCount)
     SaveConfig()
+    
     local placeId = game.PlaceId
     local currentJobId = game.JobId
+    
+    if not placeId or not currentJobId then
+        warn("[FAQIH HUB] PlaceId atau JobId tidak valid!")
+        return
+    end
     
     local queueFunc = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
     if typeof(queueFunc) == "function" then
@@ -114,47 +197,89 @@ local function ServerHopByCount(targetPlayerCount)
         return game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100")
     end)
     
-    if success and response then
-        local decodeSuccess, result = pcall(function()
-            return HttpService:JSONDecode(response)
-        end)
+    if not success or not response then
+        warn("[FAQIH HUB] Gagal mengambil data server dari Roblox API")
+        if HopStatusText then
+            HopStatusText.Text = "❌ Error: Gagal koneksi ke server API"
+            HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
+        end
+        return
+    end
+    
+    local decodeSuccess, result = pcall(function()
+        return HttpService:JSONDecode(response)
+    end)
+    
+    if decodeSuccess and result and result.data and type(result.data) == "table" then
+        local matchedServers = {}
+        local fallbackServers = {}
         
-        if decodeSuccess and result and result.data then
-            local matchedServers = {}
-            local fallbackServers = {}
-            
-            for _, server in ipairs(result.data) do
-                if type(server) == "table" and server.id ~= currentJobId then
-                    if server.playing == targetPlayerCount then
-                        table.insert(matchedServers, server.id)
-                    elseif server.playing < 7 then
-                        table.insert(fallbackServers, server.id)
-                    end
+        for _, server in ipairs(result.data) do
+            if type(server) == "table" and server.id and server.id ~= currentJobId and server.playing then
+                if server.playing == targetPlayerCount then
+                    table.insert(matchedServers, server.id)
+                elseif server.playing < 7 then
+                    table.insert(fallbackServers, server.id)
                 end
             end
-            
-            if #matchedServers > 0 then
+        end
+        
+        if #matchedServers > 0 then
+            if HopStatusText then
+                HopStatusText.Text = "✅ Server ditemukan! Teleporting..."
+                HopStatusText.TextColor3 = Color3.fromRGB(34, 197, 94)
+            end
+            task.wait(0.5)
+            pcall(function()
                 TeleportService:TeleportToPlaceInstance(placeId, matchedServers[math.random(1, #matchedServers)], LocalPlayer)
-            elseif #fallbackServers > 0 then
+            end)
+            return
+        elseif #fallbackServers > 0 then
+            if HopStatusText then
+                HopStatusText.Text = "⚠️ Server kepenuhan, menggunakan server alternatif..."
+                HopStatusText.TextColor3 = Color3.fromRGB(251, 191, 36)
+            end
+            task.wait(0.5)
+            pcall(function()
                 TeleportService:TeleportToPlaceInstance(placeId, fallbackServers[math.random(1, #fallbackServers)], LocalPlayer)
-            else
-                TeleportService:Teleport(placeId, LocalPlayer)
+            end)
+            return
+        else
+            warn("[FAQIH HUB] Tidak ada server yang tersedia untuk kriteria yang diminta")
+            if HopStatusText then
+                HopStatusText.Text = "❌ Tidak ada server tersedia untuk kriteria ini"
+                HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
             end
             return
         end
+    else
+        warn("[FAQIH HUB] Gagal mendecode response dari API")
+        if HopStatusText then
+            HopStatusText.Text = "❌ Error: Data server tidak valid"
+            HopStatusText.TextColor3 = Color3.fromRGB(239, 68, 68)
+        end
+        return
     end
-    TeleportService:Teleport(placeId, LocalPlayer)
 end
 
 -- SAFE ZONE SETUP
 local function CreateSafeZoneAtCurrentPos()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local char = LocalPlayer.Character
+    if not char then
+        char = LocalPlayer.CharacterAdded:Wait()
+    end
+    
     if not char then return end
     
-    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        hrp = char:WaitForChild("HumanoidRootPart", 5)
+    end
     
     if hrp then
-        if SafeZoneBlock then SafeZoneBlock:Destroy() end
+        if SafeZoneBlock and SafeZoneBlock.Parent then 
+            SafeZoneBlock:Destroy() 
+        end
         
         SafeZoneBlock = Instance.new("Part")
         SafeZoneBlock.Name = "SafeZoneBlock_Abdillah"
@@ -176,34 +301,46 @@ end)
 -- DROP HELD ITEMS
 local function DropHeldItems()
     local char = LocalPlayer.Character
+    if not char then return end
+    
     local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
     
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum:UnequipTools() end
+        if hum then 
+            pcall(function()
+                hum:UnequipTools()
+            end)
+        end
         
         for _, item in ipairs(char:GetChildren()) do
-            if item:IsA("Tool") then
-                item.CanBeDropped = true
-                item.Parent = workspace
+            if item and item:IsA("Tool") then
+                pcall(function()
+                    item.CanBeDropped = true
+                    item.Parent = workspace
+                end)
             end
         end
     end
     
     if backpack then
         for _, item in ipairs(backpack:GetChildren()) do
-            if item:IsA("Tool") then
-                item.CanBeDropped = true
-                item.Parent = workspace
+            if item and item:IsA("Tool") then
+                pcall(function()
+                    item.CanBeDropped = true
+                    item.Parent = workspace
+                end)
             end
         end
     end
     
     local rep = game:GetService("ReplicatedStorage")
-    for _, name in ipairs({"DropItem", "Drop", "DropTool", "DropEgg", "RemoveItem"}) do
-        local dropRemote = rep:FindFirstChild(name, true)
-        if dropRemote and dropRemote:IsA("RemoteEvent") then
-            pcall(function() dropRemote:FireServer() end)
+    if rep then
+        for _, name in ipairs({"DropItem", "Drop", "DropTool", "DropEgg", "RemoveItem"}) do
+            local dropRemote = rep:FindFirstChild(name, true)
+            if dropRemote and dropRemote:IsA("RemoteEvent") then
+                pcall(function() dropRemote:FireServer() end)
+            end
         end
     end
 end
@@ -220,30 +357,75 @@ local function TeleportToSafeZone()
     local hum = char:FindFirstChildOfClass("Humanoid")
     
     if hrp and hum and hum.Health > 0 and SafeZoneBlock then
-        local targetCFrame = SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0)
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-        hrp.CFrame = targetCFrame
+        pcall(function()
+            local targetCFrame = SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0)
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            hrp.CFrame = targetCFrame
+        end)
         DropHeldItems()
     end
 end
 
--- DETEKSI HAS EGG IN INVENTORY
+-- DETEKSI EGG IN INVENTORY
 local function HasEggInInventory()
     local char = LocalPlayer.Character
+    if not char then return false end
+    
     local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
     
     if char then
         for _, child in ipairs(char:GetChildren()) do
-            if child:IsA("Tool") then return true end
+            if child and child:IsA("Tool") then return true end
         end
     end
+    
     if backpack then
         for _, child in ipairs(backpack:GetChildren()) do
-            if child:IsA("Tool") then return true end
+            if child and child:IsA("Tool") then return true end
         end
     end
+    
     return false
+end
+
+-- =================================================================
+-- AREA ZONE DETECTION FUNCTION
+-- =================================================================
+local function DetectEggZone(eggModel)
+    if not eggModel then return nil end
+    
+    local function MatchPattern(str)
+        if not str or type(str) ~= "string" then return nil end
+        local lowerStr = string.lower(str)
+        for areaKey, patterns in pairs(AREA_PATTERNS) do
+            for _, pattern in ipairs(patterns) do
+                if string.find(lowerStr, pattern) then
+                    return areaKey
+                end
+            end
+        end
+        return nil
+    end
+
+    -- 1. Cek Attribute
+    local zoneAttr = eggModel:GetAttribute("Zone") or eggModel:GetAttribute("Area") or eggModel:GetAttribute("Location")
+    local matched = MatchPattern(zoneAttr)
+    if matched then return matched end
+    
+    -- 2. Cek Parent Hierarchy
+    local parent = eggModel.Parent
+    while parent and parent ~= workspace do
+        matched = MatchPattern(parent.Name)
+        if matched then return matched end
+        parent = parent.Parent
+    end
+    
+    -- 3. Cek Nama Model
+    matched = MatchPattern(eggModel.Name)
+    if matched then return matched end
+    
+    return nil
 end
 
 -- =================================================================
@@ -257,40 +439,79 @@ local RarityPriority = {
 
 local function GetValidEggTargets()
     local validTargets = {}
+    local debugCount = 0
     
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled then
-            local eggModel = obj.Parent
-            while eggModel and eggModel ~= workspace and not eggModel:IsA("Model") do
-                eggModel = eggModel.Parent
+        if not obj or not obj:IsA("ProximityPrompt") or not obj.Enabled then
+            continue
+        end
+        
+        local eggModel = obj.Parent
+        while eggModel and eggModel ~= workspace and not eggModel:IsA("Model") do
+            eggModel = eggModel.Parent
+        end
+        
+        if not eggModel then
+            continue
+        end
+        
+        debugCount = debugCount + 1
+        
+        -- DETECT AREA STRICTLY
+        local zone = DetectEggZone(eggModel)
+        
+        -- STRICT AREA FILTER CHECK
+        if not zone then
+            continue
+        end
+        
+        if PlayerState.SelectedAreas[zone] ~= true then
+            continue
+        end
+        
+        -- DETECT RARITY
+        local rarity = eggModel:GetAttribute("Rarity")
+        if not rarity or type(rarity) ~= "string" then
+            rarity = "Common"
+        end
+        
+        local modelName = string.lower(eggModel.Name)
+        for rName, _ in pairs(PlayerState.SelectedRarities) do
+            if string.find(modelName, string.lower(rName)) then 
+                rarity = rName 
             end
-            
-            if eggModel then
-                local rarity = eggModel:GetAttribute("Rarity") or "Common"
-                local zone = eggModel:GetAttribute("Zone") or "Meadow"
-                
-                for rName, _ in pairs(PlayerState.SelectedRarities) do
-                    if string.find(string.lower(eggModel.Name), string.lower(rName)) then rarity = rName end
-                end
-                for zName, _ in pairs(PlayerState.SelectedZones) do
-                    if string.find(string.lower(eggModel.Name), string.lower(zName)) then zone = zName end
-                end
-                
-                if PlayerState.SelectedRarities[rarity] and PlayerState.SelectedZones[zone] then
-                    table.insert(validTargets, {
-                        Prompt = obj,
-                        Model = eggModel,
-                        Rarity = rarity,
-                        Priority = RarityPriority[rarity] or 1,
-                        Part = obj.Parent:IsA("BasePart") and obj.Parent or eggModel:FindFirstChildWhichIsA("BasePart")
-                    })
-                end
-            end
+        end
+        
+        -- STRICT RARITY FILTER CHECK
+        if PlayerState.SelectedRarities[rarity] ~= true then
+            continue
+        end
+        
+        -- Mendapatkan Part Acuan Teleport
+        local part = nil
+        if obj.Parent:IsA("BasePart") then
+            part = obj.Parent
+        else
+            part = eggModel:FindFirstChildWhichIsA("BasePart")
+        end
+        
+        if part then
+            table.insert(validTargets, {
+                Prompt = obj,
+                Model = eggModel,
+                Rarity = rarity,
+                Zone = zone,
+                Priority = RarityPriority[rarity] or 1,
+                Part = part
+            })
         end
     end
     
+    -- Sorting Berdasarkan Steal Priority (Rarity Tertinggi Pertama)
     if PlayerState.StealPriority then
-        table.sort(validTargets, function(a, b) return a.Priority > b.Priority end)
+        table.sort(validTargets, function(a, b) 
+            return a.Priority > b.Priority 
+        end)
     end
     
     return validTargets
@@ -300,7 +521,9 @@ local function ProcessSmartEggTeleport()
     if IsFarming or not PlayerState.AutoFarmEgg then return end
     
     local targets = GetValidEggTargets()
-    if #targets == 0 then return end
+    if #targets == 0 then 
+        return 
+    end
     
     local target = targets[1]
     if not target or not target.Part or not target.Prompt then return end
@@ -311,48 +534,52 @@ local function ProcessSmartEggTeleport()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     
     if hrp then
-        DropHeldItems()
-        task.wait(0.02)
-        
-        -- Teleport Tepat di Posisi Telur
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-        hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
-        
-        local prompt = target.Prompt
-        prompt.HoldDuration = 0
-        prompt.RequiresLineOfSight = false
-        
-        -- SISTEM VERIFIKASI PRESISI
-        local maxRetries = 15
-        local retryCount = 0
-        local eggAcquired = false
-        
-        repeat
-            retryCount = retryCount + 1
-            
-            if fireproximityprompt then
-                fireproximityprompt(prompt)
-            else
-                pcall(function()
-                    prompt:InputHoldBegin()
-                    prompt:InputHoldEnd()
-                end)
-            end
-            
-            task.wait(0.04)
-            
-            if HasEggInInventory() or not prompt.Parent or not prompt.Enabled then
-                eggAcquired = true
-                break
-            end
-        until retryCount >= maxRetries
-        
-        if eggAcquired then
-            TeleportToSafeZone()
-            task.wait(0.04)
+        pcall(function()
             DropHeldItems()
-        end
+            task.wait(0.02)
+            
+            -- Teleport Tepat di Posisi Telur
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
+            
+            local prompt = target.Prompt
+            if prompt then
+                prompt.HoldDuration = 0
+                prompt.RequiresLineOfSight = false
+            end
+            
+            -- SISTEM VERIFIKASI PRESISI
+            local maxRetries = 15
+            local retryCount = 0
+            local eggAcquired = false
+            
+            repeat
+                retryCount = retryCount + 1
+                
+                if fireproximityprompt then
+                    fireproximityprompt(prompt)
+                else
+                    if prompt then
+                        prompt:InputHoldBegin()
+                        prompt:InputHoldEnd()
+                    end
+                end
+                
+                task.wait(0.04)
+                
+                if HasEggInInventory() or not prompt or not prompt.Parent or not prompt.Enabled then
+                    eggAcquired = true
+                    break
+                end
+            until retryCount >= maxRetries
+            
+            if eggAcquired then
+                TeleportToSafeZone()
+                task.wait(0.04)
+                DropHeldItems()
+            end
+        end)
     end
     
     IsFarming = false
@@ -368,17 +595,19 @@ task.spawn(function()
 end)
 
 local function SetupPrompt(prompt)
-    if prompt:IsA("ProximityPrompt") then
-        prompt.HoldDuration = 0
-        prompt.RequiresLineOfSight = false
-        
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    
+    prompt.HoldDuration = 0
+    prompt.RequiresLineOfSight = false
+    
+    pcall(function()
         prompt.Triggered:Connect(function(playerWhoTriggered)
             if playerWhoTriggered == LocalPlayer and not PlayerState.AutoFarmEgg then
                 DropHeldItems()
                 TeleportToSafeZone()
             end
         end)
-    end
+    end)
 end
 
 for _, prompt in pairs(workspace:GetDescendants()) do SetupPrompt(prompt) end
@@ -390,34 +619,57 @@ workspace.DescendantAdded:Connect(SetupPrompt)
 local function StartFlyEngine()
     local char = LocalPlayer.Character
     if not char then return end
+    
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
+    
     if not hrp or not hum then return end
 
-    hum.PlatformStand = true
+    pcall(function()
+        hum.PlatformStand = true
 
-    flyBodyVelocity = Instance.new("BodyVelocity")
-    flyBodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-    flyBodyVelocity.Velocity = Vector3.zero
-    flyBodyVelocity.Parent = hrp
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+        flyBodyVelocity.Velocity = Vector3.zero
+        flyBodyVelocity.Parent = hrp
 
-    flyBodyGyro = Instance.new("BodyGyro")
-    flyBodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-    flyBodyGyro.P = 9e4
-    flyBodyGyro.CFrame = hrp.CFrame
-    flyBodyGyro.Parent = hrp
+        flyBodyGyro = Instance.new("BodyGyro")
+        flyBodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+        flyBodyGyro.P = 9e4
+        flyBodyGyro.CFrame = hrp.CFrame
+        flyBodyGyro.Parent = hrp
+    end)
 end
 
 local function StopFlyEngine()
-    if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
-    if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+    pcall(function()
+        if flyBodyVelocity and flyBodyVelocity.Parent then 
+            flyBodyVelocity:Destroy() 
+        end
+        flyBodyVelocity = nil
+        
+        if flyBodyGyro and flyBodyGyro.Parent then 
+            flyBodyGyro:Destroy() 
+        end
+        flyBodyGyro = nil
+    end)
+    
     local char = LocalPlayer.Character
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.PlatformStand = false end
+        if hum then 
+            pcall(function()
+                hum.PlatformStand = false
+            end)
+        end
+        
         if not PlayerState.Noclip then
             for _, part in ipairs(char:GetChildren()) do
-                if part:IsA("BasePart") then part.CanCollide = true end
+                if part and part:IsA("BasePart") then 
+                    pcall(function()
+                        part.CanCollide = true
+                    end)
+                end
             end
         end
     end
@@ -448,8 +700,8 @@ ToggleCorner.CornerRadius = UDim.new(0, 8)
 
 local TeleportWindow = Instance.new("Frame", ScreenGui)
 TeleportWindow.Name = "TeleportWindow"
-TeleportWindow.Size = UDim2.new(0, 440, 0, 280)
-TeleportWindow.Position = UDim2.new(0.3, 0, 0.25, 0)
+TeleportWindow.Size = UDim2.new(0, 600, 0, 420)
+TeleportWindow.Position = UDim2.new(0.2, 0, 0.15, 0)
 TeleportWindow.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 TeleportWindow.ClipsDescendants = true
 TeleportWindow.BorderSizePixel = 0
@@ -603,7 +855,7 @@ FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 FlyStatusLabel.ZIndex = 4
 
 -- =================================================================
--- EGG FARM TAB (UPDATED UI)
+-- EGG FARM TAB (SIDE-BY-SIDE COLLAPSIBLE PANELS: RARITY & AREA FILTERS)
 -- =================================================================
 local EggFarmContent = Instance.new("Frame", TeleportWindow)
 EggFarmContent.Size = UDim2.new(1, -122, 1, -40)
@@ -611,72 +863,68 @@ EggFarmContent.Position = UDim2.new(0, 116, 0, 36)
 EggFarmContent.BackgroundTransparency = 1
 EggFarmContent.Visible = false
 EggFarmContent.ZIndex = 2
+EggFarmContent.ClipsDescendants = true
 
-local ScrollEgg = Instance.new("ScrollingFrame", EggFarmContent)
-ScrollEgg.Size = UDim2.new(1, -5, 1, 0)
-ScrollEgg.BackgroundTransparency = 1
-ScrollEgg.BorderSizePixel = 0
-ScrollEgg.ScrollBarThickness = 4
-ScrollEgg.ScrollBarImageColor3 = Color3.fromRGB(70, 85, 110)
-ScrollEgg.CanvasSize = UDim2.new(0, 0, 0, 480)
-ScrollEgg.ZIndex = 3
+-- Left Controls Container (Bagian Kiri)
+local LeftControlsFrame = Instance.new("Frame", EggFarmContent)
+LeftControlsFrame.Size = UDim2.new(0.38, -5, 1, -10)
+LeftControlsFrame.Position = UDim2.new(0, 5, 0, 5)
+LeftControlsFrame.BackgroundTransparency = 1
+LeftControlsFrame.ZIndex = 3
 
-local ScrollEggLayout = Instance.new("UIListLayout", ScrollEgg)
-ScrollEggLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ScrollEggLayout.Padding = UDim.new(0, 6)
-
--- Otomatis update CanvasSize ScrollingFrame berdasarkan konten
-ScrollEggLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    ScrollEgg.CanvasSize = UDim2.new(0, 0, 0, ScrollEggLayout.AbsoluteContentSize.Y + 10)
-end)
+local LeftControlsLayout = Instance.new("UIListLayout", LeftControlsFrame)
+LeftControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+LeftControlsLayout.Padding = UDim.new(0, 8)
 
 -- Tombol Auto Farm Master
-local FarmMasterBtn = Instance.new("TextButton", ScrollEgg)
-FarmMasterBtn.Size = UDim2.new(1, -10, 0, 34)
+local FarmMasterBtn = Instance.new("TextButton", LeftControlsFrame)
+FarmMasterBtn.Size = UDim2.new(1, 0, 0, 36)
 FarmMasterBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
 FarmMasterBtn.Text = ""
+FarmMasterBtn.LayoutOrder = 1
 FarmMasterBtn.ZIndex = 4
 
 local FarmMasterCorner = Instance.new("UICorner", FarmMasterBtn)
 FarmMasterCorner.CornerRadius = UDim.new(0, 6)
 
 local FarmMasterTitle = Instance.new("TextLabel", FarmMasterBtn)
-FarmMasterTitle.Size = UDim2.new(1, -70, 1, 0)
-FarmMasterTitle.Position = UDim2.new(0, 10, 0, 0)
+FarmMasterTitle.Size = UDim2.new(1, -50, 1, 0)
+FarmMasterTitle.Position = UDim2.new(0, 8, 0, 0)
 FarmMasterTitle.BackgroundTransparency = 1
-FarmMasterTitle.Text = "⚡ Auto Teleport Egg (Farm)"
+FarmMasterTitle.Text = "⚡ Auto Farm"
 FarmMasterTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
 FarmMasterTitle.Font = Enum.Font.GothamBold
-FarmMasterTitle.TextSize = 11
+FarmMasterTitle.TextSize = 10
 FarmMasterTitle.TextXAlignment = Enum.TextXAlignment.Left
 FarmMasterTitle.ZIndex = 5
 
 local FarmStatusLabel = Instance.new("TextLabel", FarmMasterBtn)
-FarmStatusLabel.Size = UDim2.new(0, 45, 1, 0)
-FarmStatusLabel.Position = UDim2.new(1, -50, 0, 0)
+FarmStatusLabel.Size = UDim2.new(0, 40, 1, 0)
+FarmStatusLabel.Position = UDim2.new(1, -44, 0, 0)
 FarmStatusLabel.BackgroundTransparency = 1
 FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
 FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
 FarmStatusLabel.Font = Enum.Font.GothamBold
-FarmStatusLabel.TextSize = 11
+FarmStatusLabel.TextSize = 10
 FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 FarmStatusLabel.ZIndex = 5
 
 -- Tombol Steal Priority
-local StealToggleBtn = Instance.new("TextButton", ScrollEgg)
-StealToggleBtn.Size = UDim2.new(1, -10, 0, 32)
+local StealToggleBtn = Instance.new("TextButton", LeftControlsFrame)
+StealToggleBtn.Size = UDim2.new(1, 0, 0, 36)
 StealToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
 StealToggleBtn.Text = ""
+StealToggleBtn.LayoutOrder = 2
 StealToggleBtn.ZIndex = 4
 
 local StealCorner = Instance.new("UICorner", StealToggleBtn)
 StealCorner.CornerRadius = UDim.new(0, 6)
 
 local StealTitle = Instance.new("TextLabel", StealToggleBtn)
-StealTitle.Size = UDim2.new(1, -70, 1, 0)
-StealTitle.Position = UDim2.new(0, 10, 0, 0)
+StealTitle.Size = UDim2.new(1, -50, 1, 0)
+StealTitle.Position = UDim2.new(0, 8, 0, 0)
 StealTitle.BackgroundTransparency = 1
-StealTitle.Text = "🔥 Steal Priority (Highest Rarity)"
+StealTitle.Text = "🔥 Steal Priority"
 StealTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
 StealTitle.Font = Enum.Font.GothamMedium
 StealTitle.TextSize = 10
@@ -684,8 +932,8 @@ StealTitle.TextXAlignment = Enum.TextXAlignment.Left
 StealTitle.ZIndex = 5
 
 local StealStatusLabel = Instance.new("TextLabel", StealToggleBtn)
-StealStatusLabel.Size = UDim2.new(0, 45, 1, 0)
-StealStatusLabel.Position = UDim2.new(1, -50, 0, 0)
+StealStatusLabel.Size = UDim2.new(0, 40, 1, 0)
+StealStatusLabel.Position = UDim2.new(1, -44, 0, 0)
 StealStatusLabel.BackgroundTransparency = 1
 StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
 StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
@@ -694,80 +942,128 @@ StealStatusLabel.TextSize = 10
 StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
 StealStatusLabel.ZIndex = 5
 
--- Header Filter Rarity
-local RarityLabel = Instance.new("TextLabel", ScrollEgg)
-RarityLabel.Size = UDim2.new(1, -10, 0, 20)
-RarityLabel.BackgroundTransparency = 1
-RarityLabel.Text = "Filter Rarity Egg (Tertinggi -> Terendah):"
-RarityLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
-RarityLabel.Font = Enum.Font.GothamBold
-RarityLabel.TextSize = 10
-RarityLabel.TextXAlignment = Enum.TextXAlignment.Left
-RarityLabel.ZIndex = 4
+-- HELPER: PEMBUATAN COLLAPSIBLE HORIZONTAL PANEL DENGAN INTERNAL SCROLL
+local function CreateHorizontalCollapsiblePanel(parentFrame, titleText, posXScale, sizeXScale)
+    local panelFrame = Instance.new("Frame", parentFrame)
+    panelFrame.Size = UDim2.new(sizeXScale, -4, 1, -10)
+    panelFrame.Position = UDim2.new(posXScale, 2, 0, 5)
+    panelFrame.BackgroundColor3 = Color3.fromRGB(24, 30, 42)
+    panelFrame.BorderSizePixel = 0
+    panelFrame.ZIndex = 4
 
--- URUTAN RARITY (Dari Paling Langka ke Paling Umum)
+    local panelCorner = Instance.new("UICorner", panelFrame)
+    panelCorner.CornerRadius = UDim.new(0, 6)
+
+    local panelStroke = Instance.new("UIStroke", panelFrame)
+    panelStroke.Color = Color3.fromRGB(45, 55, 75)
+    panelStroke.Thickness = 1
+
+    -- Header Button
+    local headerBtn = Instance.new("TextButton", panelFrame)
+    headerBtn.Size = UDim2.new(1, 0, 0, 32)
+    headerBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+    headerBtn.Text = ""
+    headerBtn.ZIndex = 5
+
+    local headerCorner = Instance.new("UICorner", headerBtn)
+    headerCorner.CornerRadius = UDim.new(0, 6)
+
+    local headerTitle = Instance.new("TextLabel", headerBtn)
+    headerTitle.Size = UDim2.new(1, -28, 1, 0)
+    headerTitle.Position = UDim2.new(0, 8, 0, 0)
+    headerTitle.BackgroundTransparency = 1
+    headerTitle.Text = titleText
+    headerTitle.TextColor3 = Color3.fromRGB(147, 197, 253)
+    headerTitle.Font = Enum.Font.GothamBold
+    headerTitle.TextSize = 9
+    headerTitle.TextXAlignment = Enum.TextXAlignment.Left
+    headerTitle.ZIndex = 6
+
+    local arrowLabel = Instance.new("TextLabel", headerBtn)
+    arrowLabel.Size = UDim2.new(0, 20, 1, 0)
+    arrowLabel.Position = UDim2.new(1, -22, 0, 0)
+    arrowLabel.BackgroundTransparency = 1
+    arrowLabel.Text = "▼"
+    arrowLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
+    arrowLabel.Font = Enum.Font.GothamBold
+    arrowLabel.TextSize = 9
+    arrowLabel.TextXAlignment = Enum.TextXAlignment.Center
+    arrowLabel.ZIndex = 6
+
+    -- Container Dropdown Scrolling (Memasukkan Scroll Internal agar Tidak Melebar)
+    local scrollContent = Instance.new("ScrollingFrame", panelFrame)
+    scrollContent.Size = UDim2.new(1, -8, 1, -38)
+    scrollContent.Position = UDim2.new(0, 4, 0, 34)
+    scrollContent.BackgroundTransparency = 1
+    scrollContent.BorderSizePixel = 0
+    scrollContent.ScrollBarThickness = 3
+    scrollContent.ScrollBarImageColor3 = Color3.fromRGB(70, 85, 110)
+    scrollContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scrollContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scrollContent.Visible = false
+    scrollContent.ZIndex = 5
+
+    local scrollLayout = Instance.new("UIListLayout", scrollContent)
+    scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    scrollLayout.Padding = UDim.new(0, 4)
+
+    local scrollPadding = Instance.new("UIPadding", scrollContent)
+    scrollPadding.PaddingTop = UDim.new(0, 2)
+    scrollPadding.PaddingBottom = UDim.new(0, 4)
+
+    -- Toggle Event Buka/Tutup Panel Dropdown
+    local isOpen = false
+    headerBtn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        scrollContent.Visible = isOpen
+        arrowLabel.Text = isOpen and "▲" or "▼"
+    end)
+
+    return scrollContent
+end
+
+-- 1. EGG RARITY FILTER PANEL (Tengah Kanan - Posisi X Scale: 0.38, Width: 0.30)
+local RarityContent = CreateHorizontalCollapsiblePanel(EggFarmContent, "Egg Rarity Filter", 0.38, 0.30)
+
 local OrderedRarities = {
-    "Ascended",
-    "Eternal",
-    "Celestial",
-    "Divine",
-    "Mythic",
-    "Legendary",
-    "Epic",
-    "Rare",
-    "Uncommon",
-    "Common"
+    "Ascended", "Eternal", "Celestial", "Divine", "Mythic",
+    "Legendary", "Epic", "Rare", "Uncommon", "Common"
 }
 
--- Container List Vertikal Rarity
-local RarityListFrame = Instance.new("Frame", ScrollEgg)
-RarityListFrame.Size = UDim2.new(1, -10, 0, 0)
-RarityListFrame.BackgroundTransparency = 1
-RarityListFrame.ZIndex = 4
-
-local RarityListLayout = Instance.new("UIListLayout", RarityListFrame)
-RarityListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-RarityListLayout.Padding = UDim.new(0, 4)
-
-RarityListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    RarityListFrame.Size = UDim2.new(1, -10, 0, RarityListLayout.AbsoluteContentSize.Y)
-end)
-
--- Loop Pembuatan Item Rarity secara Urut Vertikal
 for index, rName in ipairs(OrderedRarities) do
-    local isEnabled = PlayerState.SelectedRarities[rName] or false
+    local isEnabled = PlayerState.SelectedRarities[rName] == true
     
-    local rBtn = Instance.new("TextButton", RarityListFrame)
-    rBtn.Size = UDim2.new(1, 0, 0, 26)
+    local rBtn = Instance.new("TextButton", RarityContent)
+    rBtn.Size = UDim2.new(1, -4, 0, 24)
     rBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
     rBtn.Text = ""
     rBtn.LayoutOrder = index
-    rBtn.ZIndex = 5
+    rBtn.ZIndex = 6
     
     local rCorner = Instance.new("UICorner", rBtn)
-    rCorner.CornerRadius = UDim.new(0, 5)
+    rCorner.CornerRadius = UDim.new(0, 4)
     
     local rNameLabel = Instance.new("TextLabel", rBtn)
-    rNameLabel.Size = UDim2.new(1, -50, 1, 0)
-    rNameLabel.Position = UDim2.new(0, 10, 0, 0)
+    rNameLabel.Size = UDim2.new(1, -35, 1, 0)
+    rNameLabel.Position = UDim2.new(0, 6, 0, 0)
     rNameLabel.BackgroundTransparency = 1
     rNameLabel.Text = rName
     rNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
     rNameLabel.Font = Enum.Font.GothamMedium
-    rNameLabel.TextSize = 10
+    rNameLabel.TextSize = 8
     rNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    rNameLabel.ZIndex = 6
+    rNameLabel.ZIndex = 7
     
     local rStatusLabel = Instance.new("TextLabel", rBtn)
-    rStatusLabel.Size = UDim2.new(0, 40, 1, 0)
-    rStatusLabel.Position = UDim2.new(1, -45, 0, 0)
+    rStatusLabel.Size = UDim2.new(0, 30, 1, 0)
+    rStatusLabel.Position = UDim2.new(1, -32, 0, 0)
     rStatusLabel.BackgroundTransparency = 1
     rStatusLabel.Text = isEnabled and "ON" or "OFF"
     rStatusLabel.TextColor3 = isEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
     rStatusLabel.Font = Enum.Font.GothamBold
-    rStatusLabel.TextSize = 9
+    rStatusLabel.TextSize = 8
     rStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-    rStatusLabel.ZIndex = 6
+    rStatusLabel.ZIndex = 7
     
     rBtn.MouseButton1Click:Connect(function()
         local newState = not PlayerState.SelectedRarities[rName]
@@ -776,6 +1072,45 @@ for index, rName in ipairs(OrderedRarities) do
         rBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
         rStatusLabel.Text = newState and "ON" or "OFF"
         rStatusLabel.TextColor3 = newState and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
+        
+        SaveConfig()
+    end)
+end
+
+-- 2. AREA FILTER PANEL (Paling Kanan - Posisi X Scale: 0.68, Width: 0.31)
+local AreaContent = CreateHorizontalCollapsiblePanel(EggFarmContent, "Area Filter", 0.68, 0.31)
+
+for index, areaKey in ipairs(VALID_AREAS) do
+    local isSelected = PlayerState.SelectedAreas[areaKey] == true
+    local displayName = AREA_DISPLAY_NAMES[areaKey] or areaKey
+    
+    local aBtn = Instance.new("TextButton", AreaContent)
+    aBtn.Size = UDim2.new(1, -4, 0, 24)
+    aBtn.BackgroundColor3 = isSelected and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
+    aBtn.Text = ""
+    aBtn.LayoutOrder = index
+    aBtn.ZIndex = 6
+    
+    local aCorner = Instance.new("UICorner", aBtn)
+    aCorner.CornerRadius = UDim.new(0, 4)
+    
+    local aNameLabel = Instance.new("TextLabel", aBtn)
+    aNameLabel.Size = UDim2.new(1, -6, 1, 0)
+    aNameLabel.Position = UDim2.new(0, 6, 0, 0)
+    aNameLabel.BackgroundTransparency = 1
+    aNameLabel.Text = (isSelected and "☑ " or "☐ ") .. displayName
+    aNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
+    aNameLabel.Font = Enum.Font.GothamMedium
+    aNameLabel.TextSize = 8
+    aNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    aNameLabel.ZIndex = 7
+    
+    aBtn.MouseButton1Click:Connect(function()
+        local newState = not PlayerState.SelectedAreas[areaKey]
+        PlayerState.SelectedAreas[areaKey] = newState
+        
+        aBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
+        aNameLabel.Text = (newState and "☑ " or "☐ ") .. displayName
         
         SaveConfig()
     end)
@@ -799,7 +1134,7 @@ HopTitle.TextSize = 12
 HopTitle.TextXAlignment = Enum.TextXAlignment.Left
 HopTitle.ZIndex = 3
 
-local HopStatusText = Instance.new("TextLabel", HopContent)
+HopStatusText = Instance.new("TextLabel", HopContent)
 HopStatusText.Size = UDim2.new(1, -10, 0, 18)
 HopStatusText.Position = UDim2.new(0, 0, 0, 22)
 HopStatusText.BackgroundTransparency = 1
@@ -896,6 +1231,8 @@ end
 
 AddInfoCard("⚡ Instant Teleport & Drop", "Sistem drop otomatis mengosongkan slot hotbar agar tidak melebihi kapasitas.")
 AddInfoCard("🕊️ Safe Zone Active", "Setelah mengambil telur, karakter langsung balik ke SafeZone secara stabil.")
+AddInfoCard("🎯 Side-by-Side Area Filter", "Panel area & rarity ditempatkan bersebelahan secara horizontal dengan scroll independen.")
+AddInfoCard("✅ Strict Validation", "Auto Steal memfilter area & rarity secara bersamaan sebelum memilih target.")
 
 -- TAB MANAGER
 local function SetActiveTab(selectedTab)
@@ -1039,13 +1376,17 @@ local function SynchronizeFlyStates()
 end
 
 ToggleBtn.MouseButton1Click:Connect(function()
-    TeleportWindow.Visible = true
-    ToggleBtn.Visible = false
+    if TeleportWindow then
+        TeleportWindow.Visible = true
+        ToggleBtn.Visible = false
+    end
 end)
 
 CloseMainBtn.MouseButton1Click:Connect(function()
-    TeleportWindow.Visible = false
-    ToggleBtn.Visible = true
+    if TeleportWindow then
+        TeleportWindow.Visible = false
+        ToggleBtn.Visible = true
+    end
 end)
 
 PlaceBlockBtn.MouseButton1Click:Connect(function()
@@ -1073,7 +1414,9 @@ end)
 
 FlyMainToggleBtn.MouseButton1Click:Connect(function()
     PlayerState.FlyUIVisible = not PlayerState.FlyUIVisible
-    FlyMiniFrame.Visible = PlayerState.FlyUIVisible
+    if FlyMiniFrame then
+        FlyMiniFrame.Visible = PlayerState.FlyUIVisible
+    end
     
     if PlayerState.FlyUIVisible then
         FlyStatusLabel.Text = "ON"
@@ -1093,40 +1436,44 @@ FlyToggleBtn.MouseButton1Click:Connect(function()
 end)
 
 SpeedPlus.MouseButton1Click:Connect(function()
-    PlayerState.FlySpeed = PlayerState.FlySpeed + 10
+    PlayerState.FlySpeed = math.clamp(PlayerState.FlySpeed + 10, FLY_SPEED_MIN, FLY_SPEED_MAX)
     SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
     SaveConfig()
 end)
 
 SpeedMinus.MouseButton1Click:Connect(function()
-    if PlayerState.FlySpeed > 10 then
-        PlayerState.FlySpeed = PlayerState.FlySpeed - 10
-        SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
-        SaveConfig()
-    end
+    PlayerState.FlySpeed = math.clamp(PlayerState.FlySpeed - 10, FLY_SPEED_MIN, FLY_SPEED_MAX)
+    SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
+    SaveConfig()
 end)
 
 RunService.RenderStepped:Connect(function()
-    if PlayerState.IsFlying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+    if PlayerState.IsFlying and LocalPlayer.Character then
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        local hrp = LocalPlayer.Character.HumanoidRootPart
         local cam = workspace.CurrentCamera
+        
+        if not hum or not cam then return end
 
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
+        pcall(function()
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
 
-        if flyBodyVelocity and flyBodyGyro and hum and cam then
-            flyBodyGyro.CFrame = cam.CFrame
-            local moveDir = hum.MoveDirection
-            if moveDir.Magnitude > 0 then
-                local camFrame = cam.CFrame
-                local localMove = camFrame:VectorToObjectSpace(moveDir)
-                local finalVelocity = (camFrame.LookVector * -localMove.Z) + (camFrame.RightVector * localMove.X)
-                flyBodyVelocity.Velocity = finalVelocity.Unit * PlayerState.FlySpeed
-            else
-                flyBodyVelocity.Velocity = Vector3.zero
+            if flyBodyVelocity and flyBodyGyro then
+                flyBodyGyro.CFrame = cam.CFrame
+                local moveDir = hum.MoveDirection
+                if moveDir.Magnitude > 0 then
+                    local camFrame = cam.CFrame
+                    local localMove = camFrame:VectorToObjectSpace(moveDir)
+                    local finalVelocity = (camFrame.LookVector * -localMove.Z) + (camFrame.RightVector * localMove.X)
+                    flyBodyVelocity.Velocity = finalVelocity.Unit * math.clamp(PlayerState.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX)
+                else
+                    flyBodyVelocity.Velocity = Vector3.zero
+                end
             end
-        end
+        end)
     end
 end)
 
@@ -1136,9 +1483,14 @@ RunService.Stepped:Connect(function()
 
     if PlayerState.IsFlying or PlayerState.Noclip then
         for _, part in ipairs(char:GetChildren()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
+            if part and part:IsA("BasePart") then 
+                pcall(function()
+                    part.CanCollide = false
+                end)
             end
         end
     end
 end)
+
+print("[FAQIH HUB] Script loaded successfully! ✅")
+print("[AreaFilter] Horizontal Layout & Multi-Select Active!")
