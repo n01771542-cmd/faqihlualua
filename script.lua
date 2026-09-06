@@ -1,7 +1,7 @@
 --[[
     Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Collapsible & Mini Fly UI Update)
     Credits: powered by faqih
-    Feature Update: Auto Hop Server After Rarity Integrated
+    Feature Update: Auto Hop Only For Mythic & Above
 ]]--
 
 local Players = game:GetService("Players")
@@ -65,9 +65,15 @@ local AREA_PATTERNS = {
     CelestialHeights = {"celestial", "sky"}, Savannah = {"savannah"}
 }
 
+-- Rarity Lengkap untuk Filter Utama
 local OrderedRarities = {
     "Ascended", "Eternal", "Celestial", "Divine", "Mythic",
     "Legendary", "Epic", "Rare", "Uncommon", "Common"
+}
+
+-- Hanya Rarity Mythic ke Atas untuk Auto Hop
+local HopRaritiesList = {
+    "Ascended", "Eternal", "Celestial", "Divine", "Mythic"
 }
 
 local RarityPriority = {
@@ -92,8 +98,8 @@ local PlayerState = {
     StealPriority = true,
     TargetMaxPlayers = 1,
     AutoHopAfterRarity = false,
+    KeepAutoHopAfterServerHop = false,
     HopRarities = {
-        Common = false, Uncommon = false, Rare = false, Epic = false, Legendary = false,
         Mythic = false, Divine = false, Celestial = false, Eternal = false, Ascended = false
     },
     SelectedAreas = {
@@ -116,6 +122,7 @@ local function SaveConfig()
         StealPriority = PlayerState.StealPriority,
         TargetMaxPlayers = PlayerState.TargetMaxPlayers,
         AutoHopAfterRarity = PlayerState.AutoHopAfterRarity,
+        KeepAutoHopAfterServerHop = PlayerState.KeepAutoHopAfterServerHop,
         HopRarities = PlayerState.HopRarities,
         SelectedAreas = PlayerState.SelectedAreas,
         SelectedRarities = PlayerState.SelectedRarities
@@ -133,6 +140,7 @@ local function LoadConfig()
         if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
         if result.TargetMaxPlayers ~= nil then PlayerState.TargetMaxPlayers = math.clamp(result.TargetMaxPlayers, 1, 6) end
         if result.AutoHopAfterRarity ~= nil then PlayerState.AutoHopAfterRarity = result.AutoHopAfterRarity end
+        if result.KeepAutoHopAfterServerHop ~= nil then PlayerState.KeepAutoHopAfterServerHop = result.KeepAutoHopAfterServerHop end
         if type(result.HopRarities) == "table" then for k, v in pairs(result.HopRarities) do PlayerState.HopRarities[k] = v end end
         if type(result.SelectedAreas) == "table" then for k, v in pairs(result.SelectedAreas) do PlayerState.SelectedAreas[k] = v end end
         if type(result.SelectedRarities) == "table" then for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end end
@@ -151,6 +159,10 @@ local HopStatusText = nil
 local function PerformServerHop(overrideTargetPlayers)
     if IsHopping then return end
     IsHopping = true
+    
+    if not PlayerState.KeepAutoHopAfterServerHop then
+        PlayerState.AutoHopAfterRarity = false
+    end
     SaveConfig()
     
     local targetPlayers = overrideTargetPlayers or PlayerState.TargetMaxPlayers
@@ -265,22 +277,6 @@ local function TeleportToSafeZone()
     end
 end
 
-local function HasEggInInventory()
-    local char = LocalPlayer.Character
-    if char then
-        for _, child in ipairs(char:GetChildren()) do
-            if child:IsA("Tool") then return true end
-        end
-    end
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    if backpack then
-        for _, child in ipairs(backpack:GetChildren()) do
-            if child:IsA("Tool") then return true end
-        end
-    end
-    return false
-end
-
 -- AREA DETECTION ENGINE
 local function DetectEggZone(eggModel)
     if not eggModel then return nil end
@@ -346,7 +342,6 @@ end
 local function ProcessAutoSteal()
     if IsFarming or IsHopping or not PlayerState.AutoSteal then return end
     
-    -- Lock Thread/Target Engine
     IsFarming = true
 
     local targets = GetValidEggTargets()
@@ -355,7 +350,6 @@ local function ProcessAutoSteal()
         return 
     end
     
-    -- Lock 1 Target
     local target = targets[1]
     if not target or not target.Part or not target.Prompt or not target.Prompt.Enabled then 
         IsFarming = false 
@@ -377,12 +371,10 @@ local function ProcessAutoSteal()
     pcall(function()
         DropHeldItems()
         
-        -- 1. TELEPORT KE EGG
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
         hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
         
-        -- 2. CEK POSISI (PASTIKAN SUDAH SAMPAI DEKAT EGG)
         local arrived = false
         local timeout = 0
         repeat
@@ -395,7 +387,6 @@ local function ProcessAutoSteal()
                     arrived = true
                     break
                 else
-                    -- Re-teleport jika belum sampai
                     char.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
                     char.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
                     char.HumanoidRootPart.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
@@ -403,11 +394,9 @@ local function ProcessAutoSteal()
             end
         until timeout >= 1.5
 
-        -- 3. JIKA BERHASIL SAMPAI, TUNGGU ±1 DETIK DULU
         if arrived and PlayerState.AutoSteal then
             task.wait(1.0)
             
-            -- 4. AMBIL / STEAL EGG
             if PlayerState.AutoSteal and target.Prompt and target.Prompt.Parent and target.Prompt.Enabled then
                 local prompt = target.Prompt
                 prompt.HoldDuration = 0
@@ -420,17 +409,14 @@ local function ProcessAutoSteal()
                     prompt:InputHoldEnd() 
                 end
                 
-                -- WAKTU SANGAT SINGKAT AGAR PROSES DITERIMA SERVER
                 task.wait(0.15)
                 stolenSuccessfully = true
             end
         end
 
-        -- 5. TELEPORT KEMBALI KE SAFE ZONE
         TeleportToSafeZone()
     end)
     
-    -- 6. CEK EVALUASI AUTO HOP AFTER RARITY
     if stolenSuccessfully and PlayerState.AutoSteal and PlayerState.AutoHopAfterRarity then
         local hasSelectedHopRarity = false
         for _, selected in pairs(PlayerState.HopRarities) do
@@ -443,12 +429,11 @@ local function ProcessAutoSteal()
         if hasSelectedHopRarity and PlayerState.HopRarities[stolenRarity] == true then
             task.wait(0.5)
             IsFarming = false
-            PerformServerHop(1) -- Prioritaskan server tepat 1 player
+            PerformServerHop(1)
             return
         end
     end
 
-    -- 7. WAIT SEMINIMAL MUNGKIN SEBELUM PROSES NEXT TARGET
     task.wait(0.05)
     IsFarming = false
 end
@@ -640,19 +625,24 @@ local function CreateSwitchToggle(parent, initialState, callback)
     knobCorner.CornerRadius = UDim.new(1, 0)
     
     local state = initialState
-    switchBg.MouseButton1Click:Connect(function()
-        state = not state
+    
+    local function SetState(newState)
+        state = newState
         switchBg.BackgroundColor3 = state and Color3.fromRGB(37, 99, 235) or Color3.fromRGB(51, 65, 85)
         TweenService:Create(knob, TweenInfo.new(0.15), {
             Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
         }):Play()
+    end
+
+    switchBg.MouseButton1Click:Connect(function()
+        SetState(not state)
         if callback then callback(state) end
     end)
-    return switchBg
+    return switchBg, SetState
 end
 
 -- =================================================================
--- INDEPENDENT FLY MINI CONTROLLER WINDOW (FLOATING)
+-- INDEPENDENT FLY MINI CONTROLLER WINDOW
 -- =================================================================
 local FlyMiniUI = Instance.new("Frame", ScreenGui)
 FlyMiniUI.Name = "FlyMiniController"
@@ -707,7 +697,6 @@ MiniSpeedCorner.CornerRadius = UDim.new(0, 6)
 local MiniSpeedStroke = Instance.new("UIStroke", MiniSpeedBox)
 MiniSpeedStroke.Color = Color3.fromRGB(30, 41, 59)
 
--- Function Sync Helper
 local function SyncFlyStateUI()
     MiniActiveBtn.BackgroundColor3 = PlayerState.IsFlying and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(225, 29, 72)
     MiniActiveBtn.Text = PlayerState.IsFlying and "FLYING : ON" or "FLYING : OFF"
@@ -952,8 +941,8 @@ ExecuteHopBtn.MouseButton1Click:Connect(function()
     PerformServerHop()
 end)
 
--- 4. Auto Hop Server After Rarity Box
-local HopRarityBox = CreateCardBox(LeftCol, 175)
+-- 4. Auto Hop Server After Rarity Box (HANYA MYTHIC KE ATAS)
+local HopRarityBox = CreateCardBox(LeftCol, 185)
 
 local HopRarityHeader = Instance.new("Frame", HopRarityBox)
 HopRarityHeader.Size = UDim2.new(1, -20, 0, 36)
@@ -1011,9 +1000,38 @@ HopRarityCollapseBtn.TextSize = 10
 local HopRarityBtnCorner = Instance.new("UICorner", HopRarityCollapseBtn)
 HopRarityBtnCorner.CornerRadius = UDim.new(0, 6)
 
+-- Keep Auto Hop Option
+local KeepHopFrame = Instance.new("Frame", HopRarityBox)
+KeepHopFrame.Size = UDim2.new(1, -20, 0, 32)
+KeepHopFrame.Position = UDim2.new(0, 10, 0, 46)
+KeepHopFrame.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+
+local KeepHopCorner = Instance.new("UICorner", KeepHopFrame)
+KeepHopCorner.CornerRadius = UDim.new(0, 6)
+
+local KeepHopLabel = Instance.new("TextLabel", KeepHopFrame)
+KeepHopLabel.Size = UDim2.new(1, -50, 1, 0)
+KeepHopLabel.Position = UDim2.new(0, 8, 0, 0)
+KeepHopLabel.BackgroundTransparency = 1
+KeepHopLabel.Text = "Keep Auto Hop After Server Hop"
+KeepHopLabel.TextColor3 = Color3.fromRGB(226, 232, 240)
+KeepHopLabel.Font = Enum.Font.GothamMedium
+KeepHopLabel.TextSize = 8
+KeepHopLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local KeepHopSwitchHolder = Instance.new("Frame", KeepHopFrame)
+KeepHopSwitchHolder.Size = UDim2.new(0, 40, 0, 20)
+KeepHopSwitchHolder.Position = UDim2.new(1, -44, 0.5, -10)
+KeepHopSwitchHolder.BackgroundTransparency = 1
+
+CreateSwitchToggle(KeepHopSwitchHolder, PlayerState.KeepAutoHopAfterServerHop, function(val)
+    PlayerState.KeepAutoHopAfterServerHop = val
+    SaveConfig()
+end)
+
 local HopRarityScroll = Instance.new("ScrollingFrame", HopRarityBox)
-HopRarityScroll.Size = UDim2.new(1, -20, 0, 120)
-HopRarityScroll.Position = UDim2.new(0, 10, 0, 46)
+HopRarityScroll.Size = UDim2.new(1, -20, 0, 90)
+HopRarityScroll.Position = UDim2.new(0, 10, 0, 84)
 HopRarityScroll.BackgroundTransparency = 1
 HopRarityScroll.BorderSizePixel = 0
 HopRarityScroll.ScrollBarThickness = 2
@@ -1026,13 +1044,15 @@ local isHopRarityExpanded = true
 HopRarityCollapseBtn.MouseButton1Click:Connect(function()
     isHopRarityExpanded = not isHopRarityExpanded
     HopRarityScroll.Visible = isHopRarityExpanded
+    KeepHopFrame.Visible = isHopRarityExpanded
     HopRarityCollapseBtn.Text = isHopRarityExpanded and "v" or "^"
     TweenService:Create(HopRarityBox, TweenInfo.new(0.2), {
-        Size = isHopRarityExpanded and UDim2.new(1, -6, 0, 175) or UDim2.new(1, -6, 0, 52)
+        Size = isHopRarityExpanded and UDim2.new(1, -6, 0, 185) or UDim2.new(1, -6, 0, 52)
     }):Play()
 end)
 
-for _, rName in ipairs(OrderedRarities) do
+-- Loop hanya untuk HopRaritiesList (Mythic ke atas)
+for _, rName in ipairs(HopRaritiesList) do
     local isChecked = PlayerState.HopRarities[rName] == true
     
     local itemFrame = Instance.new("TextButton", HopRarityScroll)
@@ -1160,7 +1180,6 @@ AreaSub.Font = Enum.Font.Gotham
 AreaSub.TextSize = 8
 AreaSub.TextXAlignment = Enum.TextXAlignment.Left
 
--- Area Collapse Toggle Button (<>)
 local AreaCollapseBtn = Instance.new("TextButton", AreaHeader)
 AreaCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
 AreaCollapseBtn.Position = UDim2.new(1, -24, 0.5, -12)
@@ -1268,7 +1287,6 @@ RaritySub.Font = Enum.Font.Gotham
 RaritySub.TextSize = 8
 RaritySub.TextXAlignment = Enum.TextXAlignment.Left
 
--- Rarity Collapse Toggle Button (<>)
 local RarityCollapseBtn = Instance.new("TextButton", RarityHeader)
 RarityCollapseBtn.Size = UDim2.new(0, 24, 0, 24)
 RarityCollapseBtn.Position = UDim2.new(1, -24, 0.5, -12)
@@ -1388,4 +1406,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("[FAQIH HUB] Script Updated! Collapsible Area & Rarity + Independent Fly Controller + Auto Hop After Rarity Ready. ✅")
+print("[FAQIH HUB] Script Updated! Auto Hop list now filtered for Mythic & Above only. ✅")
