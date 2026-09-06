@@ -1,7 +1,7 @@
 --[[
-    Script Name: faqih lua hub | jump for a egg (Strict Multi-Select Area & Collapsible Panels)
+    Script Name: faqih lua hub | jump for a egg (Strict Multi-Select Area & Collapsible Panels - Fixed Scroll + Auto Sell)
     Credits: powered by faqih
-    Status: Side-by-Side Horizontal Layout for Filters Integrated
+    Status: Re-Layout Egg Farm & Integrated Auto Sell Engine (Independent Scrolling Panels)
 ]]--
 
 local Players = game:GetService("Players")
@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -88,13 +89,14 @@ local AREA_PATTERNS = {
     Savannah = {"savannah", "safari", "grassland"}
 }
 
--- Configuration State Default (MULTI-SELECT DEFAULT ALL TRUE)
+-- Configuration State Default
 local PlayerState = {
     FlyUIVisible = true,
     IsFlying = false,     
     FlySpeed = FLY_SPEED_DEFAULT,
     Noclip = false,
     AutoFarmEgg = false,
+    AutoSellEgg = false,
     StealPriority = true,
     SelectedAreas = {
         Meadow = true,
@@ -112,6 +114,11 @@ local PlayerState = {
         Common = true, Uncommon = true, Rare = true, Epic = true,
         Legendary = true, Mythic = true, Divine = true, Celestial = true,
         Eternal = true, Ascended = true
+    },
+    SelectedSellRarities = {
+        Common = false, Uncommon = false, Rare = false, Epic = false,
+        Legendary = false, Mythic = false, Divine = false, Celestial = false,
+        Eternal = false, Ascended = false
     }
 }
 
@@ -124,9 +131,11 @@ local function SaveConfig()
         FlySpeed = math.clamp(PlayerState.FlySpeed, FLY_SPEED_MIN, FLY_SPEED_MAX),
         Noclip = PlayerState.Noclip,
         AutoFarmEgg = PlayerState.AutoFarmEgg,
+        AutoSellEgg = PlayerState.AutoSellEgg,
         StealPriority = PlayerState.StealPriority,
         SelectedAreas = PlayerState.SelectedAreas,
-        SelectedRarities = PlayerState.SelectedRarities
+        SelectedRarities = PlayerState.SelectedRarities,
+        SelectedSellRarities = PlayerState.SelectedSellRarities
     }
     
     pcall(function()
@@ -150,12 +159,16 @@ local function LoadConfig()
         end
         if result.Noclip ~= nil then PlayerState.Noclip = result.Noclip end
         if result.AutoFarmEgg ~= nil then PlayerState.AutoFarmEgg = result.AutoFarmEgg end
+        if result.AutoSellEgg ~= nil then PlayerState.AutoSellEgg = result.AutoSellEgg end
         if result.StealPriority ~= nil then PlayerState.StealPriority = result.StealPriority end
         if type(result.SelectedAreas) == "table" then
             for k, v in pairs(result.SelectedAreas) do PlayerState.SelectedAreas[k] = v end
         end
         if type(result.SelectedRarities) == "table" then
             for k, v in pairs(result.SelectedRarities) do PlayerState.SelectedRarities[k] = v end
+        end
+        if type(result.SelectedSellRarities) == "table" then
+            for k, v in pairs(result.SelectedSellRarities) do PlayerState.SelectedSellRarities[k] = v end
         end
     end
     
@@ -334,7 +347,7 @@ local function DropHeldItems()
         end
     end
     
-    local rep = game:GetService("ReplicatedStorage")
+    local rep = ReplicatedStorage
     if rep then
         for _, name in ipairs({"DropItem", "Drop", "DropTool", "DropEgg", "RemoveItem"}) do
             local dropRemote = rep:FindFirstChild(name, true)
@@ -344,6 +357,93 @@ local function DropHeldItems()
         end
     end
 end
+
+-- AUTO SELL SYSTEM (DENGAN FILTER SELECTED SELL RARITIES)
+local function AutoSellEggs()
+    if not PlayerState.AutoSellEgg then return end
+    
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if not char then return end
+    
+    -- Remote Detection
+    local sellRemote = nil
+    for _, name in ipairs({"SellEgg", "SellEggs", "SellItem", "Sell", "SellAll", "SellTools", "EggSell"}) do
+        local remote = ReplicatedStorage:FindFirstChild(name, true)
+        if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+            sellRemote = remote
+            break
+        end
+    end
+
+    local itemsToProcess = {}
+    
+    local function CheckAndInsert(item)
+        if not item or not item:IsA("Tool") then return end
+        
+        local rarity = item:GetAttribute("Rarity")
+        if not rarity or type(rarity) ~= "string" then
+            local lowerName = string.lower(item.Name)
+            for rName, _ in pairs(PlayerState.SelectedSellRarities) do
+                if string.find(lowerName, string.lower(rName)) then 
+                    rarity = rName
+                    break
+                end
+            end
+        end
+        
+        if not rarity then rarity = "Common" end
+        
+        -- Hanya masukkan jika SelectedSellRarities[rarity] == true
+        if PlayerState.SelectedSellRarities[rarity] == true then
+            table.insert(itemsToProcess, item)
+        end
+    end
+
+    for _, item in ipairs(char:GetChildren()) do CheckAndInsert(item) end
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do CheckAndInsert(item) end
+    end
+
+    if #itemsToProcess == 0 then return end
+
+    for _, item in ipairs(itemsToProcess) do
+        if not PlayerState.AutoSellEgg then break end
+        pcall(function()
+            if sellRemote then
+                if sellRemote:IsA("RemoteEvent") then
+                    sellRemote:FireServer(item)
+                elseif sellRemote:IsA("RemoteFunction") then
+                    sellRemote:InvokeServer(item)
+                end
+            else
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and item.Parent == backpack then
+                    hum:EquipTool(item)
+                    task.wait(0.02)
+                end
+                
+                local interactRemote = item:FindFirstChildWhichIsA("RemoteEvent", true) or item:FindFirstChildWhichIsA("RemoteFunction", true)
+                if interactRemote then
+                    if interactRemote:IsA("RemoteEvent") then
+                        interactRemote:FireServer("Sell")
+                    else
+                        interactRemote:InvokeServer("Sell")
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- Loop Auto Sell
+task.spawn(function()
+    while task.wait(0.1) do
+        if PlayerState.AutoSellEgg then
+            pcall(AutoSellEggs)
+        end
+    end
+end)
 
 local function TeleportToSafeZone()
     if not SafeZoneBlock or not SafeZoneBlock.Parent then 
@@ -363,7 +463,12 @@ local function TeleportToSafeZone()
             hrp.AssemblyAngularVelocity = Vector3.zero
             hrp.CFrame = targetCFrame
         end)
-        DropHeldItems()
+        
+        if PlayerState.AutoSellEgg then
+            AutoSellEggs()
+        else
+            DropHeldItems()
+        end
     end
 end
 
@@ -389,9 +494,7 @@ local function HasEggInInventory()
     return false
 end
 
--- =================================================================
--- AREA ZONE DETECTION FUNCTION
--- =================================================================
+-- AREA ZONE DETECTION
 local function DetectEggZone(eggModel)
     if not eggModel then return nil end
     
@@ -408,12 +511,10 @@ local function DetectEggZone(eggModel)
         return nil
     end
 
-    -- 1. Cek Attribute
     local zoneAttr = eggModel:GetAttribute("Zone") or eggModel:GetAttribute("Area") or eggModel:GetAttribute("Location")
     local matched = MatchPattern(zoneAttr)
     if matched then return matched end
     
-    -- 2. Cek Parent Hierarchy
     local parent = eggModel.Parent
     while parent and parent ~= workspace do
         matched = MatchPattern(parent.Name)
@@ -421,16 +522,13 @@ local function DetectEggZone(eggModel)
         parent = parent.Parent
     end
     
-    -- 3. Cek Nama Model
     matched = MatchPattern(eggModel.Name)
     if matched then return matched end
     
     return nil
 end
 
--- =================================================================
 -- ADVANCED STEAL & VERIFIED TELEPORT ENGINE
--- =================================================================
 local RarityPriority = {
     Ascended = 10, Eternal = 9, Celestial = 8, Divine = 7,
     Mythic = 6, Legendary = 5, Epic = 4, Rare = 3,
@@ -439,7 +537,6 @@ local RarityPriority = {
 
 local function GetValidEggTargets()
     local validTargets = {}
-    local debugCount = 0
     
     for _, obj in ipairs(workspace:GetDescendants()) do
         if not obj or not obj:IsA("ProximityPrompt") or not obj.Enabled then
@@ -451,25 +548,13 @@ local function GetValidEggTargets()
             eggModel = eggModel.Parent
         end
         
-        if not eggModel then
-            continue
-        end
+        if not eggModel then continue end
         
-        debugCount = debugCount + 1
-        
-        -- DETECT AREA STRICTLY
         local zone = DetectEggZone(eggModel)
-        
-        -- STRICT AREA FILTER CHECK
-        if not zone then
+        if not zone or PlayerState.SelectedAreas[zone] ~= true then
             continue
         end
         
-        if PlayerState.SelectedAreas[zone] ~= true then
-            continue
-        end
-        
-        -- DETECT RARITY
         local rarity = eggModel:GetAttribute("Rarity")
         if not rarity or type(rarity) ~= "string" then
             rarity = "Common"
@@ -482,12 +567,10 @@ local function GetValidEggTargets()
             end
         end
         
-        -- STRICT RARITY FILTER CHECK
         if PlayerState.SelectedRarities[rarity] ~= true then
             continue
         end
         
-        -- Mendapatkan Part Acuan Teleport
         local part = nil
         if obj.Parent:IsA("BasePart") then
             part = obj.Parent
@@ -507,7 +590,6 @@ local function GetValidEggTargets()
         end
     end
     
-    -- Sorting Berdasarkan Steal Priority (Rarity Tertinggi Pertama)
     if PlayerState.StealPriority then
         table.sort(validTargets, function(a, b) 
             return a.Priority > b.Priority 
@@ -521,9 +603,7 @@ local function ProcessSmartEggTeleport()
     if IsFarming or not PlayerState.AutoFarmEgg then return end
     
     local targets = GetValidEggTargets()
-    if #targets == 0 then 
-        return 
-    end
+    if #targets == 0 then return end
     
     local target = targets[1]
     if not target or not target.Part or not target.Prompt then return end
@@ -535,10 +615,11 @@ local function ProcessSmartEggTeleport()
     
     if hrp then
         pcall(function()
-            DropHeldItems()
+            if not PlayerState.AutoSellEgg then
+                DropHeldItems()
+            end
             task.wait(0.02)
             
-            -- Teleport Tepat di Posisi Telur
             hrp.AssemblyLinearVelocity = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
             hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
@@ -549,7 +630,6 @@ local function ProcessSmartEggTeleport()
                 prompt.RequiresLineOfSight = false
             end
             
-            -- SISTEM VERIFIKASI PRESISI
             local maxRetries = 15
             local retryCount = 0
             local eggAcquired = false
@@ -577,7 +657,11 @@ local function ProcessSmartEggTeleport()
             if eggAcquired then
                 TeleportToSafeZone()
                 task.wait(0.04)
-                DropHeldItems()
+                if PlayerState.AutoSellEgg then
+                    AutoSellEggs()
+                else
+                    DropHeldItems()
+                end
             end
         end)
     end
@@ -603,7 +687,11 @@ local function SetupPrompt(prompt)
     pcall(function()
         prompt.Triggered:Connect(function(playerWhoTriggered)
             if playerWhoTriggered == LocalPlayer and not PlayerState.AutoFarmEgg then
-                DropHeldItems()
+                if PlayerState.AutoSellEgg then
+                    AutoSellEggs()
+                else
+                    DropHeldItems()
+                end
                 TeleportToSafeZone()
             end
         end)
@@ -613,9 +701,7 @@ end
 for _, prompt in pairs(workspace:GetDescendants()) do SetupPrompt(prompt) end
 workspace.DescendantAdded:Connect(SetupPrompt)
 
--- =================================================================
 -- FLY ENGINE
--- =================================================================
 local function StartFlyEngine()
     local char = LocalPlayer.Character
     if not char then return end
@@ -685,7 +771,7 @@ ScreenGui.Parent = TargetGui
 
 local ToggleBtn = Instance.new("ImageButton", ScreenGui)
 ToggleBtn.Name = "ToggleImageBtn"
-ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Size = UDim2.new(0, 42, 0, 42)
 ToggleBtn.Position = UDim2.new(0.02, 0, 0.2, 0)
 ToggleBtn.BackgroundTransparency = 1
 ToggleBtn.BorderSizePixel = 0
@@ -700,7 +786,7 @@ ToggleCorner.CornerRadius = UDim.new(0, 8)
 
 local TeleportWindow = Instance.new("Frame", ScreenGui)
 TeleportWindow.Name = "TeleportWindow"
-TeleportWindow.Size = UDim2.new(0, 600, 0, 420)
+TeleportWindow.Size = UDim2.new(0, 470, 0, 330)
 TeleportWindow.Position = UDim2.new(0.2, 0, 0.15, 0)
 TeleportWindow.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 TeleportWindow.ClipsDescendants = true
@@ -718,7 +804,7 @@ WindowStroke.Thickness = 1
 
 local TopBar = Instance.new("Frame", TeleportWindow)
 TopBar.Name = "TopBar"
-TopBar.Size = UDim2.new(1, 0, 0, 32)
+TopBar.Size = UDim2.new(1, 0, 0, 28)
 TopBar.BackgroundColor3 = Color3.fromRGB(12, 15, 22)
 TopBar.BorderSizePixel = 0
 TopBar.ZIndex = 2
@@ -728,28 +814,28 @@ TopBarCorner.CornerRadius = UDim.new(0, 10)
 
 local AppTitle = Instance.new("TextLabel", TopBar)
 AppTitle.Size = UDim2.new(1, -40, 1, 0)
-AppTitle.Position = UDim2.new(0, 12, 0, 0)
+AppTitle.Position = UDim2.new(0, 10, 0, 0)
 AppTitle.BackgroundTransparency = 1
 AppTitle.Text = "faqih lua hub  |  jump for a egg"
 AppTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
 AppTitle.Font = Enum.Font.GothamMedium
-AppTitle.TextSize = 11
+AppTitle.TextSize = 10
 AppTitle.TextXAlignment = Enum.TextXAlignment.Left
 AppTitle.ZIndex = 3
 
 local CloseMainBtn = Instance.new("TextButton", TopBar)
 CloseMainBtn.Size = UDim2.new(0, 20, 0, 20)
-CloseMainBtn.Position = UDim2.new(1, -26, 0.5, -10)
+CloseMainBtn.Position = UDim2.new(1, -24, 0.5, -10)
 CloseMainBtn.BackgroundTransparency = 1
 CloseMainBtn.Text = "x"
 CloseMainBtn.TextColor3 = Color3.fromRGB(220, 225, 235)
 CloseMainBtn.Font = Enum.Font.GothamBold
-CloseMainBtn.TextSize = 13
+CloseMainBtn.TextSize = 12
 CloseMainBtn.ZIndex = 3
 
 local Sidebar = Instance.new("Frame", TeleportWindow)
-Sidebar.Size = UDim2.new(0, 110, 1, -32)
-Sidebar.Position = UDim2.new(0, 0, 0, 32)
+Sidebar.Size = UDim2.new(0, 100, 1, -28)
+Sidebar.Position = UDim2.new(0, 0, 0, 28)
 Sidebar.BackgroundColor3 = Color3.fromRGB(14, 17, 24)
 Sidebar.BorderSizePixel = 0
 Sidebar.ZIndex = 2
@@ -759,25 +845,25 @@ SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 SidebarLayout.Padding = UDim.new(0, 2)
 
 local SidebarPadding = Instance.new("UIPadding", Sidebar)
-SidebarPadding.PaddingTop = UDim.new(0, 8)
-SidebarPadding.PaddingLeft = UDim.new(0, 6)
+SidebarPadding.PaddingTop = UDim.new(0, 6)
+SidebarPadding.PaddingLeft = UDim.new(0, 5)
 
 local function CreateTabBtn(name)
     local btn = Instance.new("TextButton", Sidebar)
-    btn.Size = UDim2.new(1, -6, 0, 28)
+    btn.Size = UDim2.new(1, -5, 0, 26)
     btn.BackgroundTransparency = 1
     btn.BackgroundColor3 = Color3.fromRGB(35, 42, 58)
     btn.Text = name
     btn.TextColor3 = Color3.fromRGB(180, 190, 205)
     btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 11
+    btn.TextSize = 10
     btn.TextXAlignment = Enum.TextXAlignment.Left
     btn.ZIndex = 3
     
     local pad = Instance.new("UIPadding", btn)
-    pad.PaddingLeft = UDim.new(0, 10)
+    pad.PaddingLeft = UDim.new(0, 8)
     local corner = Instance.new("UICorner", btn)
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 5)
     return btn
 end
 
@@ -786,10 +872,10 @@ local EggFarmTabBtn = CreateTabBtn("Egg Farm")
 local ServerHopTabBtn = CreateTabBtn("Server Hop")
 local InfoTabBtn = CreateTabBtn("Info / Fitur")
 
--- PANELS
+-- MAIN TAB
 local MainContent = Instance.new("Frame", TeleportWindow)
-MainContent.Size = UDim2.new(1, -122, 1, -40)
-MainContent.Position = UDim2.new(0, 116, 0, 36)
+MainContent.Size = UDim2.new(1, -106, 1, -34)
+MainContent.Position = UDim2.new(0, 103, 0, 30)
 MainContent.BackgroundTransparency = 1
 MainContent.Visible = true
 MainContent.ZIndex = 2
@@ -803,152 +889,71 @@ local CardsLayout = Instance.new("UIListLayout", CardsContainer)
 CardsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 CardsLayout.Padding = UDim.new(0, 6)
 
-local PlaceBlockBtn = Instance.new("TextButton", CardsContainer)
-PlaceBlockBtn.Size = UDim2.new(1, -10, 0, 36)
-PlaceBlockBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-PlaceBlockBtn.Text = ""
-PlaceBlockBtn.ZIndex = 3
+local WelcomeCard = Instance.new("Frame", CardsContainer)
+WelcomeCard.Size = UDim2.new(1, -10, 0, 70)
+WelcomeCard.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+WelcomeCard.ZIndex = 3
 
-local PlaceCorner = Instance.new("UICorner", PlaceBlockBtn)
-PlaceCorner.CornerRadius = UDim.new(0, 6)
+local WelcomeCorner = Instance.new("UICorner", WelcomeCard)
+WelcomeCorner.CornerRadius = UDim.new(0, 6)
 
-local PlaceTitle = Instance.new("TextLabel", PlaceBlockBtn)
-PlaceTitle.Size = UDim2.new(1, -10, 1, 0)
-PlaceTitle.Position = UDim2.new(0, 10, 0, 0)
-PlaceTitle.BackgroundTransparency = 1
-PlaceTitle.Text = "Reset/Atur Ulang Balok Gaib"
-PlaceTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-PlaceTitle.Font = Enum.Font.GothamMedium
-PlaceTitle.TextSize = 11
-PlaceTitle.TextXAlignment = Enum.TextXAlignment.Left
-PlaceTitle.ZIndex = 4
+local WelcomeTitle = Instance.new("TextLabel", WelcomeCard)
+WelcomeTitle.Size = UDim2.new(1, -16, 0, 20)
+WelcomeTitle.Position = UDim2.new(0, 10, 0, 8)
+WelcomeTitle.BackgroundTransparency = 1
+WelcomeTitle.Text = "Welcome to Faqih Lua Hub! 👋"
+WelcomeTitle.TextColor3 = Color3.fromRGB(147, 197, 253)
+WelcomeTitle.Font = Enum.Font.GothamBold
+WelcomeTitle.TextSize = 11
+WelcomeTitle.TextXAlignment = Enum.TextXAlignment.Left
+WelcomeTitle.ZIndex = 4
 
-local FlyMainToggleBtn = Instance.new("TextButton", CardsContainer)
-FlyMainToggleBtn.Size = UDim2.new(1, -10, 0, 36)
-FlyMainToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-FlyMainToggleBtn.Text = ""
-FlyMainToggleBtn.ZIndex = 3
-
-local FlyMainCorner = Instance.new("UICorner", FlyMainToggleBtn)
-FlyMainCorner.CornerRadius = UDim.new(0, 6)
-
-local FlyMainTitle = Instance.new("TextLabel", FlyMainToggleBtn)
-FlyMainTitle.Size = UDim2.new(1, -70, 1, 0)
-FlyMainTitle.Position = UDim2.new(0, 10, 0, 0)
-FlyMainTitle.BackgroundTransparency = 1
-FlyMainTitle.Text = "Fly Controller Engine"
-FlyMainTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-FlyMainTitle.Font = Enum.Font.GothamMedium
-FlyMainTitle.TextSize = 11
-FlyMainTitle.TextXAlignment = Enum.TextXAlignment.Left
-FlyMainTitle.ZIndex = 4
-
-local FlyStatusLabel = Instance.new("TextLabel", FlyMainToggleBtn)
-FlyStatusLabel.Size = UDim2.new(0, 45, 1, 0)
-FlyStatusLabel.Position = UDim2.new(1, -50, 0, 0)
-FlyStatusLabel.BackgroundTransparency = 1
-FlyStatusLabel.Text = PlayerState.FlyUIVisible and "ON" or "OFF"
-FlyStatusLabel.TextColor3 = PlayerState.FlyUIVisible and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-FlyStatusLabel.Font = Enum.Font.GothamBold
-FlyStatusLabel.TextSize = 11
-FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-FlyStatusLabel.ZIndex = 4
+local WelcomeDesc = Instance.new("TextLabel", WelcomeCard)
+WelcomeDesc.Size = UDim2.new(1, -16, 0, 36)
+WelcomeDesc.Position = UDim2.new(0, 10, 0, 28)
+WelcomeDesc.BackgroundTransparency = 1
+WelcomeDesc.Text = "Semua kontrol Egg Farm, Fly Engine, Auto Sell, & Balok Gaib telah disatukan di tab 'Egg Farm' agar lebih praktis."
+WelcomeDesc.TextColor3 = Color3.fromRGB(200, 210, 225)
+WelcomeDesc.Font = Enum.Font.Gotham
+WelcomeDesc.TextSize = 9
+WelcomeDesc.TextWrapped = true
+WelcomeDesc.TextXAlignment = Enum.TextXAlignment.Left
+WelcomeDesc.ZIndex = 4
 
 -- =================================================================
--- EGG FARM TAB (SIDE-BY-SIDE COLLAPSIBLE PANELS: RARITY & AREA FILTERS)
+-- EGG FARM TAB
 -- =================================================================
 local EggFarmContent = Instance.new("Frame", TeleportWindow)
-EggFarmContent.Size = UDim2.new(1, -122, 1, -40)
-EggFarmContent.Position = UDim2.new(0, 116, 0, 36)
+EggFarmContent.Size = UDim2.new(1, -106, 1, -34)
+EggFarmContent.Position = UDim2.new(0, 103, 0, 30)
 EggFarmContent.BackgroundTransparency = 1
 EggFarmContent.Visible = false
 EggFarmContent.ZIndex = 2
 EggFarmContent.ClipsDescendants = true
 
--- Left Controls Container (Bagian Kiri)
-local LeftControlsFrame = Instance.new("Frame", EggFarmContent)
-LeftControlsFrame.Size = UDim2.new(0.38, -5, 1, -10)
-LeftControlsFrame.Position = UDim2.new(0, 5, 0, 5)
-LeftControlsFrame.BackgroundTransparency = 1
-LeftControlsFrame.ZIndex = 3
+--------------------------------------------------------------------
+-- SISI KIRI: CONTAINER FILTER (RARITY & AREA FILTER)
+--------------------------------------------------------------------
+local LeftFiltersFrame = Instance.new("Frame", EggFarmContent)
+LeftFiltersFrame.Size = UDim2.new(0.48, -4, 1, -6)
+LeftFiltersFrame.Position = UDim2.new(0, 2, 0, 3)
+LeftFiltersFrame.BackgroundTransparency = 1
+LeftFiltersFrame.ZIndex = 3
 
-local LeftControlsLayout = Instance.new("UIListLayout", LeftControlsFrame)
-LeftControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-LeftControlsLayout.Padding = UDim.new(0, 8)
+local LeftFiltersLayout = Instance.new("UIListLayout", LeftFiltersFrame)
+LeftFiltersLayout.SortOrder = Enum.SortOrder.LayoutOrder
+LeftFiltersLayout.Padding = UDim.new(0, 5)
 
--- Tombol Auto Farm Master
-local FarmMasterBtn = Instance.new("TextButton", LeftControlsFrame)
-FarmMasterBtn.Size = UDim2.new(1, 0, 0, 36)
-FarmMasterBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-FarmMasterBtn.Text = ""
-FarmMasterBtn.LayoutOrder = 1
-FarmMasterBtn.ZIndex = 4
+-- HELPER: PEMBUATAN PANEL DENGAN INTERNAL SCROLLINGFRAME SENDIRI
+local function CreateScrollableCollapsiblePanel(parentFrame, titleText, layoutOrder, maxHeight)
+    maxHeight = maxHeight or 80
 
-local FarmMasterCorner = Instance.new("UICorner", FarmMasterBtn)
-FarmMasterCorner.CornerRadius = UDim.new(0, 6)
-
-local FarmMasterTitle = Instance.new("TextLabel", FarmMasterBtn)
-FarmMasterTitle.Size = UDim2.new(1, -50, 1, 0)
-FarmMasterTitle.Position = UDim2.new(0, 8, 0, 0)
-FarmMasterTitle.BackgroundTransparency = 1
-FarmMasterTitle.Text = "⚡ Auto Farm"
-FarmMasterTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-FarmMasterTitle.Font = Enum.Font.GothamBold
-FarmMasterTitle.TextSize = 10
-FarmMasterTitle.TextXAlignment = Enum.TextXAlignment.Left
-FarmMasterTitle.ZIndex = 5
-
-local FarmStatusLabel = Instance.new("TextLabel", FarmMasterBtn)
-FarmStatusLabel.Size = UDim2.new(0, 40, 1, 0)
-FarmStatusLabel.Position = UDim2.new(1, -44, 0, 0)
-FarmStatusLabel.BackgroundTransparency = 1
-FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
-FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-FarmStatusLabel.Font = Enum.Font.GothamBold
-FarmStatusLabel.TextSize = 10
-FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-FarmStatusLabel.ZIndex = 5
-
--- Tombol Steal Priority
-local StealToggleBtn = Instance.new("TextButton", LeftControlsFrame)
-StealToggleBtn.Size = UDim2.new(1, 0, 0, 36)
-StealToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
-StealToggleBtn.Text = ""
-StealToggleBtn.LayoutOrder = 2
-StealToggleBtn.ZIndex = 4
-
-local StealCorner = Instance.new("UICorner", StealToggleBtn)
-StealCorner.CornerRadius = UDim.new(0, 6)
-
-local StealTitle = Instance.new("TextLabel", StealToggleBtn)
-StealTitle.Size = UDim2.new(1, -50, 1, 0)
-StealTitle.Position = UDim2.new(0, 8, 0, 0)
-StealTitle.BackgroundTransparency = 1
-StealTitle.Text = "🔥 Steal Priority"
-StealTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
-StealTitle.Font = Enum.Font.GothamMedium
-StealTitle.TextSize = 10
-StealTitle.TextXAlignment = Enum.TextXAlignment.Left
-StealTitle.ZIndex = 5
-
-local StealStatusLabel = Instance.new("TextLabel", StealToggleBtn)
-StealStatusLabel.Size = UDim2.new(0, 40, 1, 0)
-StealStatusLabel.Position = UDim2.new(1, -44, 0, 0)
-StealStatusLabel.BackgroundTransparency = 1
-StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
-StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
-StealStatusLabel.Font = Enum.Font.GothamBold
-StealStatusLabel.TextSize = 10
-StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
-StealStatusLabel.ZIndex = 5
-
--- HELPER: PEMBUATAN COLLAPSIBLE HORIZONTAL PANEL DENGAN INTERNAL SCROLL
-local function CreateHorizontalCollapsiblePanel(parentFrame, titleText, posXScale, sizeXScale)
     local panelFrame = Instance.new("Frame", parentFrame)
-    panelFrame.Size = UDim2.new(sizeXScale, -4, 1, -10)
-    panelFrame.Position = UDim2.new(posXScale, 2, 0, 5)
+    panelFrame.Size = UDim2.new(1, 0, 0, 26)
     panelFrame.BackgroundColor3 = Color3.fromRGB(24, 30, 42)
     panelFrame.BorderSizePixel = 0
+    panelFrame.LayoutOrder = layoutOrder
+    panelFrame.ClipsDescendants = true
     panelFrame.ZIndex = 4
 
     local panelCorner = Instance.new("UICorner", panelFrame)
@@ -960,7 +965,7 @@ local function CreateHorizontalCollapsiblePanel(parentFrame, titleText, posXScal
 
     -- Header Button
     local headerBtn = Instance.new("TextButton", panelFrame)
-    headerBtn.Size = UDim2.new(1, 0, 0, 32)
+    headerBtn.Size = UDim2.new(1, 0, 0, 26)
     headerBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
     headerBtn.Text = ""
     headerBtn.ZIndex = 5
@@ -969,13 +974,13 @@ local function CreateHorizontalCollapsiblePanel(parentFrame, titleText, posXScal
     headerCorner.CornerRadius = UDim.new(0, 6)
 
     local headerTitle = Instance.new("TextLabel", headerBtn)
-    headerTitle.Size = UDim2.new(1, -28, 1, 0)
+    headerTitle.Size = UDim2.new(1, -25, 1, 0)
     headerTitle.Position = UDim2.new(0, 8, 0, 0)
     headerTitle.BackgroundTransparency = 1
     headerTitle.Text = titleText
     headerTitle.TextColor3 = Color3.fromRGB(147, 197, 253)
     headerTitle.Font = Enum.Font.GothamBold
-    headerTitle.TextSize = 9
+    headerTitle.TextSize = 8.5
     headerTitle.TextXAlignment = Enum.TextXAlignment.Left
     headerTitle.ZIndex = 6
 
@@ -983,47 +988,50 @@ local function CreateHorizontalCollapsiblePanel(parentFrame, titleText, posXScal
     arrowLabel.Size = UDim2.new(0, 20, 1, 0)
     arrowLabel.Position = UDim2.new(1, -22, 0, 0)
     arrowLabel.BackgroundTransparency = 1
-    arrowLabel.Text = "▼"
+    arrowLabel.Text = "<>"
     arrowLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
     arrowLabel.Font = Enum.Font.GothamBold
-    arrowLabel.TextSize = 9
+    arrowLabel.TextSize = 8.5
     arrowLabel.TextXAlignment = Enum.TextXAlignment.Center
     arrowLabel.ZIndex = 6
 
-    -- Container Dropdown Scrolling (Memasukkan Scroll Internal agar Tidak Melebar)
-    local scrollContent = Instance.new("ScrollingFrame", panelFrame)
-    scrollContent.Size = UDim2.new(1, -8, 1, -38)
-    scrollContent.Position = UDim2.new(0, 4, 0, 34)
-    scrollContent.BackgroundTransparency = 1
-    scrollContent.BorderSizePixel = 0
-    scrollContent.ScrollBarThickness = 3
-    scrollContent.ScrollBarImageColor3 = Color3.fromRGB(70, 85, 110)
-    scrollContent.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scrollContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scrollContent.Visible = false
-    scrollContent.ZIndex = 5
+    -- Internal ScrollingFrame
+    local scrollFrame = Instance.new("ScrollingFrame", panelFrame)
+    scrollFrame.Size = UDim2.new(1, -6, 0, maxHeight)
+    scrollFrame.Position = UDim2.new(0, 3, 0, 28)
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 3
+    scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(129, 140, 248)
+    scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+    scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scrollFrame.Visible = false
+    scrollFrame.ZIndex = 5
 
-    local scrollLayout = Instance.new("UIListLayout", scrollContent)
-    scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    scrollLayout.Padding = UDim.new(0, 4)
+    local listLayout = Instance.new("UIListLayout", scrollFrame)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 3)
 
-    local scrollPadding = Instance.new("UIPadding", scrollContent)
-    scrollPadding.PaddingTop = UDim.new(0, 2)
-    scrollPadding.PaddingBottom = UDim.new(0, 4)
+    local listPadding = Instance.new("UIPadding", scrollFrame)
+    listPadding.PaddingRight = UDim.new(0, 3)
 
-    -- Toggle Event Buka/Tutup Panel Dropdown
     local isOpen = false
     headerBtn.MouseButton1Click:Connect(function()
         isOpen = not isOpen
-        scrollContent.Visible = isOpen
-        arrowLabel.Text = isOpen and "▲" or "▼"
+        scrollFrame.Visible = isOpen
+        
+        local targetSize = isOpen and UDim2.new(1, 0, 0, 32 + maxHeight) or UDim2.new(1, 0, 0, 26)
+        TweenService:Create(panelFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = targetSize
+        }):Play()
     end)
 
-    return scrollContent
+    return scrollFrame
 end
 
--- 1. EGG RARITY FILTER PANEL (Tengah Kanan - Posisi X Scale: 0.38, Width: 0.30)
-local RarityContent = CreateHorizontalCollapsiblePanel(EggFarmContent, "Egg Rarity Filter", 0.38, 0.30)
+-- 1. EGG RARITY FILTER PANEL (AUTO FARM)
+local RarityScroll = CreateScrollableCollapsiblePanel(LeftFiltersFrame, "Egg Rarity Filter", 1, 75)
 
 local OrderedRarities = {
     "Ascended", "Eternal", "Celestial", "Divine", "Mythic",
@@ -1033,8 +1041,8 @@ local OrderedRarities = {
 for index, rName in ipairs(OrderedRarities) do
     local isEnabled = PlayerState.SelectedRarities[rName] == true
     
-    local rBtn = Instance.new("TextButton", RarityContent)
-    rBtn.Size = UDim2.new(1, -4, 0, 24)
+    local rBtn = Instance.new("TextButton", RarityScroll)
+    rBtn.Size = UDim2.new(1, -4, 0, 20)
     rBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
     rBtn.Text = ""
     rBtn.LayoutOrder = index
@@ -1044,19 +1052,19 @@ for index, rName in ipairs(OrderedRarities) do
     rCorner.CornerRadius = UDim.new(0, 4)
     
     local rNameLabel = Instance.new("TextLabel", rBtn)
-    rNameLabel.Size = UDim2.new(1, -35, 1, 0)
+    rNameLabel.Size = UDim2.new(1, -32, 1, 0)
     rNameLabel.Position = UDim2.new(0, 6, 0, 0)
     rNameLabel.BackgroundTransparency = 1
     rNameLabel.Text = rName
     rNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
     rNameLabel.Font = Enum.Font.GothamMedium
-    rNameLabel.TextSize = 8
+    rNameLabel.TextSize = 8.5
     rNameLabel.TextXAlignment = Enum.TextXAlignment.Left
     rNameLabel.ZIndex = 7
     
     local rStatusLabel = Instance.new("TextLabel", rBtn)
-    rStatusLabel.Size = UDim2.new(0, 30, 1, 0)
-    rStatusLabel.Position = UDim2.new(1, -32, 0, 0)
+    rStatusLabel.Size = UDim2.new(0, 28, 1, 0)
+    rStatusLabel.Position = UDim2.new(1, -30, 0, 0)
     rStatusLabel.BackgroundTransparency = 1
     rStatusLabel.Text = isEnabled and "ON" or "OFF"
     rStatusLabel.TextColor3 = isEnabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 160, 175)
@@ -1077,15 +1085,15 @@ for index, rName in ipairs(OrderedRarities) do
     end)
 end
 
--- 2. AREA FILTER PANEL (Paling Kanan - Posisi X Scale: 0.68, Width: 0.31)
-local AreaContent = CreateHorizontalCollapsiblePanel(EggFarmContent, "Area Filter", 0.68, 0.31)
+-- 2. AREA FILTER PANEL
+local AreaScroll = CreateScrollableCollapsiblePanel(LeftFiltersFrame, "Area Filter", 2, 75)
 
 for index, areaKey in ipairs(VALID_AREAS) do
     local isSelected = PlayerState.SelectedAreas[areaKey] == true
     local displayName = AREA_DISPLAY_NAMES[areaKey] or areaKey
     
-    local aBtn = Instance.new("TextButton", AreaContent)
-    aBtn.Size = UDim2.new(1, -4, 0, 24)
+    local aBtn = Instance.new("TextButton", AreaScroll)
+    aBtn.Size = UDim2.new(1, -4, 0, 20)
     aBtn.BackgroundColor3 = isSelected and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
     aBtn.Text = ""
     aBtn.LayoutOrder = index
@@ -1101,7 +1109,7 @@ for index, areaKey in ipairs(VALID_AREAS) do
     aNameLabel.Text = (isSelected and "☑ " or "☐ ") .. displayName
     aNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
     aNameLabel.Font = Enum.Font.GothamMedium
-    aNameLabel.TextSize = 8
+    aNameLabel.TextSize = 8.5
     aNameLabel.TextXAlignment = Enum.TextXAlignment.Left
     aNameLabel.ZIndex = 7
     
@@ -1116,44 +1124,251 @@ for index, areaKey in ipairs(VALID_AREAS) do
     end)
 end
 
+-- 3. EGG RARITY TO SELL PANEL (DESAIN BARU UNTUK AUTO SELL FILTER)
+local SellRarityScroll = CreateScrollableCollapsiblePanel(LeftFiltersFrame, "Egg Rarity to Sell", 3, 75)
+
+for index, rName in ipairs(OrderedRarities) do
+    local isEnabled = PlayerState.SelectedSellRarities[rName] == true
+    
+    local srBtn = Instance.new("TextButton", SellRarityScroll)
+    srBtn.Size = UDim2.new(1, -4, 0, 20)
+    srBtn.BackgroundColor3 = isEnabled and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
+    srBtn.Text = ""
+    srBtn.LayoutOrder = index
+    srBtn.ZIndex = 6
+    
+    local srCorner = Instance.new("UICorner", srBtn)
+    srCorner.CornerRadius = UDim.new(0, 4)
+    
+    local srNameLabel = Instance.new("TextLabel", srBtn)
+    srNameLabel.Size = UDim2.new(1, -32, 1, 0)
+    srNameLabel.Position = UDim2.new(0, 6, 0, 0)
+    srNameLabel.BackgroundTransparency = 1
+    srNameLabel.Text = (isEnabled and "☑ " or "☐ ") .. rName
+    srNameLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
+    srNameLabel.Font = Enum.Font.GothamMedium
+    srNameLabel.TextSize = 8.5
+    srNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    srNameLabel.ZIndex = 7
+    
+    srBtn.MouseButton1Click:Connect(function()
+        local newState = not PlayerState.SelectedSellRarities[rName]
+        PlayerState.SelectedSellRarities[rName] = newState
+        
+        srBtn.BackgroundColor3 = newState and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 42, 58)
+        srNameLabel.Text = (newState and "☑ " or "☐ ") .. rName
+        
+        SaveConfig()
+    end)
+end
+
+--------------------------------------------------------------------
+-- SISI KANAN: CONTROLS
+--------------------------------------------------------------------
+local RightControlsFrame = Instance.new("Frame", EggFarmContent)
+RightControlsFrame.Size = UDim2.new(0.50, -4, 1, -6)
+RightControlsFrame.Position = UDim2.new(0.50, 2, 0, 3)
+RightControlsFrame.BackgroundTransparency = 1
+RightControlsFrame.ZIndex = 3
+
+local RightControlsLayout = Instance.new("UIListLayout", RightControlsFrame)
+RightControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+RightControlsLayout.Padding = UDim.new(0, 5)
+
+-- 1. Auto Farm Master Toggle
+local FarmMasterBtn = Instance.new("TextButton", RightControlsFrame)
+FarmMasterBtn.Size = UDim2.new(1, -4, 0, 28)
+FarmMasterBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+FarmMasterBtn.Text = ""
+FarmMasterBtn.LayoutOrder = 1
+FarmMasterBtn.ZIndex = 4
+
+local FarmMasterCorner = Instance.new("UICorner", FarmMasterBtn)
+FarmMasterCorner.CornerRadius = UDim.new(0, 6)
+
+local FarmMasterTitle = Instance.new("TextLabel", FarmMasterBtn)
+FarmMasterTitle.Size = UDim2.new(1, -45, 1, 0)
+FarmMasterTitle.Position = UDim2.new(0, 8, 0, 0)
+FarmMasterTitle.BackgroundTransparency = 1
+FarmMasterTitle.Text = "⚡ Auto Farm"
+FarmMasterTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
+FarmMasterTitle.Font = Enum.Font.GothamBold
+FarmMasterTitle.TextSize = 9.5
+FarmMasterTitle.TextXAlignment = Enum.TextXAlignment.Left
+FarmMasterTitle.ZIndex = 5
+
+local FarmStatusLabel = Instance.new("TextLabel", FarmMasterBtn)
+FarmStatusLabel.Size = UDim2.new(0, 35, 1, 0)
+FarmStatusLabel.Position = UDim2.new(1, -40, 0, 0)
+FarmStatusLabel.BackgroundTransparency = 1
+FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
+FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+FarmStatusLabel.Font = Enum.Font.GothamBold
+FarmStatusLabel.TextSize = 9.5
+FarmStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
+FarmStatusLabel.ZIndex = 5
+
+-- 2. Auto Sell Egg Toggle
+local SellToggleBtn = Instance.new("TextButton", RightControlsFrame)
+SellToggleBtn.Size = UDim2.new(1, -4, 0, 28)
+SellToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+SellToggleBtn.Text = ""
+SellToggleBtn.LayoutOrder = 2
+SellToggleBtn.ZIndex = 4
+
+local SellCorner = Instance.new("UICorner", SellToggleBtn)
+SellCorner.CornerRadius = UDim.new(0, 6)
+
+local SellTitle = Instance.new("TextLabel", SellToggleBtn)
+SellTitle.Size = UDim2.new(1, -45, 1, 0)
+SellTitle.Position = UDim2.new(0, 8, 0, 0)
+SellTitle.BackgroundTransparency = 1
+SellTitle.Text = "💰 Auto Sell Egg"
+SellTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
+SellTitle.Font = Enum.Font.GothamBold
+SellTitle.TextSize = 9.5
+SellTitle.TextXAlignment = Enum.TextXAlignment.Left
+SellTitle.ZIndex = 5
+
+local SellStatusLabel = Instance.new("TextLabel", SellToggleBtn)
+SellStatusLabel.Size = UDim2.new(0, 35, 1, 0)
+SellStatusLabel.Position = UDim2.new(1, -40, 0, 0)
+SellStatusLabel.BackgroundTransparency = 1
+SellStatusLabel.Text = PlayerState.AutoSellEgg and "ON" or "OFF"
+SellStatusLabel.TextColor3 = PlayerState.AutoSellEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+SellStatusLabel.Font = Enum.Font.GothamBold
+SellStatusLabel.TextSize = 9.5
+SellStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
+SellStatusLabel.ZIndex = 5
+
+-- 3. Steal Priority Toggle
+local StealToggleBtn = Instance.new("TextButton", RightControlsFrame)
+StealToggleBtn.Size = UDim2.new(1, -4, 0, 28)
+StealToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+StealToggleBtn.Text = ""
+StealToggleBtn.LayoutOrder = 3
+StealToggleBtn.ZIndex = 4
+
+local StealCorner = Instance.new("UICorner", StealToggleBtn)
+StealCorner.CornerRadius = UDim.new(0, 6)
+
+local StealTitle = Instance.new("TextLabel", StealToggleBtn)
+StealTitle.Size = UDim2.new(1, -45, 1, 0)
+StealTitle.Position = UDim2.new(0, 8, 0, 0)
+StealTitle.BackgroundTransparency = 1
+StealTitle.Text = "🔥 Steal Priority"
+StealTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
+StealTitle.Font = Enum.Font.GothamMedium
+StealTitle.TextSize = 9.5
+StealTitle.TextXAlignment = Enum.TextXAlignment.Left
+StealTitle.ZIndex = 5
+
+local StealStatusLabel = Instance.new("TextLabel", StealToggleBtn)
+StealStatusLabel.Size = UDim2.new(0, 35, 1, 0)
+StealStatusLabel.Position = UDim2.new(1, -40, 0, 0)
+StealStatusLabel.BackgroundTransparency = 1
+StealStatusLabel.Text = PlayerState.StealPriority and "ON" or "OFF"
+StealStatusLabel.TextColor3 = PlayerState.StealPriority and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+StealStatusLabel.Font = Enum.Font.GothamBold
+StealStatusLabel.TextSize = 9.5
+StealStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
+StealStatusLabel.ZIndex = 5
+
+-- 4. Fly Controller Engine Toggle
+local FlyMainToggleBtn = Instance.new("TextButton", RightControlsFrame)
+FlyMainToggleBtn.Size = UDim2.new(1, -4, 0, 28)
+FlyMainToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+FlyMainToggleBtn.Text = ""
+FlyMainToggleBtn.LayoutOrder = 4
+FlyMainToggleBtn.ZIndex = 4
+
+local FlyMainCorner = Instance.new("UICorner", FlyMainToggleBtn)
+FlyMainCorner.CornerRadius = UDim.new(0, 6)
+
+local FlyMainTitle = Instance.new("TextLabel", FlyMainToggleBtn)
+FlyMainTitle.Size = UDim2.new(1, -55, 1, 0)
+FlyMainTitle.Position = UDim2.new(0, 8, 0, 0)
+FlyMainTitle.BackgroundTransparency = 1
+FlyMainTitle.Text = "🕊️ Fly Controller Engine"
+FlyMainTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
+FlyMainTitle.Font = Enum.Font.GothamMedium
+FlyMainTitle.TextSize = 9.5
+FlyMainTitle.TextXAlignment = Enum.TextXAlignment.Left
+FlyMainTitle.ZIndex = 5
+
+local FlyStatusLabel = Instance.new("TextLabel", FlyMainToggleBtn)
+FlyStatusLabel.Size = UDim2.new(0, 40, 1, 0)
+FlyStatusLabel.Position = UDim2.new(1, -45, 0, 0)
+FlyStatusLabel.BackgroundTransparency = 1
+FlyStatusLabel.Text = PlayerState.FlyUIVisible and "ON" or "OFF"
+FlyStatusLabel.TextColor3 = PlayerState.FlyUIVisible and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+FlyStatusLabel.Font = Enum.Font.GothamBold
+FlyStatusLabel.TextSize = 9.5
+FlyStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
+FlyStatusLabel.ZIndex = 5
+
+-- 5. Reset/Atur Ulang Balok Gaib
+local PlaceBlockBtn = Instance.new("TextButton", RightControlsFrame)
+PlaceBlockBtn.Size = UDim2.new(1, -4, 0, 28)
+PlaceBlockBtn.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
+PlaceBlockBtn.Text = ""
+PlaceBlockBtn.LayoutOrder = 5
+PlaceBlockBtn.ZIndex = 4
+
+local PlaceCorner = Instance.new("UICorner", PlaceBlockBtn)
+PlaceCorner.CornerRadius = UDim.new(0, 6)
+
+local PlaceTitle = Instance.new("TextLabel", PlaceBlockBtn)
+PlaceTitle.Size = UDim2.new(1, -10, 1, 0)
+PlaceTitle.Position = UDim2.new(0, 8, 0, 0)
+PlaceTitle.BackgroundTransparency = 1
+PlaceTitle.Text = "🧱 Reset/Atur Balok Gaib"
+PlaceTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
+PlaceTitle.Font = Enum.Font.GothamMedium
+PlaceTitle.TextSize = 9.5
+PlaceTitle.TextXAlignment = Enum.TextXAlignment.Left
+PlaceTitle.ZIndex = 5
+
+-- =================================================================
 -- SERVER HOP TAB
+-- =================================================================
 local HopContent = Instance.new("Frame", TeleportWindow)
-HopContent.Size = UDim2.new(1, -122, 1, -40)
-HopContent.Position = UDim2.new(0, 116, 0, 36)
+HopContent.Size = UDim2.new(1, -106, 1, -34)
+HopContent.Position = UDim2.new(0, 103, 0, 30)
 HopContent.BackgroundTransparency = 1
 HopContent.Visible = false
 HopContent.ZIndex = 2
 
 local HopTitle = Instance.new("TextLabel", HopContent)
-HopTitle.Size = UDim2.new(1, 0, 0, 20)
+HopTitle.Size = UDim2.new(1, 0, 0, 18)
 HopTitle.BackgroundTransparency = 1
 HopTitle.Text = "Server Hop (Pilih Jumlah Player)"
 HopTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 HopTitle.Font = Enum.Font.GothamBold
-HopTitle.TextSize = 12
+HopTitle.TextSize = 10.5
 HopTitle.TextXAlignment = Enum.TextXAlignment.Left
 HopTitle.ZIndex = 3
 
 HopStatusText = Instance.new("TextLabel", HopContent)
-HopStatusText.Size = UDim2.new(1, -10, 0, 18)
-HopStatusText.Position = UDim2.new(0, 0, 0, 22)
+HopStatusText.Size = UDim2.new(1, -10, 0, 16)
+HopStatusText.Position = UDim2.new(0, 0, 0, 18)
 HopStatusText.BackgroundTransparency = 1
 HopStatusText.Text = "Pilih server berdasarkan target pemain:"
 HopStatusText.TextColor3 = Color3.fromRGB(180, 190, 205)
 HopStatusText.Font = Enum.Font.Gotham
-HopStatusText.TextSize = 10
+HopStatusText.TextSize = 8.5
 HopStatusText.TextXAlignment = Enum.TextXAlignment.Left
 HopStatusText.ZIndex = 3
 
 local GridHopContainer = Instance.new("Frame", HopContent)
-GridHopContainer.Size = UDim2.new(1, -10, 1, -48)
-GridHopContainer.Position = UDim2.new(0, 0, 0, 44)
+GridHopContainer.Size = UDim2.new(1, -10, 1, -40)
+GridHopContainer.Position = UDim2.new(0, 0, 0, 36)
 GridHopContainer.BackgroundTransparency = 1
 GridHopContainer.ZIndex = 3
 
 local GridHopLayout = Instance.new("UIGridLayout", GridHopContainer)
-GridHopLayout.CellSize = UDim2.new(0.48, -4, 0, 36)
-GridHopLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
+GridHopLayout.CellSize = UDim2.new(0.48, -4, 0, 30)
+GridHopLayout.CellPadding = UDim2.new(0.04, 0, 0, 6)
 
 for i = 1, 6 do
     local HopOptionBtn = Instance.new("TextButton", GridHopContainer)
@@ -1162,7 +1377,7 @@ for i = 1, 6 do
     HopOptionBtn.Text = "👤 " .. tostring(i) .. " Player"
     HopOptionBtn.TextColor3 = Color3.fromRGB(240, 245, 255)
     HopOptionBtn.Font = Enum.Font.GothamMedium
-    HopOptionBtn.TextSize = 11
+    HopOptionBtn.TextSize = 9.5
     HopOptionBtn.ZIndex = 4
     
     local hCorner = Instance.new("UICorner", HopOptionBtn)
@@ -1175,10 +1390,12 @@ for i = 1, 6 do
     end)
 end
 
+-- =================================================================
 -- INFO TAB
+-- =================================================================
 local InfoContent = Instance.new("Frame", TeleportWindow)
-InfoContent.Size = UDim2.new(1, -122, 1, -40)
-InfoContent.Position = UDim2.new(0, 116, 0, 36)
+InfoContent.Size = UDim2.new(1, -106, 1, -34)
+InfoContent.Position = UDim2.new(0, 103, 0, 30)
 InfoContent.BackgroundTransparency = 1
 InfoContent.Visible = false
 InfoContent.ZIndex = 2
@@ -1188,16 +1405,16 @@ ScrollInfo.Size = UDim2.new(1, -5, 1, 0)
 ScrollInfo.BackgroundTransparency = 1
 ScrollInfo.BorderSizePixel = 0
 ScrollInfo.ScrollBarThickness = 3
-ScrollInfo.CanvasSize = UDim2.new(0, 0, 0, 280)
+ScrollInfo.CanvasSize = UDim2.new(0, 0, 0, 260)
 ScrollInfo.ZIndex = 3
 
 local InfoLayout = Instance.new("UIListLayout", ScrollInfo)
 InfoLayout.SortOrder = Enum.SortOrder.LayoutOrder
-InfoLayout.Padding = UDim.new(0, 6)
+InfoLayout.Padding = UDim.new(0, 5)
 
 local function AddInfoCard(titleText, descText)
     local card = Instance.new("Frame", ScrollInfo)
-    card.Size = UDim2.new(1, -10, 0, 52)
+    card.Size = UDim2.new(1, -10, 0, 46)
     card.BackgroundColor3 = Color3.fromRGB(28, 35, 48)
     card.ZIndex = 4
     
@@ -1205,33 +1422,34 @@ local function AddInfoCard(titleText, descText)
     cCorner.CornerRadius = UDim.new(0, 6)
     
     local tLabel = Instance.new("TextLabel", card)
-    tLabel.Size = UDim2.new(1, -16, 0, 18)
-    tLabel.Position = UDim2.new(0, 8, 0, 4)
+    tLabel.Size = UDim2.new(1, -12, 0, 16)
+    tLabel.Position = UDim2.new(0, 6, 0, 4)
     tLabel.BackgroundTransparency = 1
     tLabel.Text = titleText
     tLabel.TextColor3 = Color3.fromRGB(147, 197, 253)
     tLabel.Font = Enum.Font.GothamBold
-    tLabel.TextSize = 10
+    tLabel.TextSize = 8.5
     tLabel.TextXAlignment = Enum.TextXAlignment.Left
     tLabel.ZIndex = 5
     
     local dLabel = Instance.new("TextLabel", card)
-    dLabel.Size = UDim2.new(1, -16, 0, 28)
-    dLabel.Position = UDim2.new(0, 8, 0, 20)
+    dLabel.Size = UDim2.new(1, -12, 0, 22)
+    dLabel.Position = UDim2.new(0, 6, 0, 18)
     dLabel.BackgroundTransparency = 1
     dLabel.Text = descText
     dLabel.TextColor3 = Color3.fromRGB(220, 225, 235)
     dLabel.Font = Enum.Font.Gotham
-    dLabel.TextSize = 9
+    dLabel.TextSize = 7.5
     dLabel.TextWrapped = true
     dLabel.TextXAlignment = Enum.TextXAlignment.Left
     dLabel.TextYAlignment = Enum.TextYAlignment.Top
     dLabel.ZIndex = 5
 end
 
+AddInfoCard("💰 Independent Auto Sell Engine", "Menjual egg secara selektif menggunakan filter 'Egg Rarity to Sell' terpisah.")
 AddInfoCard("⚡ Instant Teleport & Drop", "Sistem drop otomatis mengosongkan slot hotbar agar tidak melebihi kapasitas.")
 AddInfoCard("🕊️ Safe Zone Active", "Setelah mengambil telur, karakter langsung balik ke SafeZone secara stabil.")
-AddInfoCard("🎯 Side-by-Side Area Filter", "Panel area & rarity ditempatkan bersebelahan secara horizontal dengan scroll independen.")
+AddInfoCard("🎯 Independent Scroll Filter", "Panel Area & Rarity masing-masing memiliki ScrollBar internal sendiri.")
 AddInfoCard("✅ Strict Validation", "Auto Steal memfilter area & rarity secara bersamaan sebelum memilih target.")
 
 -- TAB MANAGER
@@ -1273,12 +1491,12 @@ MainTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Main") end)
 EggFarmTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Farm") end)
 ServerHopTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Hop") end)
 InfoTabBtn.MouseButton1Click:Connect(function() SetActiveTab("Info") end)
-SetActiveTab("Main")
+SetActiveTab("Farm")
 
 -- FLY MINI FRAME
 local FlyMiniFrame = Instance.new("Frame", ScreenGui)
 FlyMiniFrame.Name = "FlyMiniFrame"
-FlyMiniFrame.Size = UDim2.new(0, 165, 0, 110)
+FlyMiniFrame.Size = UDim2.new(0, 140, 0, 95)
 FlyMiniFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
 FlyMiniFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 33)
 FlyMiniFrame.Active = true
@@ -1294,33 +1512,33 @@ FlyStroke.Color = Color3.fromRGB(129, 140, 248)
 FlyStroke.Thickness = 1.5
 
 local FlyMiniTitle = Instance.new("TextLabel", FlyMiniFrame)
-FlyMiniTitle.Size = UDim2.new(1, -12, 0, 28)
-FlyMiniTitle.Position = UDim2.new(0, 10, 0, 2)
+FlyMiniTitle.Size = UDim2.new(1, -10, 0, 22)
+FlyMiniTitle.Position = UDim2.new(0, 8, 0, 2)
 FlyMiniTitle.BackgroundTransparency = 1
 FlyMiniTitle.Text = "🕊️ Fly Controller"
 FlyMiniTitle.TextColor3 = Color3.fromRGB(240, 240, 255)
 FlyMiniTitle.Font = Enum.Font.GothamBold
-FlyMiniTitle.TextSize = 11
+FlyMiniTitle.TextSize = 9.5
 FlyMiniTitle.TextXAlignment = Enum.TextXAlignment.Left
 FlyMiniTitle.ZIndex = 101
 
 local FlyToggleBtn = Instance.new("TextButton", FlyMiniFrame)
-FlyToggleBtn.Size = UDim2.new(0.88, 0, 0, 30)
-FlyToggleBtn.Position = UDim2.new(0.06, 0, 0, 32)
+FlyToggleBtn.Size = UDim2.new(0.88, 0, 0, 24)
+FlyToggleBtn.Position = UDim2.new(0.06, 0, 0, 26)
 FlyToggleBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
 FlyToggleBtn.Text = "FLY : OFF"
 FlyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 FlyToggleBtn.Font = Enum.Font.GothamBold
-FlyToggleBtn.TextSize = 11
+FlyToggleBtn.TextSize = 9.5
 FlyToggleBtn.BorderSizePixel = 0
 FlyToggleBtn.ZIndex = 101
 
 local FlyToggleCorner = Instance.new("UICorner", FlyToggleBtn)
-FlyToggleCorner.CornerRadius = UDim.new(0, 6)
+FlyToggleCorner.CornerRadius = UDim.new(0, 5)
 
 local SpeedFrame = Instance.new("Frame", FlyMiniFrame)
-SpeedFrame.Size = UDim2.new(0.88, 0, 0, 28)
-SpeedFrame.Position = UDim2.new(0.06, 0, 0, 68)
+SpeedFrame.Size = UDim2.new(0.88, 0, 0, 22)
+SpeedFrame.Position = UDim2.new(0.06, 0, 0, 58)
 SpeedFrame.BackgroundTransparency = 1
 SpeedFrame.ZIndex = 101
 
@@ -1331,7 +1549,7 @@ SpeedMinus.BackgroundColor3 = Color3.fromRGB(27, 33, 45)
 SpeedMinus.Text = "-"
 SpeedMinus.TextColor3 = Color3.fromRGB(255, 255, 255)
 SpeedMinus.Font = Enum.Font.GothamBold
-SpeedMinus.TextSize = 14
+SpeedMinus.TextSize = 11
 SpeedMinus.BorderSizePixel = 0
 SpeedMinus.ZIndex = 102
 
@@ -1345,7 +1563,7 @@ SpeedLabel.BackgroundTransparency = 1
 SpeedLabel.Text = "Spd: " .. tostring(PlayerState.FlySpeed)
 SpeedLabel.TextColor3 = Color3.fromRGB(129, 140, 248)
 SpeedLabel.Font = Enum.Font.GothamBold
-SpeedLabel.TextSize = 10
+SpeedLabel.TextSize = 8.5
 SpeedLabel.ZIndex = 102
 
 local SpeedPlus = Instance.new("TextButton", SpeedFrame)
@@ -1355,14 +1573,14 @@ SpeedPlus.BackgroundColor3 = Color3.fromRGB(27, 33, 45)
 SpeedPlus.Text = "+"
 SpeedPlus.TextColor3 = Color3.fromRGB(255, 255, 255)
 SpeedPlus.Font = Enum.Font.GothamBold
-SpeedPlus.TextSize = 14
+SpeedPlus.TextSize = 11
 SpeedPlus.BorderSizePixel = 0
 SpeedPlus.ZIndex = 102
 
 local SpeedPlusCorner = Instance.new("UICorner", SpeedPlus)
 SpeedPlusCorner.CornerRadius = UDim.new(0, 4)
 
--- LISTENERS
+-- EVENT LISTENERS
 local function SynchronizeFlyStates()
     if PlayerState.IsFlying then
         FlyToggleBtn.Text = "FLY : ON"
@@ -1394,7 +1612,7 @@ PlaceBlockBtn.MouseButton1Click:Connect(function()
     PlaceTitle.Text = "✔ Balok Gaib Diperbarui!"
     PlaceTitle.TextColor3 = Color3.fromRGB(16, 185, 129)
     task.wait(1.2)
-    PlaceTitle.Text = "Reset/Atur Ulang Balok Gaib"
+    PlaceTitle.Text = "🧱 Reset/Atur Balok Gaib"
     PlaceTitle.TextColor3 = Color3.fromRGB(240, 245, 255)
 end)
 
@@ -1402,6 +1620,13 @@ FarmMasterBtn.MouseButton1Click:Connect(function()
     PlayerState.AutoFarmEgg = not PlayerState.AutoFarmEgg
     FarmStatusLabel.Text = PlayerState.AutoFarmEgg and "ON" or "OFF"
     FarmStatusLabel.TextColor3 = PlayerState.AutoFarmEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
+    SaveConfig()
+end)
+
+SellToggleBtn.MouseButton1Click:Connect(function()
+    PlayerState.AutoSellEgg = not PlayerState.AutoSellEgg
+    SellStatusLabel.Text = PlayerState.AutoSellEgg and "ON" or "OFF"
+    SellStatusLabel.TextColor3 = PlayerState.AutoSellEgg and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(239, 68, 68)
     SaveConfig()
 end)
 
@@ -1493,4 +1718,4 @@ RunService.Stepped:Connect(function()
 end)
 
 print("[FAQIH HUB] Script loaded successfully! ✅")
-print("[AreaFilter] Horizontal Layout & Multi-Select Active!")
+print("[EggFarm UI] Auto Sell Engine, Dynamic Config & Compact Internal Scroll UI Implemented!")
