@@ -1,7 +1,8 @@
 --[[
-    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Visual Character Lock Update + Auto Reset Revert)
+    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Visual Character Lock Update + Auto Reset Revert + Integrated NoClip)
     Credits: powered by faqih
-    Feature Update: Fake Visual Character Lock + Free Camera 360° + Auto Hop Rarity & Safe Zone + Dynamic Character Swap
+    Feature Update: Fake Visual Character Lock + Free Camera 360° + Auto Hop Rarity & Safe Zone + Dynamic Character Swap + Integrated Fly NoClip
+    Modification: Underground Auto Steal Adjustment
 ]]--
 
 local Players = game:GetService("Players")
@@ -418,7 +419,6 @@ local function ProcessAutoSteal()
 
     local targets = GetValidEggTargets()
     
-    -- Jika TIDAK ADA EGG sama sekali, balikkan ke karakter utama
     if #targets == 0 then
         if isInitialTeleportDone then
             isInitialTeleportDone = false
@@ -427,7 +427,6 @@ local function ProcessAutoSteal()
         return
     end
 
-    -- Jika ADA EGG yang sesuai, aktifkan Fake Character Lock di Safe Zone
     if not isInitialTeleportDone then
         TeleportToSafeZone()
         task.wait(0.3)
@@ -452,9 +451,21 @@ local function ProcessAutoSteal()
     pcall(function()
         DropHeldItems()
 
+        -- UNDERGROUND AUTO STEAL
+        -- Menghitung posisi relatif aman di bawah tanah berdasarkan posisi target Egg
+        local UNDERGROUND_OFFSET = Vector3.new(0, -3.5, 0)
+        local targetUndergroundCFrame = target.Part.CFrame + UNDERGROUND_OFFSET
+
+        -- Matikan tabrakan bagian karakter secara sementara saat teleport ke bawah tanah
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
-        hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
+        hrp.CFrame = targetUndergroundCFrame
 
         local arrived = false
         local timeout = 0
@@ -463,25 +474,32 @@ local function ProcessAutoSteal()
             timeout = timeout + 0.05
             if not PlayerState.AutoSteal then break end
             if char and char:FindFirstChild("HumanoidRootPart") then
-                local currentDist = (char.HumanoidRootPart.Position - target.Part.Position).Magnitude
+                -- Menghitung jarak horizontal & vertikal dari titik underground target
+                local currentDist = (char.HumanoidRootPart.Position - targetUndergroundCFrame.Position).Magnitude
                 if currentDist <= 12 then
                     arrived = true
                     break
                 else
                     char.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
                     char.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
-                    char.HumanoidRootPart.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
+                    char.HumanoidRootPart.CFrame = targetUndergroundCFrame
                 end
             end
         until timeout >= 1.5
 
         if arrived and PlayerState.AutoSteal then
-            task.wait(1.0)
+            task.wait(0.2) -- Penyesuaian responsif sebelum eksekusi prompt
 
             if PlayerState.AutoSteal and target.Prompt and target.Prompt.Parent and target.Prompt.Enabled then
                 local prompt = target.Prompt
                 prompt.HoldDuration = 0
                 prompt.RequiresLineOfSight = false
+                
+                -- UNDERGROUND AUTO STEAL
+                -- Memastikan MaxActivationDistance mencakup posisi di bawah tanah
+                if prompt.MaxActivationDistance < 15 then
+                    prompt.MaxActivationDistance = 15
+                end
 
                 if fireproximityprompt then
                     fireproximityprompt(prompt)
@@ -495,6 +513,8 @@ local function ProcessAutoSteal()
             end
         end
 
+        -- UNDERGROUND AUTO STEAL
+        -- Mengembalikan karakter langsung ke Safe Zone setelah proses selesai
         TeleportToSafeZone()
     end)
 
@@ -566,8 +586,19 @@ local function StopFlyEngine()
     pcall(function()
         if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
         if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then hum.PlatformStand = false end
+        
+        -- Reset Kolisi saat Fly Mati
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
     end)
 end
 
@@ -1469,7 +1500,17 @@ ToggleBtn.MouseButton1Click:Connect(function()
     ToggleBtn.Visible = false
 end)
 
--- RUNSERVICE ENGINE LOOPS
+-- RUNSERVICE ENGINE LOOPS (FLY + NOCLIP)
+RunService.Stepped:Connect(function()
+    if PlayerState.IsFlying and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
 RunService.RenderStepped:Connect(function()
     if PlayerState.IsFlying and LocalPlayer.Character then
         local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1498,4 +1539,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("[FAQIH HUB] Dynamic Visual Character Lock active! Switches back to real char when no eggs are left. ✅")
+print("[FAQIH HUB] Integrated Fly NoClip Active! All systems fully functional. ✅")
