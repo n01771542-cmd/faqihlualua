@@ -1,7 +1,7 @@
 --[[
-    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Collapsible & Mini Fly UI Update)
+    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Visual Character Lock Update)
     Credits: powered by faqih
-    Feature Update: Auto Hop Only For Mythic & Above
+    Feature Update: Fake Visual Character Lock + Free Camera 360° + Auto Hop Rarity & Safe Zone
 ]]--
 
 local Players = game:GetService("Players")
@@ -44,6 +44,9 @@ local CONFIG_FILE_NAME = "FaqihHub_AutoSteal_Config.json"
 local FLY_SPEED_MIN = 10
 local FLY_SPEED_MAX = 1000
 local FLY_SPEED_DEFAULT = 100
+
+-- Visual Lock / Fake Character Storage
+local FakeCharacterModel = nil
 
 -- Authoritative Areas
 local VALID_AREAS = {
@@ -277,6 +280,72 @@ local function TeleportToSafeZone()
     end
 end
 
+-- =================================================================
+-- VISUAL LOCK & FAKE CHARACTER ENGINE
+-- =================================================================
+local function SetCharacterVisibility(char, visible)
+    if not char then return end
+    for _, child in ipairs(char:GetDescendants()) do
+        if child:IsA("BasePart") or child:IsA("Decal") then
+            if child.Name ~= "HumanoidRootPart" then
+                child.Transparency = visible and 0 or 1
+            end
+        end
+    end
+end
+
+local function EnableVisualLock()
+    local char = LocalPlayer.Character
+    if not char or FakeCharacterModel then return end
+    
+    char.Archivable = true
+    FakeCharacterModel = char:Clone()
+    FakeCharacterModel.Name = "VisualLock_FakeChar"
+    
+    for _, child in ipairs(FakeCharacterModel:GetDescendants()) do
+        if child:IsA("Script") or child:IsA("LocalScript") then
+            child:Destroy()
+        elseif child:IsA("BasePart") then
+            child.Anchored = true
+            child.CanCollide = false
+        end
+    end
+    
+    if SafeZoneBlock then
+        FakeCharacterModel:SetPrimaryPartCFrame(SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0))
+    else
+        FakeCharacterModel:SetPrimaryPartCFrame(char:GetPrimaryPartCFrame())
+    end
+    
+    FakeCharacterModel.Parent = workspace
+    SetCharacterVisibility(char, false)
+    
+    local cam = workspace.CurrentCamera
+    local fakeHum = FakeCharacterModel:FindFirstChildOfClass("Humanoid")
+    if cam and fakeHum then
+        cam.CameraType = Enum.CameraType.Custom
+        cam.CameraSubject = fakeHum
+    end
+end
+
+local function DisableVisualLock()
+    local char = LocalPlayer.Character
+    if FakeCharacterModel then
+        FakeCharacterModel:Destroy()
+        FakeCharacterModel = nil
+    end
+    
+    if char then
+        SetCharacterVisibility(char, true)
+        local cam = workspace.CurrentCamera
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if cam and hum then
+            cam.CameraType = Enum.CameraType.Custom
+            cam.CameraSubject = hum
+        end
+    end
+end
+
 -- AREA DETECTION ENGINE
 local function DetectEggZone(eggModel)
     if not eggModel then return nil end
@@ -304,7 +373,7 @@ local function DetectEggZone(eggModel)
     return MatchPattern(eggModel.Name)
 end
 
--- AUTO STEAL ENGINE
+-- AUTO STEAL ENGINE TARGET FINDER
 local function GetValidEggTargets()
     local validTargets = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
@@ -339,42 +408,45 @@ local function GetValidEggTargets()
     return validTargets
 end
 
+-- =================================================================
+-- AUTO STEAL ENGINE (VISUAL LOCK & INTERNAL TELEPORT)
+-- =================================================================
+local isInitialTeleportDone = false
+
 local function ProcessAutoSteal()
     if IsFarming or IsHopping or not PlayerState.AutoSteal then return end
-    
-    IsFarming = true
+
+    if not isInitialTeleportDone then
+        TeleportToSafeZone()
+        task.wait(0.3)
+        EnableVisualLock()
+        isInitialTeleportDone = true
+    end
 
     local targets = GetValidEggTargets()
-    if #targets == 0 then 
-        IsFarming = false 
-        return 
-    end
-    
+    if #targets == 0 then return end
+
     local target = targets[1]
-    if not target or not target.Part or not target.Prompt or not target.Prompt.Enabled then 
-        IsFarming = false 
-        return 
-    end
-    
+    if not target or not target.Part or not target.Prompt or not target.Prompt.Enabled then return end
+
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local hum = char and char:FindFirstChildOfClass("Humanoid")
-    
-    if not hrp or not hum or hum.Health <= 0 then 
-        IsFarming = false 
-        return 
-    end
-    
+
+    if not hrp or not hum or hum.Health <= 0 then return end
+
+    IsFarming = true
+
     local stolenSuccessfully = false
     local stolenRarity = target.Rarity
 
     pcall(function()
         DropHeldItems()
-        
+
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
         hrp.CFrame = target.Part.CFrame + Vector3.new(0, 0.5, 0)
-        
+
         local arrived = false
         local timeout = 0
         repeat
@@ -396,19 +468,19 @@ local function ProcessAutoSteal()
 
         if arrived and PlayerState.AutoSteal then
             task.wait(1.0)
-            
+
             if PlayerState.AutoSteal and target.Prompt and target.Prompt.Parent and target.Prompt.Enabled then
                 local prompt = target.Prompt
                 prompt.HoldDuration = 0
                 prompt.RequiresLineOfSight = false
-                
-                if fireproximityprompt then 
+
+                if fireproximityprompt then
                     fireproximityprompt(prompt)
-                else 
-                    prompt:InputHoldBegin() 
-                    prompt:InputHoldEnd() 
+                else
+                    prompt:InputHoldBegin()
+                    prompt:InputHoldEnd()
                 end
-                
+
                 task.wait(0.15)
                 stolenSuccessfully = true
             end
@@ -416,7 +488,7 @@ local function ProcessAutoSteal()
 
         TeleportToSafeZone()
     end)
-    
+
     if stolenSuccessfully and PlayerState.AutoSteal and PlayerState.AutoHopAfterRarity then
         local hasSelectedHopRarity = false
         for _, selected in pairs(PlayerState.HopRarities) do
@@ -427,6 +499,7 @@ local function ProcessAutoSteal()
         end
 
         if hasSelectedHopRarity and PlayerState.HopRarities[stolenRarity] == true then
+            DisableVisualLock()
             task.wait(0.5)
             IsFarming = false
             PerformServerHop(1)
@@ -438,10 +511,18 @@ local function ProcessAutoSteal()
     IsFarming = false
 end
 
+-- MAIN AUTO STEAL LOOP & SWITCH MONITOR
 task.spawn(function()
     while task.wait(0.05) do
-        if PlayerState.AutoSteal and not IsFarming and not IsHopping then 
-            pcall(ProcessAutoSteal) 
+        if PlayerState.AutoSteal then
+            if not IsFarming and not IsHopping then
+                pcall(ProcessAutoSteal)
+            end
+        else
+            if isInitialTeleportDone then
+                isInitialTeleportDone = false
+                DisableVisualLock()
+            end
         end
     end
 end)
@@ -822,6 +903,9 @@ ResetCorner.CornerRadius = UDim.new(0, 6)
 
 ResetBalokBtn.MouseButton1Click:Connect(function()
     CreateSafeZoneAtCurrentPos()
+    if FakeCharacterModel and SafeZoneBlock then
+        FakeCharacterModel:SetPrimaryPartCFrame(SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0))
+    end
     ResetBalokBtn.Text = "✔ Done!"
     ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
     task.wait(1.2)
@@ -1051,7 +1135,6 @@ HopRarityCollapseBtn.MouseButton1Click:Connect(function()
     }):Play()
 end)
 
--- Loop hanya untuk HopRaritiesList (Mythic ke atas)
 for _, rName in ipairs(HopRaritiesList) do
     local isChecked = PlayerState.HopRarities[rName] == true
     
@@ -1406,4 +1489,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("[FAQIH HUB] Script Updated! Auto Hop list now filtered for Mythic & Above only. ✅")
+print("[FAQIH HUB] Visual Character Lock Engine active! Player visual stays on block with 360 camera freedom. ✅")
