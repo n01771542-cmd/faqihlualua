@@ -1,7 +1,7 @@
 --[[
-    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Visual Character Lock Update)
+    Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Visual Character Lock Update + Auto Reset Revert)
     Credits: powered by faqih
-    Feature Update: Fake Visual Character Lock + Free Camera 360° + Auto Hop Rarity & Safe Zone
+    Feature Update: Fake Visual Character Lock + Free Camera 360° + Auto Hop Rarity & Safe Zone + Dynamic Character Swap
 ]]--
 
 local Players = game:GetService("Players")
@@ -409,22 +409,31 @@ local function GetValidEggTargets()
 end
 
 -- =================================================================
--- AUTO STEAL ENGINE (VISUAL LOCK & INTERNAL TELEPORT)
+-- AUTO STEAL ENGINE (DYNAMIC VISUAL LOCK & INTERNAL TELEPORT)
 -- =================================================================
 local isInitialTeleportDone = false
 
 local function ProcessAutoSteal()
     if IsFarming or IsHopping or not PlayerState.AutoSteal then return end
 
+    local targets = GetValidEggTargets()
+    
+    -- Jika TIDAK ADA EGG sama sekali, balikkan ke karakter utama
+    if #targets == 0 then
+        if isInitialTeleportDone then
+            isInitialTeleportDone = false
+            DisableVisualLock()
+        end
+        return
+    end
+
+    -- Jika ADA EGG yang sesuai, aktifkan Fake Character Lock di Safe Zone
     if not isInitialTeleportDone then
         TeleportToSafeZone()
         task.wait(0.3)
         EnableVisualLock()
         isInitialTeleportDone = true
     end
-
-    local targets = GetValidEggTargets()
-    if #targets == 0 then return end
 
     local target = targets[1]
     if not target or not target.Part or not target.Prompt or not target.Prompt.Enabled then return end
@@ -1489,4 +1498,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("[FAQIH HUB] Visual Character Lock Engine active! Player visual stays on block with 360 camera freedom. ✅")
+print("[FAQIH HUB] Dynamic Visual Character Lock active! Switches back to real char when no eggs are left. ✅")
