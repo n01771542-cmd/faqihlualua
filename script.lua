@@ -2,7 +2,7 @@
     Script Name: faqih lua hub | Auto Steal & Fly Master Engine (Visual Character Lock Update + Auto Reset Revert + Integrated NoClip)
     Credits: powered by faqih
     Feature Update: Fake Visual Character Lock + Free Camera 360° + Auto Hop Rarity & Safe Zone + Dynamic Character Swap + Integrated Fly NoClip
-    Modification: Underground Auto Steal Adjustment
+    Modification: Underground SafeZone Placement with Logo Decal
 ]]--
 
 local Players = game:GetService("Players")
@@ -231,21 +231,24 @@ local function PerformServerHop(overrideTargetPlayers)
     IsHopping = false
 end
 
--- SAFE ZONE ENGINE
+-- SAFE ZONE ENGINE (UNDERGROUND FIXED POSITION + LOGO DECAL)
+local FIXED_SAFEZONE_POS = Vector3.new(-0.2, -2.3, -29.7)
+
 local function CreateSafeZoneAtCurrentPos()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
-    if hrp then
-        if SafeZoneBlock and SafeZoneBlock.Parent then SafeZoneBlock:Destroy() end
-        SafeZoneBlock = Instance.new("Part")
-        SafeZoneBlock.Name = "SafeZoneBlock_FaqihHub"
-        SafeZoneBlock.Size = Vector3.new(12, 1, 12)
-        SafeZoneBlock.CFrame = hrp.CFrame - Vector3.new(0, 2.5, 0)
-        SafeZoneBlock.Anchored = true
-        SafeZoneBlock.CanCollide = true
-        SafeZoneBlock.Transparency = 1
-        SafeZoneBlock.Parent = workspace
-    end
+    if SafeZoneBlock and SafeZoneBlock.Parent then SafeZoneBlock:Destroy() end
+    SafeZoneBlock = Instance.new("Part")
+    SafeZoneBlock.Name = "SafeZoneBlock_FaqihHub"
+    SafeZoneBlock.Size = Vector3.new(12, 1, 12)
+    SafeZoneBlock.CFrame = CFrame.new(FIXED_SAFEZONE_POS)
+    SafeZoneBlock.Anchored = true
+    SafeZoneBlock.CanCollide = true
+    SafeZoneBlock.Transparency = 0
+    SafeZoneBlock.Parent = workspace
+
+    local LogoDecal = Instance.new("Decal", SafeZoneBlock)
+    LogoDecal.Name = "SafeZoneLogo"
+    LogoDecal.Texture = "rbxassetid://1000874809"
+    LogoDecal.Face = Enum.NormalId.Top
 end
 
 task.spawn(CreateSafeZoneAtCurrentPos)
@@ -409,9 +412,7 @@ local function GetValidEggTargets()
     return validTargets
 end
 
--- =================================================================
--- AUTO STEAL ENGINE (DYNAMIC VISUAL LOCK & INTERNAL TELEPORT)
--- =================================================================
+-- AUTO STEAL ENGINE
 local isInitialTeleportDone = false
 
 local function ProcessAutoSteal()
@@ -451,12 +452,9 @@ local function ProcessAutoSteal()
     pcall(function()
         DropHeldItems()
 
-        -- UNDERGROUND AUTO STEAL
-        -- Menghitung posisi relatif aman di bawah tanah berdasarkan posisi target Egg
         local UNDERGROUND_OFFSET = Vector3.new(0, -3.5, 0)
         local targetUndergroundCFrame = target.Part.CFrame + UNDERGROUND_OFFSET
 
-        -- Matikan tabrakan bagian karakter secara sementara saat teleport ke bawah tanah
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
@@ -474,7 +472,6 @@ local function ProcessAutoSteal()
             timeout = timeout + 0.05
             if not PlayerState.AutoSteal then break end
             if char and char:FindFirstChild("HumanoidRootPart") then
-                -- Menghitung jarak horizontal & vertikal dari titik underground target
                 local currentDist = (char.HumanoidRootPart.Position - targetUndergroundCFrame.Position).Magnitude
                 if currentDist <= 12 then
                     arrived = true
@@ -488,15 +485,13 @@ local function ProcessAutoSteal()
         until timeout >= 1.5
 
         if arrived and PlayerState.AutoSteal then
-            task.wait(0.2) -- Penyesuaian responsif sebelum eksekusi prompt
+            task.wait(0.2)
 
             if PlayerState.AutoSteal and target.Prompt and target.Prompt.Parent and target.Prompt.Enabled then
                 local prompt = target.Prompt
                 prompt.HoldDuration = 0
                 prompt.RequiresLineOfSight = false
                 
-                -- UNDERGROUND AUTO STEAL
-                -- Memastikan MaxActivationDistance mencakup posisi di bawah tanah
                 if prompt.MaxActivationDistance < 15 then
                     prompt.MaxActivationDistance = 15
                 end
@@ -513,8 +508,6 @@ local function ProcessAutoSteal()
             end
         end
 
-        -- UNDERGROUND AUTO STEAL
-        -- Mengembalikan karakter langsung ke Safe Zone setelah proses selesai
         TeleportToSafeZone()
     end)
 
@@ -540,7 +533,7 @@ local function ProcessAutoSteal()
     IsFarming = false
 end
 
--- MAIN AUTO STEAL LOOP & SWITCH MONITOR
+-- MAIN AUTO STEAL LOOP
 task.spawn(function()
     while task.wait(0.05) do
         if PlayerState.AutoSteal then
@@ -591,7 +584,6 @@ local function StopFlyEngine()
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then hum.PlatformStand = false end
         
-        -- Reset Kolisi saat Fly Mati
         if char then
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
@@ -602,9 +594,7 @@ local function StopFlyEngine()
     end)
 end
 
--- =================================================================
 -- ROBLOX GUI ENGINE
--- =================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FaqihHubUI_v10"
 ScreenGui.ResetOnSpawn = false
@@ -762,9 +752,7 @@ local function CreateSwitchToggle(parent, initialState, callback)
     return switchBg, SetState
 end
 
--- =================================================================
 -- INDEPENDENT FLY MINI CONTROLLER WINDOW
--- =================================================================
 local FlyMiniUI = Instance.new("Frame", ScreenGui)
 FlyMiniUI.Name = "FlyMiniController"
 FlyMiniUI.Size = UDim2.new(0, 210, 0, 65)
@@ -839,13 +827,8 @@ MiniSpeedBox.FocusLost:Connect(function()
     SyncFlyStateUI()
 end)
 
--- =================================================================
--- LEFT COLUMN CONTENT
--- =================================================================
-
--- 1. Fly Switch Box (Main Window)
+-- LEFT COLUMN
 local FlyBox = CreateCardBox(LeftCol, 60)
-
 local FlyHeader = Instance.new("Frame", FlyBox)
 FlyHeader.Size = UDim2.new(1, -20, 0, 36)
 FlyHeader.Position = UDim2.new(0, 10, 0.5, -18)
@@ -896,66 +879,8 @@ CreateSwitchToggle(FlySwitchHolder, PlayerState.FlyUIVisible, function(val)
     SaveConfig()
 end)
 
--- 2. Safe Zone Box
-local SafeBox = CreateCardBox(LeftCol, 60)
-
-local SafeIcon = Instance.new("TextLabel", SafeBox)
-SafeIcon.Size = UDim2.new(0, 30, 0, 30)
-SafeIcon.Position = UDim2.new(0, 10, 0.5, -15)
-SafeIcon.BackgroundColor3 = Color3.fromRGB(88, 28, 135)
-SafeIcon.Text = "🔄"
-SafeIcon.TextSize = 13
-
-local SafeIconCorner = Instance.new("UICorner", SafeIcon)
-SafeIconCorner.CornerRadius = UDim.new(1, 0)
-
-local SafeTitle = Instance.new("TextLabel", SafeBox)
-SafeTitle.Size = UDim2.new(1, -130, 0, 16)
-SafeTitle.Position = UDim2.new(0, 48, 0, 13)
-SafeTitle.BackgroundTransparency = 1
-SafeTitle.Text = "Menaruh Ulang Balok"
-SafeTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-SafeTitle.Font = Enum.Font.GothamBold
-SafeTitle.TextSize = 10
-SafeTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-local SafeSub = Instance.new("TextLabel", SafeBox)
-SafeSub.Size = UDim2.new(1, -130, 0, 12)
-SafeSub.Position = UDim2.new(0, 48, 0, 29)
-SafeSub.BackgroundTransparency = 1
-SafeSub.Text = "Letakkan balok ke posisi"
-SafeSub.TextColor3 = Color3.fromRGB(148, 163, 184)
-SafeSub.Font = Enum.Font.Gotham
-SafeSub.TextSize = 8
-SafeSub.TextXAlignment = Enum.TextXAlignment.Left
-
-local ResetBalokBtn = Instance.new("TextButton", SafeBox)
-ResetBalokBtn.Size = UDim2.new(0, 65, 0, 26)
-ResetBalokBtn.Position = UDim2.new(1, -73, 0.5, -13)
-ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(79, 70, 229)
-ResetBalokBtn.Text = "Reset"
-ResetBalokBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ResetBalokBtn.Font = Enum.Font.GothamBold
-ResetBalokBtn.TextSize = 9
-
-local ResetCorner = Instance.new("UICorner", ResetBalokBtn)
-ResetCorner.CornerRadius = UDim.new(0, 6)
-
-ResetBalokBtn.MouseButton1Click:Connect(function()
-    CreateSafeZoneAtCurrentPos()
-    if FakeCharacterModel and SafeZoneBlock then
-        FakeCharacterModel:SetPrimaryPartCFrame(SafeZoneBlock.CFrame + Vector3.new(0, 3.5, 0))
-    end
-    ResetBalokBtn.Text = "✔ Done!"
-    ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
-    task.wait(1.2)
-    ResetBalokBtn.Text = "Reset"
-    ResetBalokBtn.BackgroundColor3 = Color3.fromRGB(79, 70, 229)
-end)
-
--- 3. Server Hop Box
+-- Server Hop Box
 local HopBox = CreateCardBox(LeftCol, 115)
-
 local HopHeader = Instance.new("Frame", HopBox)
 HopHeader.Size = UDim2.new(1, -20, 0, 36)
 HopHeader.Position = UDim2.new(0, 10, 0, 8)
@@ -1065,9 +990,8 @@ ExecuteHopBtn.MouseButton1Click:Connect(function()
     PerformServerHop()
 end)
 
--- 4. Auto Hop Server After Rarity Box (HANYA MYTHIC KE ATAS)
+-- Auto Hop Server After Rarity Box
 local HopRarityBox = CreateCardBox(LeftCol, 185)
-
 local HopRarityHeader = Instance.new("Frame", HopRarityBox)
 HopRarityHeader.Size = UDim2.new(1, -20, 0, 36)
 HopRarityHeader.Position = UDim2.new(0, 10, 0, 8)
@@ -1124,7 +1048,6 @@ HopRarityCollapseBtn.TextSize = 10
 local HopRarityBtnCorner = Instance.new("UICorner", HopRarityCollapseBtn)
 HopRarityBtnCorner.CornerRadius = UDim.new(0, 6)
 
--- Keep Auto Hop Option
 local KeepHopFrame = Instance.new("Frame", HopRarityBox)
 KeepHopFrame.Size = UDim2.new(1, -20, 0, 32)
 KeepHopFrame.Position = UDim2.new(0, 10, 0, 46)
@@ -1219,13 +1142,8 @@ for _, rName in ipairs(HopRaritiesList) do
     end)
 end
 
--- =================================================================
--- RIGHT COLUMN CONTENT
--- =================================================================
-
--- 1. Auto Steal Box
+-- RIGHT COLUMN
 local StealBox = CreateCardBox(RightCol, 60)
-
 local StealIcon = Instance.new("TextLabel", StealBox)
 StealIcon.Size = UDim2.new(0, 30, 0, 30)
 StealIcon.Position = UDim2.new(0, 10, 0.5, -15)
@@ -1266,9 +1184,8 @@ CreateSwitchToggle(StealSwitchHolder, PlayerState.AutoSteal, function(val)
     SaveConfig()
 end)
 
--- 2. Collapsible Area Filter Box
+-- Area Filter Box
 local AreaBox = CreateCardBox(RightCol, 175)
-
 local AreaHeader = Instance.new("Frame", AreaBox)
 AreaHeader.Size = UDim2.new(1, -20, 0, 36)
 AreaHeader.Position = UDim2.new(0, 10, 0, 8)
@@ -1373,9 +1290,8 @@ for _, areaKey in ipairs(VALID_AREAS) do
     end)
 end
 
--- 3. Collapsible Rarity Filter Box
+-- Rarity Filter Box
 local RarityBox = CreateCardBox(RightCol, 175)
-
 local RarityHeader = Instance.new("Frame", RarityBox)
 RarityHeader.Size = UDim2.new(1, -20, 0, 36)
 RarityHeader.Position = UDim2.new(0, 10, 0, 8)
@@ -1487,9 +1403,7 @@ for _, rName in ipairs(OrderedRarities) do
     end)
 end
 
--- =================================================================
 -- TOGGLE MAIN WINDOW LOGIC
--- =================================================================
 CloseBtn.MouseButton1Click:Connect(function()
     MainWindow.Visible = false
     ToggleBtn.Visible = true
@@ -1539,4 +1453,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("[FAQIH HUB] Integrated Fly NoClip Active! All systems fully functional. ✅")
+print("[FAQIH HUB] Integrated Fly NoClip Active! Safe Zone block updated underground with logo decal. ✅")
