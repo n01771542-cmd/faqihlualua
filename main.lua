@@ -683,47 +683,42 @@ local function RenderContent(categoryIndex)
 
     Instance.new("UICorner", AddBtn).CornerRadius = UDim.new(0, 6)
 
-    local CustomScriptLayout = Instance.new("UIListLayout")
-    CustomScriptLayout.Name = "CustomScriptLayout"
-    CustomScriptLayout.Padding = UDim.new(0, 8)
-    CustomScriptLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    CustomScriptLayout.Parent = ScriptScroll
+local function ExecuteCustomScript(scriptData, executeButton)
+    executeButton.Text = "LOADING..."
 
-    local function ExecuteCustomScript(scriptData, executeButton)
-        executeButton.Text = "LOADING..."
+    task.spawn(function()
+        local success, result = pcall(function()
+            local source = game:HttpGet(scriptData.url)
 
-        task.spawn(function()
-            local success, result = pcall(function()
-                local source = game:HttpGet(scriptData.url)
-                local compiled, compileError = loadstring(source)
+            local compiled, compileError = loadstring(source)
 
-                if not compiled then
-                    error(compileError or "Gagal compile script")
-                end
-
-                local executed, executeError = pcall(compiled)
-
-                if not executed then
-                    error(executeError or "Gagal menjalankan script")
-                end
-
-                return true
-            end)
-
-            if success then
-                executeButton.Text = "EXECUTED"
-            else
-                executeButton.Text = "FAILED"
-                warn("[LEON4951 HUB] Execute Error:", result)
+            if not compiled then
+                error(compileError or "Gagal compile script")
             end
 
-            task.wait(1.5)
+            local executed, executeError = pcall(compiled)
+
+            if not executed then
+                error(executeError or "Gagal menjalankan script")
+            end
+
+            return true
+        end)
+
+        if success then
+            executeButton.Text = "EXECUTE"
+        else
+            executeButton.Text = "ERROR"
+            warn("[LEON4951 HUB] " .. tostring(result))
+
+            task.wait(2)
 
             if executeButton and executeButton.Parent then
                 executeButton.Text = "EXECUTE"
             end
-        end)
-    end
+        end
+    end)
+end
 
     local function RenderCustomScripts()
         for _, child in ipairs(ScriptScroll:GetChildren()) do
