@@ -162,7 +162,27 @@ local ScriptDataStealAnEgg = {
 { name = "THAN HUB", status = "Key", recommended = false, url = "https://api.luarmor.net/files/v4/loaders/d1c82862a093e64c6bd82bb6d6f7a46b.lua" },
 { name = "TOKINU", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/Tokinu-Scripts/Steal-An-Egg/refs/heads/main/Instant/Tp" },
 { name = "NEVA HUB", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/VEZ2/NEVAHUB/main/2" },
-{ name = "LEVON HUB", status = "No Key", recommended = false, url = "https://pastefy.app/nasHhfko/raw" }
+{ name = "LEVON HUB", status = "No Key", recommended = false, url = "https://pastefy.app/nasHhfko/raw" },
+{ name = "OTC", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/Aerlro/OTC/refs/heads/main/Steal%20an%20Egg/main.lua" },
+{ name = "AKIPOX", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/akipox/Roblox/main/Mods/Games/StealanEgg.lua" },
+{ name = "MENGHUB", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/GrexXMeng/Mengs/refs/heads/main/StealAnEgg.lua" },
+{ name = "MY HUB", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/pespapankon-del/MyHub/main/Games/StealAnEgg.lua" },
+{ name = "TUROK JAPAN HUB", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/lvjunling/r-s-zh/refs/heads/main/stealegg/lua_zh_mobile.lua" },
+{ name = "FROST", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/Frost-GG-Hud/Loader/main/src/Loader.luau" },
+{ name = "SOLARIS", status = "Key", recommended = false, url = "https://api.obscuravm.com/scripts/1231452106622100334" },
+{ name = "SEISEN V1", status = "Key", recommended = false, url = "https://api.jnkie.com/api/v1/luascripts/public/8ac2e97282ac0718aeeb3bb3856a2821d71dc9e57553690ab508ebdb0d1569da/download" },
+{ name = "SELUX", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/seltonmt012/sel01-rbx/main/loader.lua" },
+{ name = "SYSCALL", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/enzukaix/Syscall/refs/heads/main/Loader.lua" },
+{ name = "RBXZ HUB", status = "Key", recommended = false, url = "https://rbxscriptz.fun/RBXZ-HUB" },
+{ name = "SEISEN V2", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/Mentos4/roblox/refs/heads/main/Script/Steal%20an%20Egg" },
+{ name = "VOID SHELL HUB", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/VoidShell-null/VoidShell-Hub/refs/heads/main/Scripts/StealAnEgg.luau" },
+{ name = "NOYCHOX", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/yNopaak/STEAL-AN-EGG-NOYCHOX/main/main.lua" },
+{ name = "PELATICO", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/PELATICO/steal-an-egg-hub/main/main.lua" },
+{ name = "XENON BYTE", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/fivetagz-prog/xenon-byte-steal-an-egg-script/refs/heads/main/xenon-byte-sac.lua" },
+{ name = "VORTEX X SAGE", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/Israel-Vortex/vortex-x-scripts/refs/heads/main/Official-Vortex-Software/Dev-Project/StealAnEgg.lua" },
+{ name = "PHUCMAX VIET", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/phucmax/THANHPHUC/refs/heads/main/PHUCMAX(2).lua" },
+{ name = "DRAGON SECURITY HUB V2.5", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/conmemaynguhsjs/scrip/refs/heads/main/gemini-code-1789308407861.lua.txt" },
+{ name = "NEOX HUB", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/hassanxzayn-lua/NEOXHUBMAIN/refs/heads/main/loader" }
 }
 
 -- [ DATA NEW SCRIPTS (18 NEW SCRIPTS) ]
