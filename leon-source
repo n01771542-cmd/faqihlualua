@@ -50,6 +50,7 @@ local PRIVATE_SOURCE_URL = "https://PRIVATE-ENDPOINT-NANTI"
 
 -- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
 local ScriptDataStealAnEgg = {
+    { name = "PET SPAWNER TERBAGUS", status = "No Key" , recommended = true, url = "https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner" },
     { name = "YANTO HUB KEY : YANTOHUB", status = "Key", recommended = true, url = "https://raw.githubusercontent.com/YantoRoblox/Script-Free-YantoHUB/refs/heads/main/YantoHUB" },
     { name = "FYY HUB", status = "No Key", recommended = true, url = "https://FyyCommunity.my.id" },
     { name = "SPEED HUB", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua" },
@@ -73,7 +74,7 @@ local ScriptDataStealAnEgg = {
     { name = "NEMESIS HUB", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/x2zu/loader/main/freeloader.lua" },
     { name = "NIGHT HUB", status = "No Key", recommended = false, url = "https://pastefy.app/J29hE5fR/raw" },
     { name = "LUMIN HUB", status = "No Key", recommended = false, url = "http://luminon.top/loader.lua" },
-    { name = "CIAO HUB", status = "No Key", recommended = false, url = "https://pastefy.app/YoZocJ8O/raw" },
+    { name = "CIAO HUB SERVER HOP", status = "No Key", recommended = false, url = "https://pastefy.app/YoZocJ8O/raw" },
     { name = "ZHENN HUB SPAWNER", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/ZhennHub/PetSpawner/refs/heads/main/lua" },
     { name = "DECODEX", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/ItzYumi/Decode/refs/heads/main/DE%3ACODE.lua" },
     { name = "CRZ HUB", status = "No Key", recommended = false, url = "https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua" },
@@ -94,7 +95,7 @@ local ScriptDataStealAnEgg = {
     { name = "SAIOPS HUB", status = "Key", recommended = false, url = "https://api.saiops.cc/scripts/Steal-An-Egg-Script.lua" },
     { name = "ZEROIN HUB", status = "Key", recommended = false, url = "https://zeroinhub.com/api/script" },
     { name = "ONHUB VIET", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/ronnei/freemium/refs/heads/main/loader.lua" },
-    { name = "MIRANDA HUB V2", status = "No Key", recommended = true, url = "https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/stealaeggs" },
+    { name = "MIRANDA HUB V3", status = "No Key", recommended = true, url = "https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/mirandaafk.lua" },
     { name = "PROJECT-MADARA", status = "No Key", recommended = false, url = "https://raw.githubusercontent.com/IsThisMe01/Project-Madara/refs/heads/main/stealanegg" },
     { name = "NEVERLOSE", status = "Key", recommended = false, url = "https://raw.githubusercontent.com/inrate1337/NeverloseLoaderRoblox/refs/heads/main/main.luau" },
     { name = "SPIRITUAL GAMING HUB", status = "Key", recommended = false, url = "https://gist.githubusercontent.com/spiritualgaming1123-beep/f2c8c4009b2c4d4dda1b3d5fcb263ef3/raw/121ff8c9b59476a7a362b543edc61499e5832937/gistfile1.lua" },
@@ -366,7 +367,7 @@ WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(175, 26)
 WaBtn.Position = UDim2.new(0, 172, 0, 10)
 WaBtn.BackgroundColor3 = Theme.WaGreen
-WaBtn.Text = "💬 LINK SALURAN WA (COPY)"
+WaBtn.Text = "💬 masih kurang 30 script(SALURAN WA) "
 WaBtn.Font = Enum.Font.GothamBold
 WaBtn.TextSize = 9
 WaBtn.TextColor3 = Theme.TextPrimary
@@ -400,7 +401,7 @@ WaBtn.MouseButton1Click:Connect(function()
     elseif toclipboard then
         toclipboard(WA_CHANNEL_LINK)
     end
-
+    
     local origText = WaBtn.Text
     WaBtn.Text = "✓ COPIED!"
     task.delay(1.5, function()
@@ -541,7 +542,7 @@ local RenderSidebarTabs
 -- [ 8. RENDER KONTEN ]
 local function RenderContent(categoryIndex)
     local category = Categories[categoryIndex]
-
+    
     for _, child in ipairs(ScriptScroll:GetChildren()) do
         if not child:IsA("UIListLayout") and not child:IsA("UIGridLayout") then
             child:Destroy()
@@ -789,7 +790,7 @@ local function RenderContent(categoryIndex)
         end
 
         local matchesSearch = (searchText == "") or (string.find(string.lower(scriptEntry.name), searchText, 1, true) ~= nil)
-
+        
         if matchesFilter and matchesSearch then
             table.insert(filteredScripts, scriptEntry)
         end
@@ -919,7 +920,7 @@ local function RenderContent(categoryIndex)
             RefreshFavoritesData()
         end)
     end
-
+    
     ScriptScroll.CanvasPosition = Vector2.new(0, 0)
 end
 
