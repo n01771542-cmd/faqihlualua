@@ -249,8 +249,8 @@ end
 -- MAIN UI
 -- ============================================================================
 
-local MAIN_WIDTH = 620
-local MAIN_HEIGHT = 410
+local MAIN_WIDTH = 500
+local MAIN_HEIGHT = 300
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -357,6 +357,101 @@ Content.Size = UDim2.new(1, -24, 1, -74)
 Content.Position = UDim2.fromOffset(12, 62)
 Content.BackgroundTransparency = 1
 Content.Parent = MainFrame
+
+-- ============================================================================
+-- RESIZE HANDLE
+-- ============================================================================
+
+local ResizeHandle = Instance.new("TextButton")
+ResizeHandle.Name = "ResizeHandle"
+ResizeHandle.Size = UDim2.fromOffset(24, 24)
+ResizeHandle.Position = UDim2.new(1, -24, 1, -24)
+ResizeHandle.BackgroundTransparency = 1
+ResizeHandle.BorderSizePixel = 0
+ResizeHandle.Text = "⋰"
+ResizeHandle.TextColor3 = Theme.TextMuted
+ResizeHandle.Font = Enum.Font.GothamBold
+ResizeHandle.TextSize = 17
+ResizeHandle.AutoButtonColor = false
+ResizeHandle.ZIndex = 100
+ResizeHandle.Parent = MainFrame
+
+local ResizeDragging = false
+local ResizeStart = nil
+local ResizeStartSize = nil
+
+local MIN_WIDTH = 500
+local MAX_WIDTH = 1000
+local MIN_HEIGHT = 350
+local MAX_HEIGHT = 700
+
+ResizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        ResizeDragging = true
+        ResizeStart = input.Position
+        ResizeStartSize = MainFrame.AbsoluteSize
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not ResizeDragging then
+        return
+    end
+
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+
+    if not ResizeStart or not ResizeStartSize then
+        return
+    end
+
+    local delta = input.Position - ResizeStart
+
+    local newWidth = math.clamp(
+        ResizeStartSize.X + delta.X,
+        MIN_WIDTH,
+        MAX_WIDTH
+    )
+
+    local newHeight = math.clamp(
+        ResizeStartSize.Y + delta.Y,
+        MIN_HEIGHT,
+        MAX_HEIGHT
+    )
+
+    MainFrame.Size = UDim2.fromOffset(
+        newWidth,
+        newHeight
+    )
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        ResizeDragging = false
+        ResizeStart = nil
+        ResizeStartSize = nil
+    end
+end)
+
+ResizeHandle.MouseEnter:Connect(function()
+    Tween(ResizeHandle, 0.12, {
+        TextColor3 = Theme.AccentLight
+    })
+end)
+
+ResizeHandle.MouseLeave:Connect(function()
+    if not ResizeDragging then
+        Tween(ResizeHandle, 0.12, {
+            TextColor3 = Theme.TextMuted
+        })
+    end
+end)
 
 -- ============================================================================
 -- TOAST
@@ -657,6 +752,12 @@ local function CreateFilterBar(parent)
     NoKeyCorner.CornerRadius = UDim.new(0, 9)
     NoKeyCorner.Parent = NoKey
 
+    local NoKeyStroke = Instance.new("UIStroke")
+    NoKeyStroke.Color = Theme.Accent
+    NoKeyStroke.Thickness = 1.5
+    NoKeyStroke.Transparency = 1
+    NoKeyStroke.Parent = NoKey
+
     local Key = Instance.new("TextButton")
     Key.Size = UDim2.fromOffset(58, 30)
     Key.Position = UDim2.fromOffset(78, 4)
@@ -671,6 +772,12 @@ local function CreateFilterBar(parent)
     local KeyCorner = Instance.new("UICorner")
     KeyCorner.CornerRadius = UDim.new(0, 9)
     KeyCorner.Parent = Key
+
+    local KeyStroke = Instance.new("UIStroke")
+    KeyStroke.Color = Theme.Accent
+    KeyStroke.Thickness = 1.5
+    KeyStroke.Transparency = 1
+    KeyStroke.Parent = Key
 
     local Search = Instance.new("TextBox")
     Search.Size = UDim2.new(1, -142, 0, 30)
@@ -690,7 +797,7 @@ local function CreateFilterBar(parent)
     SearchCorner.CornerRadius = UDim.new(0, 9)
     SearchCorner.Parent = Search
 
-    return Holder, NoKey, Key, Search
+    return Holder, NoKey, Key, Search, NoKeyStroke, KeyStroke
 end
 
 -- ============================================================================
@@ -834,7 +941,11 @@ local function ClearChildren(container)
     end
 end
 
-local function CreateScriptRow(parent, item, index, refreshCallback)
+local function CreateScriptRow(parent, item, index, refreshCallback, allowDelete)
+    if allowDelete == nil then
+        allowDelete = true
+    end
+
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 46)
     Row.BackgroundColor3 = Theme.Card
@@ -997,42 +1108,49 @@ local function CreateScriptRow(parent, item, index, refreshCallback)
         end)
     end)
 
-    local Delete = Instance.new("TextButton")
-    Delete.Size = UDim2.fromOffset(29, 29)
-    Delete.Position = UDim2.new(1, -38, 0.5, -14)
-    Delete.BackgroundColor3 = Theme.Background2
-    Delete.Text = "×"
-    Delete.TextColor3 = Theme.Key
-    Delete.Font = Enum.Font.GothamBold
-    Delete.TextSize = 14
-    Delete.AutoButtonColor = false
-    Delete.Parent = Row
+    -- ========================================================================
+    -- DELETE BUTTON
+    -- HANYA DIBUAT JIKA allowDelete = true
+    -- ========================================================================
 
-    local DeleteCorner = Instance.new("UICorner")
-    DeleteCorner.CornerRadius = UDim.new(0, 9)
-    DeleteCorner.Parent = Delete
+    if allowDelete then
+        local Delete = Instance.new("TextButton")
+        Delete.Size = UDim2.fromOffset(29, 29)
+        Delete.Position = UDim2.new(1, -38, 0.5, -14)
+        Delete.BackgroundColor3 = Theme.Background2
+        Delete.Text = "×"
+        Delete.TextColor3 = Theme.Key
+        Delete.Font = Enum.Font.GothamBold
+        Delete.TextSize = 14
+        Delete.AutoButtonColor = false
+        Delete.Parent = Row
 
-    Delete.MouseButton1Click:Connect(function()
-        if CustomScriptsList[index] == item then
-            table.remove(CustomScriptsList, index)
-        else
-            for i, savedItem in ipairs(CustomScriptsList) do
-                if savedItem == item then
-                    table.remove(CustomScriptsList, i)
-                    break
+        local DeleteCorner = Instance.new("UICorner")
+        DeleteCorner.CornerRadius = UDim.new(0, 9)
+        DeleteCorner.Parent = Delete
+
+        Delete.MouseButton1Click:Connect(function()
+            if CustomScriptsList[index] == item then
+                table.remove(CustomScriptsList, index)
+            else
+                for i, savedItem in ipairs(CustomScriptsList) do
+                    if savedItem == item then
+                        table.remove(CustomScriptsList, i)
+                        break
+                    end
                 end
             end
-        end
 
-        RemoveFavorite(item)
-        SaveJSON(CUSTOM_CONFIG, CustomScriptsList)
+            RemoveFavorite(item)
+            SaveJSON(CUSTOM_CONFIG, CustomScriptsList)
 
-        if refreshCallback then
-            refreshCallback()
-        end
+            if refreshCallback then
+                refreshCallback()
+            end
 
-        ShowToast("Script dihapus", false)
-    end)
+            ShowToast("Script dihapus", false)
+        end)
+    end
 
     Row.MouseEnter:Connect(function()
         Tween(Row, 0.14, {
@@ -1094,7 +1212,8 @@ local function RenderCustomList()
             CustomList,
             item,
             index,
-            RenderCustomList
+            RenderCustomList,
+            true
         )
     end
 end
@@ -1149,7 +1268,8 @@ FavoriteTitle.TextSize = 9
 FavoriteTitle.TextXAlignment = Enum.TextXAlignment.Left
 FavoriteTitle.Parent = FavoritePage
 
-local _, FavoriteNoKey, FavoriteKey, FavoriteSearch = CreateFilterBar(FavoritePage)
+local _, FavoriteNoKey, FavoriteKey, FavoriteSearch, FavoriteNoKeyStroke, FavoriteKeyStroke =
+    CreateFilterBar(FavoritePage)
 
 FavoriteNoKey.Position = UDim2.fromOffset(0, 32)
 FavoriteKey.Position = UDim2.fromOffset(78, 32)
@@ -1172,6 +1292,28 @@ FavoriteLayout.SortOrder = Enum.SortOrder.LayoutOrder
 FavoriteLayout.Parent = FavoriteList
 
 local FavoriteFilter = "ALL"
+
+local function UpdateFavoriteFilterVisual()
+    Tween(FavoriteNoKeyStroke, 0.16, {
+        Transparency = FavoriteFilter == "No Key" and 0 or 1
+    })
+
+    Tween(FavoriteKeyStroke, 0.16, {
+        Transparency = FavoriteFilter == "Key" and 0 or 1
+    })
+
+    Tween(FavoriteNoKey, 0.16, {
+        BackgroundColor3 = FavoriteFilter == "No Key"
+            and Theme.CardHover
+            or Theme.Card
+    })
+
+    Tween(FavoriteKey, 0.16, {
+        BackgroundColor3 = FavoriteFilter == "Key"
+            and Theme.CardHover
+            or Theme.Card
+    })
+end
 
 local function RenderFavoriteList()
     ClearChildren(FavoriteList)
@@ -1198,7 +1340,8 @@ local function RenderFavoriteList()
                     FavoriteList,
                     item,
                     shown,
-                    RenderFavoriteList
+                    RenderFavoriteList,
+                    true
                 )
             end
         end
@@ -1224,11 +1367,13 @@ end
 
 FavoriteNoKey.MouseButton1Click:Connect(function()
     FavoriteFilter = "No Key"
+    UpdateFavoriteFilterVisual()
     RenderFavoriteList()
 end)
 
 FavoriteKey.MouseButton1Click:Connect(function()
     FavoriteFilter = "Key"
+    UpdateFavoriteFilterVisual()
     RenderFavoriteList()
 end)
 
@@ -1250,7 +1395,8 @@ StealTitle.TextSize = 9
 StealTitle.TextXAlignment = Enum.TextXAlignment.Left
 StealTitle.Parent = EggPage
 
-local _, EggNoKey, EggKey, EggSearch = CreateFilterBar(EggPage)
+local _, EggNoKey, EggKey, EggSearch, EggNoKeyStroke, EggKeyStroke =
+    CreateFilterBar(EggPage)
 
 EggNoKey.Position = UDim2.fromOffset(0, 32)
 EggKey.Position = UDim2.fromOffset(78, 32)
@@ -1276,9 +1422,32 @@ EggLayout.Parent = EggList
 -- STEAL AN EGG DATA
 -- ============================================================================
 
-local StealAnEggData = {}
+local StealAnEggData = {
+}
 
 local EggFilter = "ALL"
+
+local function UpdateEggFilterVisual()
+    Tween(EggNoKeyStroke, 0.16, {
+        Transparency = EggFilter == "No Key" and 0 or 1
+    })
+
+    Tween(EggKeyStroke, 0.16, {
+        Transparency = EggFilter == "Key" and 0 or 1
+    })
+
+    Tween(EggNoKey, 0.16, {
+        BackgroundColor3 = EggFilter == "No Key"
+            and Theme.CardHover
+            or Theme.Card
+    })
+
+    Tween(EggKey, 0.16, {
+        BackgroundColor3 = EggFilter == "Key"
+            and Theme.CardHover
+            or Theme.Card
+    })
+end
 
 local function RenderEggList()
     ClearChildren(EggList)
@@ -1305,7 +1474,8 @@ local function RenderEggList()
                     EggList,
                     item,
                     shown,
-                    RenderEggList
+                    RenderEggList,
+                    false
                 )
             end
         end
@@ -1329,11 +1499,13 @@ end
 
 EggNoKey.MouseButton1Click:Connect(function()
     EggFilter = "No Key"
+    UpdateEggFilterVisual()
     RenderEggList()
 end)
 
 EggKey.MouseButton1Click:Connect(function()
     EggFilter = "Key"
+    UpdateEggFilterVisual()
     RenderEggList()
 end)
 
@@ -1348,6 +1520,9 @@ end)
 RenderCustomList()
 RenderFavoriteList()
 RenderEggList()
+
+UpdateFavoriteFilterVisual()
+UpdateEggFilterVisual()
 
 -- ============================================================================
 -- PAGE SWITCH
@@ -1548,7 +1723,7 @@ local function RestoreFromMinimized()
 
     IsTransitioning = true
 
-    TabPanel.Visible = false
+    TabPanel.Visible = true
     ToggleButton.Active = false
 
     local viewport = workspace.CurrentCamera
