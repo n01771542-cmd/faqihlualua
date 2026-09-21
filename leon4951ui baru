@@ -1,0 +1,1605 @@
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local GUI_NAME = "leon4951CustomScriptManager"
+
+local function DestroyOldUI()
+    pcall(function()
+        local oldCore = CoreGui:FindFirstChild(GUI_NAME)
+        if oldCore then
+            oldCore:Destroy()
+        end
+    end)
+
+    pcall(function()
+        if LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") then
+            local oldPlayer = LocalPlayer.PlayerGui:FindFirstChild(GUI_NAME)
+            if oldPlayer then
+                oldPlayer:Destroy()
+            end
+        end
+    end)
+end
+
+DestroyOldUI()
+
+local CUSTOM_CONFIG = "leon4951hub_custom_scripts.json"
+local FAVORITE_CONFIG = "leon4951hub_favorites.json"
+
+local CustomScriptsList = {}
+local FavoriteScripts = {}
+
+local Theme = {
+    Background = Color3.fromRGB(7, 10, 17),
+    Background2 = Color3.fromRGB(10, 14, 24),
+    Card = Color3.fromRGB(15, 22, 37),
+    CardHover = Color3.fromRGB(20, 30, 50),
+
+    Accent = Color3.fromRGB(37, 120, 255),
+    AccentLight = Color3.fromRGB(75, 145, 255),
+
+    Text = Color3.fromRGB(245, 247, 255),
+    TextSecondary = Color3.fromRGB(145, 157, 180),
+    TextMuted = Color3.fromRGB(90, 101, 124),
+
+    Border = Color3.fromRGB(31, 45, 70),
+
+    Key = Color3.fromRGB(220, 65, 80),
+    NoKey = Color3.fromRGB(45, 175, 90),
+
+    Favorite = Color3.fromRGB(255, 190, 65),
+}
+
+local function SafeReadFile(fileName)
+    if type(readfile) ~= "function" then
+        return nil
+    end
+
+    local success, result = pcall(function()
+        return readfile(fileName)
+    end)
+
+    if success and type(result) == "string" then
+        return result
+    end
+
+    return nil
+end
+
+local function SafeWriteFile(fileName, content)
+    if type(writefile) ~= "function" then
+        return false
+    end
+
+    local success = pcall(function()
+        writefile(fileName, content)
+    end)
+
+    return success
+end
+
+local function LoadJSON(fileName)
+    local raw = SafeReadFile(fileName)
+
+    if not raw or raw == "" then
+        return {}
+    end
+
+    local success, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+
+    if success and type(decoded) == "table" then
+        return decoded
+    end
+
+    return {}
+end
+
+local function SaveJSON(fileName, data)
+    local success, encoded = pcall(function()
+        return HttpService:JSONEncode(data)
+    end)
+
+    if not success or type(encoded) ~= "string" then
+        return false
+    end
+
+    return SafeWriteFile(fileName, encoded)
+end
+
+CustomScriptsList = LoadJSON(CUSTOM_CONFIG)
+FavoriteScripts = LoadJSON(FAVORITE_CONFIG)
+
+local function Tween(object, duration, properties, style, direction)
+    if not object or not object.Parent then
+        return
+    end
+
+    local tweenInfo = TweenInfo.new(
+        duration or 0.2,
+        style or Enum.EasingStyle.Quart,
+        direction or Enum.EasingDirection.Out
+    )
+
+    local tween = TweenService:Create(object, tweenInfo, properties)
+    tween:Play()
+
+    return tween
+end
+
+local function IsFavorite(scriptData)
+    if not scriptData then
+        return false
+    end
+
+    local source = scriptData.source
+
+    for _, item in ipairs(FavoriteScripts) do
+        if type(item) == "table" then
+            if item.source == source then
+                return true
+            end
+        elseif item == source then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function AddFavorite(scriptData)
+    if not scriptData then
+        return
+    end
+
+    if IsFavorite(scriptData) then
+        return
+    end
+
+    table.insert(FavoriteScripts, {
+        name = scriptData.name,
+        keyStatus = scriptData.keyStatus,
+        source = scriptData.source
+    })
+
+    SaveJSON(FAVORITE_CONFIG, FavoriteScripts)
+end
+
+local function RemoveFavorite(scriptData)
+    if not scriptData then
+        return
+    end
+
+    for i = #FavoriteScripts, 1, -1 do
+        local item = FavoriteScripts[i]
+
+        if type(item) == "table" and item.source == scriptData.source then
+            table.remove(FavoriteScripts, i)
+        elseif item == scriptData.source then
+            table.remove(FavoriteScripts, i)
+        end
+    end
+
+    SaveJSON(FAVORITE_CONFIG, FavoriteScripts)
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = GUI_NAME
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 999
+
+local guiParented = false
+
+pcall(function()
+    ScreenGui.Parent = CoreGui
+    guiParented = ScreenGui.Parent ~= nil
+end)
+
+if not guiParented then
+    pcall(function()
+        ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+        guiParented = ScreenGui.Parent ~= nil
+    end)
+end
+
+if not guiParented then
+    return
+end
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.fromOffset(760, 500)
+MainFrame.Position = UDim2.fromScale(0.56, 0.5)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 22)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.Border
+MainStroke.Thickness = 1.5
+MainStroke.Transparency = 0.1
+MainStroke.Parent = MainFrame
+
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 72)
+Header.BackgroundTransparency = 1
+Header.Active = true
+Header.Parent = MainFrame
+
+local Logo = Instance.new("TextLabel")
+Logo.Size = UDim2.fromOffset(44, 44)
+Logo.Position = UDim2.fromOffset(18, 14)
+Logo.BackgroundColor3 = Theme.Accent
+Logo.Text = "F"
+Logo.TextColor3 = Color3.fromRGB(255, 255, 255)
+Logo.Font = Enum.Font.GothamBold
+Logo.TextSize = 28
+Logo.Parent = Header
+
+local LogoCorner = Instance.new("UICorner")
+LogoCorner.CornerRadius = UDim.new(0, 12)
+LogoCorner.Parent = Logo
+
+local LogoStroke = Instance.new("UIStroke")
+LogoStroke.Color = Theme.AccentLight
+LogoStroke.Thickness = 1
+LogoStroke.Transparency = 0.2
+LogoStroke.Parent = Logo
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -180, 0, 26)
+Title.Position = UDim2.fromOffset(76, 12)
+Title.BackgroundTransparency = 1
+Title.Text = "leon4951 <font color=\"rgb(37,120,255)\">Hub</font>"
+Title.RichText = true
+Title.TextColor3 = Theme.Text
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Size = UDim2.new(1, -180, 0, 20)
+Subtitle.Position = UDim2.fromOffset(77, 38)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "CUSTOM SCRIPT"
+Subtitle.TextColor3 = Theme.TextMuted
+Subtitle.Font = Enum.Font.GothamBold
+Subtitle.TextSize = 9
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.Parent = Header
+
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.fromOffset(44, 44)
+MinimizeButton.Position = UDim2.new(1, -108, 0, 14)
+MinimizeButton.BackgroundColor3 = Theme.Card
+MinimizeButton.Text = "−"
+MinimizeButton.TextColor3 = Theme.Text
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 22
+MinimizeButton.AutoButtonColor = false
+MinimizeButton.Parent = Header
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 13)
+MinCorner.Parent = MinimizeButton
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.fromOffset(44, 44)
+CloseButton.Position = UDim2.new(1, -56, 0, 14)
+CloseButton.BackgroundColor3 = Theme.Card
+CloseButton.Text = "×"
+CloseButton.TextColor3 = Theme.Text
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 18
+CloseButton.AutoButtonColor = false
+CloseButton.Parent = Header
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 13)
+CloseCorner.Parent = CloseButton
+
+local Content = Instance.new("Frame")
+Content.Name = "Content"
+Content.Size = UDim2.new(1, -28, 1, -86)
+Content.Position = UDim2.fromOffset(14, 72)
+Content.BackgroundTransparency = 1
+Content.Parent = MainFrame
+
+local ToastHolder = Instance.new("Frame")
+ToastHolder.Size = UDim2.fromOffset(300, 42)
+ToastHolder.Position = UDim2.new(0.5, -150, 1, -58)
+ToastHolder.BackgroundTransparency = 1
+ToastHolder.ZIndex = 1000
+ToastHolder.Parent = ScreenGui
+
+local function ShowToast(message, isError)
+    local Toast = Instance.new("Frame")
+    Toast.Size = UDim2.new(1, 0, 0, 38)
+    Toast.Position = UDim2.new(0, 0, 1, 10)
+    Toast.BackgroundColor3 = Theme.Card
+    Toast.BorderSizePixel = 0
+    Toast.ZIndex = 1001
+    Toast.Parent = ToastHolder
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = Toast
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = isError and Theme.Key or Theme.Border
+    stroke.Thickness = 1
+    stroke.Parent = Toast
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, -20, 1, 0)
+    Label.Position = UDim2.fromOffset(10, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = tostring(message)
+    Label.TextColor3 = isError and Theme.Key or Theme.Text
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextSize = 11
+    Label.TextXAlignment = Enum.TextXAlignment.Center
+    Label.ZIndex = 1002
+    Label.Parent = Toast
+
+    Tween(Toast, 0.28, {
+        Position = UDim2.new(0, 0, 0, 0)
+    }, Enum.EasingStyle.Quart)
+
+    task.delay(2.2, function()
+        if Toast and Toast.Parent then
+            local tween = Tween(
+                Toast,
+                0.25,
+                {
+                    Position = UDim2.new(0, 0, 1, 10)
+                },
+                Enum.EasingStyle.Quart
+            )
+
+            if tween then
+                tween.Completed:Wait()
+            end
+
+            if Toast then
+                Toast:Destroy()
+            end
+        end
+    end)
+end
+
+local CurrentPage = nil
+local PageObjects = {}
+
+local function CreatePage(name)
+    local page = Instance.new("Frame")
+    page.Name = name
+    page.Size = UDim2.fromScale(1, 1)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.Parent = Content
+
+    PageObjects[name] = page
+
+    return page
+end
+
+local AddPage = CreatePage("AddScript")
+local FavoritePage = CreatePage("Favorite")
+local EggPage = CreatePage("StealAnEgg")
+
+local TabPanel = Instance.new("Frame")
+TabPanel.Name = "FloatingTabs"
+TabPanel.Size = UDim2.fromOffset(220, 250)
+TabPanel.Position = UDim2.new(0.5, -600, 0.5, -125)
+TabPanel.BackgroundColor3 = Theme.Background2
+TabPanel.BorderSizePixel = 0
+TabPanel.Active = false
+TabPanel.Parent = ScreenGui
+
+local TabCorner = Instance.new("UICorner")
+TabCorner.CornerRadius = UDim.new(0, 18)
+TabCorner.Parent = TabPanel
+
+local TabStroke = Instance.new("UIStroke")
+TabStroke.Color = Theme.Border
+TabStroke.Thickness = 1.5
+TabStroke.Parent = TabPanel
+
+local BrandTitle = Instance.new("TextLabel")
+BrandTitle.Size = UDim2.new(1, -30, 0, 30)
+BrandTitle.Position = UDim2.fromOffset(15, 12)
+BrandTitle.BackgroundTransparency = 1
+BrandTitle.Text = "leon4951"
+BrandTitle.TextColor3 = Theme.Text
+BrandTitle.Font = Enum.Font.GothamBold
+BrandTitle.TextSize = 15
+BrandTitle.TextXAlignment = Enum.TextXAlignment.Left
+BrandTitle.Parent = TabPanel
+
+local BrandSub = Instance.new("TextLabel")
+BrandSub.Size = UDim2.new(1, -30, 0, 18)
+BrandSub.Position = UDim2.fromOffset(15, 38)
+BrandSub.BackgroundTransparency = 1
+BrandSub.Text = "SCRIPT MANAGER"
+BrandSub.TextColor3 = Theme.TextMuted
+BrandSub.Font = Enum.Font.GothamBold
+BrandSub.TextSize = 8
+BrandSub.TextXAlignment = Enum.TextXAlignment.Left
+BrandSub.Parent = TabPanel
+
+local Separator = Instance.new("Frame")
+Separator.Size = UDim2.new(1, -30, 0, 1)
+Separator.Position = UDim2.fromOffset(15, 66)
+Separator.BackgroundColor3 = Theme.Border
+Separator.BorderSizePixel = 0
+Separator.Parent = TabPanel
+
+local TabContainer = Instance.new("Frame")
+TabContainer.Size = UDim2.new(1, -24, 1, -82)
+TabContainer.Position = UDim2.fromOffset(12, 76)
+TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = TabPanel
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.Padding = UDim.new(0, 8)
+TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabLayout.Parent = TabContainer
+
+local TabButtons = {}
+
+local function CreateTab(text, icon, pageName, order)
+    local Button = Instance.new("TextButton")
+    Button.Name = pageName .. "Tab"
+    Button.Size = UDim2.new(1, 0, 0, 48)
+    Button.BackgroundColor3 = Theme.Card
+    Button.BorderSizePixel = 0
+    Button.Text = ""
+    Button.AutoButtonColor = false
+    Button.LayoutOrder = order
+    Button.Parent = TabContainer
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 13)
+    corner.Parent = Button
+
+    local iconLabel = Instance.new("TextLabel")
+    iconLabel.Size = UDim2.fromOffset(32, 32)
+    iconLabel.Position = UDim2.fromOffset(8, 8)
+    iconLabel.BackgroundTransparency = 1
+    iconLabel.Text = icon
+    iconLabel.TextColor3 = Theme.TextSecondary
+    iconLabel.Font = Enum.Font.GothamBold
+    iconLabel.TextSize = 16
+    iconLabel.Parent = Button
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -48, 1, 0)
+    textLabel.Position = UDim2.fromOffset(44, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = text
+    textLabel.TextColor3 = Theme.TextSecondary
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = 9
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Parent = Button
+
+    TabButtons[pageName] = {
+        Button = Button,
+        Icon = iconLabel,
+        Text = textLabel
+    }
+
+    Button.MouseEnter:Connect(function()
+        if CurrentPage ~= pageName then
+            Tween(Button, 0.15, {
+                BackgroundColor3 = Theme.CardHover
+            })
+        end
+    end)
+
+    Button.MouseLeave:Connect(function()
+        if CurrentPage ~= pageName then
+            Tween(Button, 0.15, {
+                BackgroundColor3 = Theme.Card
+            })
+        end
+    end)
+
+    Button.MouseButton1Click:Connect(function()
+        if CurrentPage == pageName then
+            return
+        end
+
+        for _, data in pairs(PageObjects) do
+            data.Visible = false
+        end
+
+        for _, data in pairs(TabButtons) do
+            Tween(data.Button, 0.18, {
+                BackgroundColor3 = Theme.Card
+            })
+
+            Tween(data.Text, 0.18, {
+                TextColor3 = Theme.TextSecondary
+            })
+
+            Tween(data.Icon, 0.18, {
+                TextColor3 = Theme.TextSecondary
+            })
+        end
+
+        local targetPage = PageObjects[pageName]
+
+        if targetPage then
+            targetPage.Visible = true
+            targetPage.Position = UDim2.new(0, 12, 0, 0)
+
+            Tween(targetPage, 0.22, {
+                Position = UDim2.new(0, 0, 0, 0)
+            }, Enum.EasingStyle.Quart)
+        end
+
+        Tween(Button, 0.18, {
+            BackgroundColor3 = Theme.Accent
+        })
+
+        Tween(textLabel, 0.18, {
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        })
+
+        Tween(iconLabel, 0.18, {
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        })
+
+        CurrentPage = pageName
+    end)
+
+    return Button
+end
+
+CreateTab("TAMBAHKAN SCRIPT MU", "+", "AddScript", 1)
+CreateTab("FAVORITE", "★", "Favorite", 2)
+CreateTab("STEAL AN EGG", "◆", "StealAnEgg", 3)
+
+local function CreateFilterBar(parent)
+    local Holder = Instance.new("Frame")
+    Holder.Size = UDim2.new(1, 0, 0, 42)
+    Holder.BackgroundTransparency = 1
+    Holder.Parent = parent
+
+    local NoKey = Instance.new("TextButton")
+    NoKey.Size = UDim2.new(0, 82, 0, 34)
+    NoKey.Position = UDim2.fromOffset(0, 4)
+    NoKey.BackgroundColor3 = Theme.Card
+    NoKey.Text = "No Key"
+    NoKey.TextColor3 = Theme.TextSecondary
+    NoKey.Font = Enum.Font.GothamBold
+    NoKey.TextSize = 9
+    NoKey.AutoButtonColor = false
+    NoKey.Parent = Holder
+
+    local NoKeyCorner = Instance.new("UICorner")
+    NoKeyCorner.CornerRadius = UDim.new(0, 10)
+    NoKeyCorner.Parent = NoKey
+
+    local Key = Instance.new("TextButton")
+    Key.Size = UDim2.new(0, 68, 0, 34)
+    Key.Position = UDim2.fromOffset(88, 4)
+    Key.BackgroundColor3 = Theme.Card
+    Key.Text = "Key"
+    Key.TextColor3 = Theme.TextSecondary
+    Key.Font = Enum.Font.GothamBold
+    Key.TextSize = 9
+    Key.AutoButtonColor = false
+    Key.Parent = Holder
+
+    local KeyCorner = Instance.new("UICorner")
+    KeyCorner.CornerRadius = UDim.new(0, 10)
+    KeyCorner.Parent = Key
+
+    local Search = Instance.new("TextBox")
+    Search.Size = UDim2.new(1, -166, 0, 34)
+    Search.Position = UDim2.new(0, 162, 0, 4)
+    Search.BackgroundColor3 = Theme.Card
+    Search.BorderSizePixel = 0
+    Search.PlaceholderText = "Cari script..."
+    Search.PlaceholderColor3 = Theme.TextMuted
+    Search.Text = ""
+    Search.TextColor3 = Theme.Text
+    Search.Font = Enum.Font.Gotham
+    Search.TextSize = 10
+    Search.ClearTextOnFocus = false
+    Search.Parent = Holder
+
+    local SearchCorner = Instance.new("UICorner")
+    SearchCorner.CornerRadius = UDim.new(0, 10)
+    SearchCorner.Parent = Search
+
+    return Holder, NoKey, Key, Search
+end
+
+local AddTitle = Instance.new("TextLabel")
+AddTitle.Size = UDim2.new(1, 0, 0, 24)
+AddTitle.BackgroundTransparency = 1
+AddTitle.Text = "TAMBAHKAN SCRIPT"
+AddTitle.TextColor3 = Theme.TextSecondary
+AddTitle.Font = Enum.Font.GothamBold
+AddTitle.TextSize = 11
+AddTitle.TextXAlignment = Enum.TextXAlignment.Left
+AddTitle.Parent = AddPage
+
+local AddUnderline = Instance.new("Frame")
+AddUnderline.Size = UDim2.fromOffset(40, 3)
+AddUnderline.Position = UDim2.fromOffset(0, 27)
+AddUnderline.BackgroundColor3 = Theme.Accent
+AddUnderline.BorderSizePixel = 0
+AddUnderline.Parent = AddPage
+
+local AddCard = Instance.new("Frame")
+AddCard.Size = UDim2.new(1, 0, 0, 195)
+AddCard.Position = UDim2.fromOffset(0, 42)
+AddCard.BackgroundColor3 = Theme.Card
+AddCard.BorderSizePixel = 0
+AddCard.Parent = AddPage
+
+local AddCardCorner = Instance.new("UICorner")
+AddCardCorner.CornerRadius = UDim.new(0, 15)
+AddCardCorner.Parent = AddCard
+
+local NameInput = Instance.new("TextBox")
+NameInput.Size = UDim2.new(0.66, -6, 0, 42)
+NameInput.Position = UDim2.fromOffset(10, 10)
+NameInput.BackgroundColor3 = Theme.Background2
+NameInput.BorderSizePixel = 0
+NameInput.PlaceholderText = "Nama Script..."
+NameInput.PlaceholderColor3 = Theme.TextMuted
+NameInput.Text = ""
+NameInput.TextColor3 = Theme.Text
+NameInput.Font = Enum.Font.Gotham
+NameInput.TextSize = 10
+NameInput.ClearTextOnFocus = false
+NameInput.Parent = AddCard
+
+local NameCorner = Instance.new("UICorner")
+NameCorner.CornerRadius = UDim.new(0, 11)
+NameCorner.Parent = NameInput
+
+local KeyStatus = "No Key"
+
+local KeyInput = Instance.new("TextButton")
+KeyInput.Size = UDim2.new(0.34, -14, 0, 42)
+KeyInput.Position = UDim2.new(0.66, 4, 0, 10)
+KeyInput.BackgroundColor3 = Theme.Background2
+KeyInput.BorderSizePixel = 0
+KeyInput.Text = "No Key"
+KeyInput.TextColor3 = Theme.TextSecondary
+KeyInput.Font = Enum.Font.GothamBold
+KeyInput.TextSize = 10
+KeyInput.AutoButtonColor = false
+KeyInput.Parent = AddCard
+
+local KeyInputCorner = Instance.new("UICorner")
+KeyInputCorner.CornerRadius = UDim.new(0, 11)
+KeyInputCorner.Parent = KeyInput
+
+KeyInput.MouseButton1Click:Connect(function()
+    if KeyStatus == "No Key" then
+        KeyStatus = "Key"
+        KeyInput.Text = "Key"
+        KeyInput.TextColor3 = Theme.Key
+    else
+        KeyStatus = "No Key"
+        KeyInput.Text = "No Key"
+        KeyInput.TextColor3 = Theme.NoKey
+    end
+end)
+
+local SourceInput = Instance.new("TextBox")
+SourceInput.Size = UDim2.new(1, -20, 0, 52)
+SourceInput.Position = UDim2.fromOffset(10, 61)
+SourceInput.BackgroundColor3 = Theme.Background2
+SourceInput.BorderSizePixel = 0
+SourceInput.PlaceholderText = "Paste URL / loadstring script disini..."
+SourceInput.PlaceholderColor3 = Theme.TextMuted
+SourceInput.Text = ""
+SourceInput.TextColor3 = Theme.Text
+SourceInput.Font = Enum.Font.Gotham
+SourceInput.TextSize = 10
+SourceInput.TextWrapped = true
+SourceInput.TextXAlignment = Enum.TextXAlignment.Left
+SourceInput.TextYAlignment = Enum.TextYAlignment.Center
+SourceInput.ClearTextOnFocus = false
+SourceInput.Parent = AddCard
+
+local SourceCorner = Instance.new("UICorner")
+SourceCorner.CornerRadius = UDim.new(0, 11)
+SourceCorner.Parent = SourceInput
+
+local SaveButton = Instance.new("TextButton")
+SaveButton.Size = UDim2.new(1, -20, 0, 42)
+SaveButton.Position = UDim2.fromOffset(10, 122)
+SaveButton.BackgroundColor3 = Theme.Accent
+SaveButton.BorderSizePixel = 0
+SaveButton.Text = "+  SIMPAN SCRIPT"
+SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SaveButton.Font = Enum.Font.GothamBold
+SaveButton.TextSize = 10
+SaveButton.AutoButtonColor = false
+SaveButton.Parent = AddCard
+
+local SaveCorner = Instance.new("UICorner")
+SaveCorner.CornerRadius = UDim.new(0, 12)
+SaveCorner.Parent = SaveButton
+
+SaveButton.MouseEnter:Connect(function()
+    Tween(SaveButton, 0.15, {
+        BackgroundColor3 = Theme.AccentLight
+    })
+end)
+
+SaveButton.MouseLeave:Connect(function()
+    Tween(SaveButton, 0.15, {
+        BackgroundColor3 = Theme.Accent
+    })
+end)
+
+local function ClearChildren(container)
+    for _, child in ipairs(container:GetChildren()) do
+        if not child:IsA("UIListLayout") then
+            child:Destroy()
+        end
+    end
+end
+
+local function CreateScriptRow(parent, item, index, refreshCallback)
+    local Row = Instance.new("Frame")
+    Row.Size = UDim2.new(1, 0, 0, 54)
+    Row.BackgroundColor3 = Theme.Card
+    Row.BorderSizePixel = 0
+    Row.LayoutOrder = index
+    Row.Parent = parent
+
+    local RowCorner = Instance.new("UICorner")
+    RowCorner.CornerRadius = UDim.new(0, 13)
+    RowCorner.Parent = Row
+
+    local Name = Instance.new("TextLabel")
+    Name.Size = UDim2.new(1, -260, 1, 0)
+    Name.Position = UDim2.fromOffset(16, 0)
+    Name.BackgroundTransparency = 1
+    Name.Text = tostring(item.name or "Untitled")
+    Name.TextColor3 = Theme.Text
+    Name.Font = Enum.Font.GothamBold
+    Name.TextSize = 10
+    Name.TextXAlignment = Enum.TextXAlignment.Left
+    Name.TextTruncate = Enum.TextTruncate.AtEnd
+    Name.Parent = Row
+
+    local Status = Instance.new("TextLabel")
+    Status.Size = UDim2.fromOffset(58, 24)
+    Status.Position = UDim2.new(1, -242, 0.5, -12)
+    Status.BackgroundColor3 = item.keyStatus == "Key" and Theme.Key or Theme.NoKey
+    Status.Text = item.keyStatus or "No Key"
+    Status.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Status.Font = Enum.Font.GothamBold
+    Status.TextSize = 8
+    Status.Parent = Row
+
+    local StatusCorner = Instance.new("UICorner")
+    StatusCorner.CornerRadius = UDim.new(1, 0)
+    StatusCorner.Parent = Status
+
+    local Favorite = Instance.new("TextButton")
+    Favorite.Size = UDim2.fromOffset(34, 34)
+    Favorite.Position = UDim2.new(1, -176, 0.5, -17)
+    Favorite.BackgroundColor3 = Theme.Background2
+    Favorite.Text = IsFavorite(item) and "★" or "☆"
+    Favorite.TextColor3 = IsFavorite(item) and Theme.Favorite or Theme.TextSecondary
+    Favorite.Font = Enum.Font.GothamBold
+    Favorite.TextSize = 17
+    Favorite.AutoButtonColor = false
+    Favorite.Parent = Row
+
+    local FavoriteCorner = Instance.new("UICorner")
+    FavoriteCorner.CornerRadius = UDim.new(0, 10)
+    FavoriteCorner.Parent = Favorite
+
+    Favorite.MouseButton1Click:Connect(function()
+        if IsFavorite(item) then
+            RemoveFavorite(item)
+            Favorite.Text = "☆"
+            Favorite.TextColor3 = Theme.TextSecondary
+            ShowToast("Dihapus dari favorite", false)
+        else
+            AddFavorite(item)
+            Favorite.Text = "★"
+            Favorite.TextColor3 = Theme.Favorite
+            ShowToast("Ditambahkan ke favorite", false)
+        end
+
+        if refreshCallback then
+            task.defer(refreshCallback)
+        end
+    end)
+
+    local Run = Instance.new("TextButton")
+    Run.Size = UDim2.fromOffset(55, 34)
+    Run.Position = UDim2.new(1, -134, 0.5, -17)
+    Run.BackgroundColor3 = Theme.Accent
+    Run.Text = "RUN"
+    Run.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Run.Font = Enum.Font.GothamBold
+    Run.TextSize = 8
+    Run.AutoButtonColor = false
+    Run.Parent = Row
+
+    local RunCorner = Instance.new("UICorner")
+    RunCorner.CornerRadius = UDim.new(0, 10)
+    RunCorner.Parent = Run
+
+    Run.MouseEnter:Connect(function()
+        Tween(Run, 0.12, {
+            BackgroundColor3 = Theme.AccentLight
+        })
+    end)
+
+    Run.MouseLeave:Connect(function()
+        Tween(Run, 0.12, {
+            BackgroundColor3 = Theme.Accent
+        })
+    end)
+
+    Run.MouseButton1Click:Connect(function()
+        local rawSource = item.source
+
+        if type(rawSource) ~= "string" or rawSource == "" then
+            ShowToast("Source script kosong!", true)
+            return
+        end
+
+        ShowToast("Menjalankan: " .. tostring(item.name), false)
+
+        task.spawn(function()
+            local codeToRun = rawSource
+
+            if rawSource:match("^https?://") then
+                local successFetch, response = pcall(function()
+                    if type(game.HttpGet) == "function" then
+                        return game:HttpGet(rawSource)
+                    end
+
+                    if type(request) == "function" then
+                        local result = request({
+                            Url = rawSource,
+                            Method = "GET"
+                        })
+
+                        if type(result) == "table" then
+                            return result.Body
+                        end
+                    end
+
+                    error("HTTP tidak tersedia")
+                end)
+
+                if not successFetch or type(response) ~= "string" or response == "" then
+                    ShowToast("Gagal mengambil source!", true)
+                    return
+                end
+
+                codeToRun = response
+            end
+
+            if type(loadstring) ~= "function" then
+                ShowToast("loadstring tidak tersedia!", true)
+                return
+            end
+
+            local successCompile, compiled = pcall(function()
+                return loadstring(codeToRun)
+            end)
+
+            if not successCompile or type(compiled) ~= "function" then
+                ShowToast("Gagal compile script!", true)
+                return
+            end
+
+            local successExecute = pcall(compiled)
+
+            if successExecute then
+                ShowToast("Script berhasil dijalankan!", false)
+            else
+                ShowToast("Script menghasilkan error!", true)
+            end
+        end)
+    end)
+
+    local Delete = Instance.new("TextButton")
+    Delete.Size = UDim2.fromOffset(34, 34)
+    Delete.Position = UDim2.new(1, -46, 0.5, -17)
+    Delete.BackgroundColor3 = Theme.Background2
+    Delete.Text = "×"
+    Delete.TextColor3 = Theme.Key
+    Delete.Font = Enum.Font.GothamBold
+    Delete.TextSize = 15
+    Delete.AutoButtonColor = false
+    Delete.Parent = Row
+
+    local DeleteCorner = Instance.new("UICorner")
+    DeleteCorner.CornerRadius = UDim.new(0, 10)
+    DeleteCorner.Parent = Delete
+
+    Delete.MouseButton1Click:Connect(function()
+        if CustomScriptsList[index] == item then
+            table.remove(CustomScriptsList, index)
+        else
+            for i, savedItem in ipairs(CustomScriptsList) do
+                if savedItem == item then
+                    table.remove(CustomScriptsList, i)
+                    break
+                end
+            end
+        end
+
+        RemoveFavorite(item)
+        SaveJSON(CUSTOM_CONFIG, CustomScriptsList)
+
+        if refreshCallback then
+            refreshCallback()
+        end
+
+        ShowToast("Script dihapus", false)
+    end)
+
+    Row.MouseEnter:Connect(function()
+        Tween(Row, 0.14, {
+            BackgroundColor3 = Theme.CardHover
+        })
+    end)
+
+    Row.MouseLeave:Connect(function()
+        Tween(Row, 0.14, {
+            BackgroundColor3 = Theme.Card
+        })
+    end)
+
+    return Row
+end
+
+local CustomList = Instance.new("ScrollingFrame")
+CustomList.Size = UDim2.new(1, 0, 1, -250)
+CustomList.Position = UDim2.fromOffset(0, 247)
+CustomList.BackgroundTransparency = 1
+CustomList.BorderSizePixel = 0
+CustomList.ScrollBarThickness = 2
+CustomList.ScrollBarImageColor3 = Theme.Accent
+CustomList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+CustomList.CanvasSize = UDim2.new(0, 0, 0, 0)
+CustomList.Parent = AddPage
+
+local CustomLayout = Instance.new("UIListLayout")
+CustomLayout.Padding = UDim.new(0, 7)
+CustomLayout.SortOrder = Enum.SortOrder.LayoutOrder
+CustomLayout.Parent = CustomList
+
+local function RenderCustomList()
+    ClearChildren(CustomList)
+
+    if #CustomScriptsList == 0 then
+        local Empty = Instance.new("TextLabel")
+        Empty.Size = UDim2.new(1, 0, 0, 55)
+        Empty.BackgroundColor3 = Theme.Card
+        Empty.Text = "Belum ada script tersimpan."
+        Empty.TextColor3 = Theme.TextMuted
+        Empty.Font = Enum.Font.Gotham
+        Empty.TextSize = 10
+        Empty.Parent = CustomList
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 13)
+        corner.Parent = Empty
+
+        return
+    end
+
+    for index, item in ipairs(CustomScriptsList) do
+        CreateScriptRow(
+            CustomList,
+            item,
+            index,
+            RenderCustomList
+        )
+    end
+end
+
+SaveButton.MouseButton1Click:Connect(function()
+    local name = NameInput.Text
+
+    if name == "" then
+        name = "Untitled"
+    end
+
+    local source = SourceInput.Text
+
+    if source == "" then
+        ShowToast("Source script kosong!", true)
+        return
+    end
+
+    local newScript = {
+        name = name,
+        keyStatus = KeyStatus,
+        source = source
+    }
+
+    table.insert(CustomScriptsList, newScript)
+
+    SaveJSON(CUSTOM_CONFIG, CustomScriptsList)
+
+    NameInput.Text = ""
+    SourceInput.Text = ""
+
+    KeyStatus = "No Key"
+    KeyInput.Text = "No Key"
+    KeyInput.TextColor3 = Theme.NoKey
+
+    RenderCustomList()
+
+    ShowToast("Script disimpan!", false)
+end)
+
+local FavoriteTitle = Instance.new("TextLabel")
+FavoriteTitle.Size = UDim2.new(1, 0, 0, 24)
+FavoriteTitle.BackgroundTransparency = 1
+FavoriteTitle.Text = "FAVORITE"
+FavoriteTitle.TextColor3 = Theme.TextSecondary
+FavoriteTitle.Font = Enum.Font.GothamBold
+FavoriteTitle.TextSize = 11
+FavoriteTitle.TextXAlignment = Enum.TextXAlignment.Left
+FavoriteTitle.Parent = FavoritePage
+
+local _, FavoriteNoKey, FavoriteKey, FavoriteSearch = CreateFilterBar(FavoritePage)
+FavoriteNoKey.Position = UDim2.fromOffset(0, 38)
+FavoriteKey.Position = UDim2.fromOffset(88, 38)
+FavoriteSearch.Position = UDim2.new(0, 162, 0, 38)
+
+local FavoriteList = Instance.new("ScrollingFrame")
+FavoriteList.Size = UDim2.new(1, 0, 1, -92)
+FavoriteList.Position = UDim2.fromOffset(0, 88)
+FavoriteList.BackgroundTransparency = 1
+FavoriteList.BorderSizePixel = 0
+FavoriteList.ScrollBarThickness = 2
+FavoriteList.ScrollBarImageColor3 = Theme.Accent
+FavoriteList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+FavoriteList.CanvasSize = UDim2.new(0, 0, 0, 0)
+FavoriteList.Parent = FavoritePage
+
+local FavoriteLayout = Instance.new("UIListLayout")
+FavoriteLayout.Padding = UDim.new(0, 7)
+FavoriteLayout.SortOrder = Enum.SortOrder.LayoutOrder
+FavoriteLayout.Parent = FavoriteList
+
+local FavoriteFilter = "ALL"
+
+local function RenderFavoriteList()
+    ClearChildren(FavoriteList)
+
+    local searchText = string.lower(FavoriteSearch.Text or "")
+    local shown = 0
+
+    for _, item in ipairs(FavoriteScripts) do
+        if type(item) == "table" then
+            local name = string.lower(tostring(item.name or ""))
+
+            local matchesSearch =
+                searchText == ""
+                or string.find(name, searchText, 1, true)
+
+            local matchesFilter =
+                FavoriteFilter == "ALL"
+                or item.keyStatus == FavoriteFilter
+
+            if matchesSearch and matchesFilter then
+                shown += 1
+
+                CreateScriptRow(
+                    FavoriteList,
+                    item,
+                    shown,
+                    RenderFavoriteList
+                )
+            end
+        end
+    end
+
+    if shown == 0 then
+        local Empty = Instance.new("TextLabel")
+        Empty.Size = UDim2.new(1, 0, 0, 60)
+        Empty.BackgroundColor3 = Theme.Card
+        Empty.Text = #FavoriteScripts == 0
+            and "Belum ada script Favorite"
+            or "Script tidak ditemukan"
+        Empty.TextColor3 = Theme.TextMuted
+        Empty.Font = Enum.Font.Gotham
+        Empty.TextSize = 10
+        Empty.Parent = FavoriteList
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 13)
+        corner.Parent = Empty
+    end
+end
+
+FavoriteNoKey.MouseButton1Click:Connect(function()
+    FavoriteFilter = "No Key"
+    RenderFavoriteList()
+end)
+
+FavoriteKey.MouseButton1Click:Connect(function()
+    FavoriteFilter = "Key"
+    RenderFavoriteList()
+end)
+
+FavoriteSearch:GetPropertyChangedSignal("Text"):Connect(function()
+    RenderFavoriteList()
+end)
+
+local StealTitle = Instance.new("TextLabel")
+StealTitle.Size = UDim2.new(1, 0, 0, 24)
+StealTitle.BackgroundTransparency = 1
+StealTitle.Text = "STEAL AN EGG"
+StealTitle.TextColor3 = Theme.TextSecondary
+StealTitle.Font = Enum.Font.GothamBold
+StealTitle.TextSize = 11
+StealTitle.TextXAlignment = Enum.TextXAlignment.Left
+StealTitle.Parent = EggPage
+
+local _, EggNoKey, EggKey, EggSearch = CreateFilterBar(EggPage)
+
+EggNoKey.Position = UDim2.fromOffset(0, 38)
+EggKey.Position = UDim2.fromOffset(88, 38)
+EggSearch.Position = UDim2.new(0, 162, 0, 38)
+
+local EggList = Instance.new("ScrollingFrame")
+EggList.Size = UDim2.new(1, 0, 1, -92)
+EggList.Position = UDim2.fromOffset(0, 88)
+EggList.BackgroundTransparency = 1
+EggList.BorderSizePixel = 0
+EggList.ScrollBarThickness = 2
+EggList.ScrollBarImageColor3 = Theme.Accent
+EggList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+EggList.CanvasSize = UDim2.new(0, 0, 0, 0)
+EggList.Parent = EggPage
+
+local EggLayout = Instance.new("UIListLayout")
+EggLayout.Padding = UDim.new(0, 7)
+EggLayout.SortOrder = Enum.SortOrder.LayoutOrder
+EggLayout.Parent = EggList
+
+local StealAnEggData = {}
+
+local EggFilter = "ALL"
+
+local function RenderEggList()
+    ClearChildren(EggList)
+
+    local searchText = string.lower(EggSearch.Text or "")
+    local shown = 0
+
+    for _, item in ipairs(StealAnEggData) do
+        if type(item) == "table" then
+            local name = string.lower(tostring(item.name or ""))
+
+            local matchesSearch =
+                searchText == ""
+                or string.find(name, searchText, 1, true)
+
+            local matchesFilter =
+                EggFilter == "ALL"
+                or item.keyStatus == EggFilter
+
+            if matchesSearch and matchesFilter then
+                shown += 1
+
+                CreateScriptRow(
+                    EggList,
+                    item,
+                    shown,
+                    RenderEggList
+                )
+            end
+        end
+    end
+
+    if shown == 0 then
+        local Empty = Instance.new("TextLabel")
+        Empty.Size = UDim2.new(1, 0, 0, 60)
+        Empty.BackgroundColor3 = Theme.Card
+        Empty.Text = "Belum ada script Steal an Egg"
+        Empty.TextColor3 = Theme.TextMuted
+        Empty.Font = Enum.Font.Gotham
+        Empty.TextSize = 10
+        Empty.Parent = EggList
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 13)
+        corner.Parent = Empty
+    end
+end
+
+EggNoKey.MouseButton1Click:Connect(function()
+    EggFilter = "No Key"
+    RenderEggList()
+end)
+
+EggKey.MouseButton1Click:Connect(function()
+    EggFilter = "Key"
+    RenderEggList()
+end)
+
+EggSearch:GetPropertyChangedSignal("Text"):Connect(function()
+    RenderEggList()
+end)
+
+RenderCustomList()
+RenderFavoriteList()
+RenderEggList()
+
+for _, page in pairs(PageObjects) do
+    page.Visible = false
+end
+
+PageObjects.AddScript.Visible = true
+CurrentPage = "AddScript"
+
+Tween(TabButtons.AddScript.Button, 0.18, {
+    BackgroundColor3 = Theme.Accent
+})
+
+Tween(TabButtons.AddScript.Text, 0.18, {
+    TextColor3 = Color3.fromRGB(255, 255, 255)
+})
+
+Tween(TabButtons.AddScript.Icon, 0.18, {
+    TextColor3 = Color3.fromRGB(255, 255, 255)
+})
+
+local targetTabPosition = TabPanel.Position
+local FOLLOW_SPEED = 11
+
+local function GetTabTargetPosition()
+    local mainPos = MainFrame.AbsolutePosition
+    local mainSize = MainFrame.AbsoluteSize
+
+    local targetX = mainPos.X - TabPanel.AbsoluteSize.X - 16
+    local targetY = mainPos.Y + 70
+
+    return Vector2.new(targetX, targetY)
+end
+
+RunService.RenderStepped:Connect(function(deltaTime)
+    if not MainFrame.Parent or not TabPanel.Parent then
+        return
+    end
+
+    local target = GetTabTargetPosition()
+
+    local current = Vector2.new(
+        TabPanel.AbsolutePosition.X,
+        TabPanel.AbsolutePosition.Y
+    )
+
+    local alpha = 1 - math.exp(-FOLLOW_SPEED * deltaTime)
+
+    local newPosition = current:Lerp(target, alpha)
+
+    TabPanel.Position = UDim2.fromOffset(
+        newPosition.X,
+        newPosition.Y
+    )
+end)
+
+local IsMinimized = false
+local IsClosed = false
+local IsTransitioning = false
+
+local NORMAL_SIZE = UDim2.fromOffset(760, 500)
+local MINI_SIZE = UDim2.fromOffset(760, 76)
+
+local function GetNormalCenterPosition()
+    return UDim2.fromScale(0.56, 0.5)
+end
+
+local function GetMiniPosition()
+    return UDim2.new(0.5, 0, 0, 48)
+end
+
+local function SetButtonsForMini()
+    MinimizeButton.Text = "+"
+end
+
+local function SetButtonsForNormal()
+    MinimizeButton.Text = "−"
+end
+
+local function RestoreFromMini()
+    if IsTransitioning or not IsMinimized then
+        return
+    end
+
+    IsTransitioning = true
+    IsMinimized = false
+
+    TabPanel.Visible = true
+
+    local miniPosition = MainFrame.Position
+    local normalPosition = GetNormalCenterPosition()
+
+    MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+
+    Tween(
+        MainFrame,
+        0.48,
+        {
+            Position = normalPosition,
+            Size = NORMAL_SIZE
+        },
+        Enum.EasingStyle.Quart,
+        Enum.EasingDirection.Out
+    )
+
+    Tween(
+        MainFrame,
+        0.28,
+        {
+            BackgroundTransparency = 0
+        },
+        Enum.EasingStyle.Quart
+    )
+
+    task.delay(0.05, function()
+        Tween(
+            Content,
+            0.32,
+            {
+                Position = UDim2.fromOffset(14, 72)
+            },
+            Enum.EasingStyle.Quart
+        )
+    end)
+
+    SetButtonsForNormal()
+
+    task.delay(0.5, function()
+        if MainFrame.Parent then
+            MainFrame.Position = normalPosition
+            MainFrame.Size = NORMAL_SIZE
+        end
+
+        IsTransitioning = false
+    end)
+end
+
+local function MoveToMini()
+    if IsTransitioning or IsMinimized then
+        return
+    end
+
+    IsTransitioning = true
+    IsMinimized = true
+
+    local miniPosition = GetMiniPosition()
+
+    Tween(
+        Content,
+        0.18,
+        {
+            Position = UDim2.new(0, 14, 1, 20)
+        },
+        Enum.EasingStyle.Quart
+    )
+
+    local mainTween = Tween(
+        MainFrame,
+        0.5,
+        {
+            Position = miniPosition,
+            Size = MINI_SIZE
+        },
+        Enum.EasingStyle.Quart,
+        Enum.EasingDirection.Out
+    )
+
+    SetButtonsForMini()
+
+    task.delay(0.18, function()
+        if TabPanel.Parent then
+            TabPanel.Visible = false
+        end
+    end)
+
+    if mainTween then
+        mainTween.Completed:Wait()
+    end
+
+    if MainFrame.Parent then
+        MainFrame.Position = miniPosition
+        MainFrame.Size = MINI_SIZE
+    end
+
+    IsTransitioning = false
+end
+
+MinimizeButton.MouseEnter:Connect(function()
+    Tween(MinimizeButton, 0.15, {
+        BackgroundColor3 = Theme.CardHover
+    })
+end)
+
+MinimizeButton.MouseLeave:Connect(function()
+    Tween(MinimizeButton, 0.15, {
+        BackgroundColor3 = Theme.Card
+    })
+end)
+
+MinimizeButton.MouseButton1Click:Connect(function()
+    if IsMinimized then
+        RestoreFromMini()
+    else
+        MoveToMini()
+    end
+end)
+
+CloseButton.MouseEnter:Connect(function()
+    Tween(CloseButton, 0.15, {
+        BackgroundColor3 = Theme.CardHover
+    })
+end)
+
+CloseButton.MouseLeave:Connect(function()
+    Tween(CloseButton, 0.15, {
+        BackgroundColor3 = Theme.Card
+    })
+end)
+
+local function CloseUI()
+    if IsTransitioning or IsClosed then
+        return
+    end
+
+    IsTransitioning = true
+    IsClosed = true
+
+    Tween(
+        MainFrame,
+        0.35,
+        {
+            Size = UDim2.fromOffset(10, 10),
+            BackgroundTransparency = 1
+        },
+        Enum.EasingStyle.Quart
+    )
+
+    Tween(
+        TabPanel,
+        0.28,
+        {
+            Size = UDim2.fromOffset(10, 10),
+            BackgroundTransparency = 1
+        },
+        Enum.EasingStyle.Quart
+    )
+
+    task.delay(0.36, function()
+        if ScreenGui then
+            ScreenGui:Destroy()
+        end
+    end)
+end
+
+CloseButton.MouseButton1Click:Connect(function()
+    CloseUI()
+end)
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        if IsTransitioning then
+            return
+        end
+
+        local startPosition = MainFrame.Position
+        local dragStart = input.Position
+        local dragging = true
+
+        local connection
+        connection = UserInputService.InputChanged:Connect(function(changedInput)
+            if not dragging then
+                return
+            end
+
+            if changedInput.UserInputType ~= Enum.UserInputType.MouseMovement
+                and changedInput.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            local delta = changedInput.Position - dragStart
+
+            MainFrame.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end)
+
+        local endConnection
+        endConnection = UserInputService.InputEnded:Connect(function(endInput)
+            if endInput.UserInputType == Enum.UserInputType.MouseButton1
+                or endInput.UserInputType == Enum.UserInputType.Touch then
+
+                dragging = false
+
+                if connection then
+                    connection:Disconnect()
+                end
+
+                if endConnection then
+                    endConnection:Disconnect()
+                end
+            end
+        end)
+    end
+end)
+
+MainFrame.Size = UDim2.fromOffset(20, 20)
+MainFrame.BackgroundTransparency = 1
+MainFrame.Position = GetNormalCenterPosition()
+
+TabPanel.Size = UDim2.fromOffset(20, 20)
+TabPanel.BackgroundTransparency = 1
+
+Tween(
+    MainFrame,
+    0.5,
+    {
+        Size = NORMAL_SIZE,
+        BackgroundTransparency = 0
+    },
+    Enum.EasingStyle.Back
+)
+
+task.delay(0.08, function()
+    Tween(
+        TabPanel,
+        0.45,
+        {
+            Size = UDim2.fromOffset(220, 250),
+            BackgroundTransparency = 0
+        },
+        Enum.EasingStyle.Back
+    )
+end)
+
+task.delay(0.6, function()
+    ShowToast("leon4951 Hub aktif", false)
+end)
