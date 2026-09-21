@@ -1,0 +1,990 @@
+-- ============================================================================
+-- LEON4951 HUB - CUSTOM SCRIPT TAB
+-- LEFT : ADD SCRIPT
+-- RIGHT: SAVED SCRIPT LIST
+-- ============================================================================
+
+-- ============================================================================
+-- [ CONFIG ]
+-- ============================================================================
+
+local CustomScriptConfigName = "leon4951hub_custom_scripts.json"
+
+local CustomScriptsList = {}
+local CustomScriptFavorites = {}
+
+-- ============================================================================
+-- [ LOAD / SAVE ]
+-- ============================================================================
+
+local function LoadCustomScriptData()
+    CustomScriptsList = {}
+    CustomScriptFavorites = {}
+
+    if readfile then
+        local success, content = pcall(function()
+            if isfile and not isfile(CustomScriptConfigName) then
+                return nil
+            end
+
+            return readfile(CustomScriptConfigName)
+        end)
+
+        if success and content and content ~= "" then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(content)
+            end)
+
+            if decodeSuccess and type(decoded) == "table" then
+                if type(decoded.scripts) == "table" then
+                    CustomScriptsList = decoded.scripts
+                else
+                    -- Compatibility dengan format lama
+                    CustomScriptsList = decoded
+                end
+
+                if type(decoded.favorites) == "table" then
+                    CustomScriptFavorites = decoded.favorites
+                end
+            end
+        end
+    end
+end
+
+local function SaveCustomScriptData()
+    if not writefile then
+        return false
+    end
+
+    local success = pcall(function()
+        writefile(
+            CustomScriptConfigName,
+            HttpService:JSONEncode({
+                scripts = CustomScriptsList,
+                favorites = CustomScriptFavorites
+            })
+        )
+    end)
+
+    return success
+end
+
+LoadCustomScriptData()
+
+-- ============================================================================
+-- [ STATUS ]
+-- ============================================================================
+
+local function NormalizeCustomScriptStatus(status)
+    if type(status) ~= "string" then
+        return "No Key"
+    end
+
+    status = status:lower()
+    status = status:gsub("^%s+", "")
+    status = status:gsub("%s+$", "")
+
+    if status == "key" then
+        return "Key"
+    end
+
+    return "No Key"
+end
+
+-- ============================================================================
+-- [ CREATE DATA ]
+-- ============================================================================
+
+local function CreateCustomScriptData(name, keyStatus, source)
+
+    name = tostring(name or "")
+    source = tostring(source or "")
+
+    name = name:gsub("^%s+", "")
+    name = name:gsub("%s+$", "")
+
+    if name == "" then
+        name = "Untitled"
+    end
+
+    keyStatus = NormalizeCustomScriptStatus(keyStatus)
+
+    if source == "" then
+        return nil, "URL / source kosong!"
+    end
+
+    return {
+        name = name,
+        keyStatus = keyStatus,
+        source = source
+    }
+end
+
+-- ============================================================================
+-- [ ADD ]
+-- ============================================================================
+
+local function AddCustomScript(name, keyStatus, source)
+
+    local scriptData, errorMessage = CreateCustomScriptData(
+        name,
+        keyStatus,
+        source
+    )
+
+    if not scriptData then
+        return false, errorMessage
+    end
+
+    table.insert(
+        CustomScriptsList,
+        scriptData
+    )
+
+    SaveCustomScriptData()
+
+    return true, scriptData
+end
+
+-- ============================================================================
+-- [ DELETE ]
+-- ============================================================================
+
+local function DeleteCustomScript(index)
+
+    index = tonumber(index)
+
+    if not index or not CustomScriptsList[index] then
+        return false, "Script tidak ditemukan!"
+    end
+
+    local removed = table.remove(
+        CustomScriptsList,
+        index
+    )
+
+    if removed then
+        for i = #CustomScriptFavorites, 1, -1 do
+
+            local favorite = CustomScriptFavorites[i]
+
+            if type(favorite) == "table" then
+                if favorite.source == removed.source then
+                    table.remove(
+                        CustomScriptFavorites,
+                        i
+                    )
+                end
+            elseif type(favorite) == "string" then
+                if favorite == removed.name then
+                    table.remove(
+                        CustomScriptFavorites,
+                        i
+                    )
+                end
+            end
+        end
+    end
+
+    SaveCustomScriptData()
+
+    return true, removed
+end
+
+-- ============================================================================
+-- [ FAVORITE CHECK ]
+-- ============================================================================
+
+local function IsCustomScriptFavorite(script)
+
+    if type(script) ~= "table" then
+        return false
+    end
+
+    for _, favorite in ipairs(CustomScriptFavorites) do
+
+        if type(favorite) == "table" then
+            if favorite.source == script.source then
+                return true
+            end
+
+        elseif type(favorite) == "string" then
+            if favorite == script.name then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+-- ============================================================================
+-- [ TOGGLE FAVORITE ]
+-- ============================================================================
+
+local function ToggleCustomScriptFavorite(index)
+
+    index = tonumber(index)
+
+    local script = CustomScriptsList[index]
+
+    if not script then
+        return false, "Script tidak ditemukan!"
+    end
+
+    if IsCustomScriptFavorite(script) then
+
+        for i = #CustomScriptFavorites, 1, -1 do
+
+            local favorite = CustomScriptFavorites[i]
+
+            if type(favorite) == "table"
+                and favorite.source == script.source then
+
+                table.remove(
+                    CustomScriptFavorites,
+                    i
+                )
+            elseif type(favorite) == "string"
+                and favorite == script.name then
+
+                table.remove(
+                    CustomScriptFavorites,
+                    i
+                )
+            end
+        end
+
+    else
+
+        table.insert(
+            CustomScriptFavorites,
+            {
+                name = script.name,
+                keyStatus = script.keyStatus,
+                source = script.source
+            }
+        )
+    end
+
+    SaveCustomScriptData()
+
+    return true
+end
+
+-- ============================================================================
+-- [ EXECUTE ]
+-- ============================================================================
+
+local function ExecuteCustomScript(script)
+
+    if type(script) ~= "table" then
+        return false, "Data script tidak valid!"
+    end
+
+    local source = tostring(script.source or "")
+
+    if source == "" then
+        return false, "Source script kosong!"
+    end
+
+    local codeToRun = source
+
+    if source:match("^https?://") then
+
+        local fetchSuccess, response = pcall(function()
+
+            if game.HttpGet then
+                return game:HttpGet(source)
+
+            elseif request then
+
+                local responseData = request({
+                    Url = source,
+                    Method = "GET"
+                })
+
+                if responseData then
+                    return responseData.Body
+                end
+
+                return nil
+
+            else
+                error("HTTP tidak didukung")
+            end
+        end)
+
+        if not fetchSuccess or not response then
+            return false, "Gagal mengambil URL script!"
+        end
+
+        codeToRun = response
+    end
+
+    local compileSuccess, compiled = pcall(function()
+        return loadstring(codeToRun)
+    end)
+
+    if not compileSuccess or type(compiled) ~= "function" then
+        return false, "Gagal kompilasi script!"
+    end
+
+    local executeSuccess, executeError = pcall(function()
+        compiled()
+    end)
+
+    if not executeSuccess then
+        return false, executeError or "Gagal menjalankan script!"
+    end
+
+    return true, "Berhasil dieksekusi!"
+end
+
+-- ============================================================================
+-- [ THEME ]
+-- ============================================================================
+
+local CustomTabTheme = {
+    Background = Color3.fromRGB(12, 16, 24),
+    Card = Color3.fromRGB(20, 27, 42),
+    Input = Color3.fromRGB(15, 21, 33),
+
+    Blue = Color3.fromRGB(37, 120, 255),
+
+    White = Color3.fromRGB(255, 255, 255),
+    Secondary = Color3.fromRGB(140, 155, 180),
+    Muted = Color3.fromRGB(107, 114, 128),
+
+    Border = Color3.fromRGB(32, 44, 68),
+
+    Key = Color3.fromRGB(220, 53, 69),
+    NoKey = Color3.fromRGB(40, 167, 69)
+}
+
+-- ============================================================================
+-- [ MAIN TAB CONTENT ]
+-- ============================================================================
+
+local CustomTabContent = Instance.new("Frame")
+CustomTabContent.Name = "CustomScriptTab"
+CustomTabContent.Size = UDim2.new(1, 0, 1, 0)
+CustomTabContent.BackgroundTransparency = 1
+CustomTabContent.Visible = false
+CustomTabContent.Parent = ContentFrame
+
+-- ============================================================================
+-- [ LEFT SIDE ]
+-- ============================================================================
+
+local LeftPanel = Instance.new("Frame")
+LeftPanel.Name = "AddScriptPanel"
+LeftPanel.Size = UDim2.new(0.40, -6, 1, 0)
+LeftPanel.Position = UDim2.new(0, 0, 0, 0)
+LeftPanel.BackgroundColor3 = CustomTabTheme.Card
+LeftPanel.BorderSizePixel = 0
+LeftPanel.Parent = CustomTabContent
+
+Instance.new("UICorner", LeftPanel).CornerRadius = UDim.new(0, 12)
+
+local LeftStroke = Instance.new("UIStroke")
+LeftStroke.Color = CustomTabTheme.Border
+LeftStroke.Thickness = 1
+LeftStroke.Parent = LeftPanel
+
+-- ============================================================================
+-- [ NAME INPUT ]
+-- ============================================================================
+
+local NameInput = Instance.new("TextBox")
+NameInput.Name = "ScriptName"
+NameInput.Size = UDim2.new(0.62, -7, 0, 32)
+NameInput.Position = UDim2.new(0, 8, 0, 8)
+NameInput.BackgroundColor3 = CustomTabTheme.Input
+NameInput.BorderSizePixel = 0
+NameInput.PlaceholderText = "Nama Script"
+NameInput.PlaceholderColor3 = CustomTabTheme.Muted
+NameInput.Text = ""
+NameInput.TextColor3 = CustomTabTheme.White
+NameInput.Font = Enum.Font.Gotham
+NameInput.TextSize = 10
+NameInput.ClearTextOnFocus = false
+NameInput.Parent = LeftPanel
+
+Instance.new("UICorner", NameInput).CornerRadius = UDim.new(0, 8)
+
+-- ============================================================================
+-- [ KEY / NO KEY ]
+-- ============================================================================
+
+local KeyStatusButton = Instance.new("TextButton")
+KeyStatusButton.Name = "KeyStatus"
+KeyStatusButton.Size = UDim2.new(0.38, -9, 0, 32)
+KeyStatusButton.Position = UDim2.new(0.62, 1, 0, 8)
+KeyStatusButton.BackgroundColor3 = CustomTabTheme.NoKey
+KeyStatusButton.BorderSizePixel = 0
+KeyStatusButton.Text = "No Key"
+KeyStatusButton.TextColor3 = CustomTabTheme.White
+KeyStatusButton.Font = Enum.Font.GothamBold
+KeyStatusButton.TextSize = 9
+KeyStatusButton.Parent = LeftPanel
+
+Instance.new("UICorner", KeyStatusButton).CornerRadius = UDim.new(0, 8)
+
+local CurrentKeyStatus = "No Key"
+
+KeyStatusButton.MouseButton1Click:Connect(function()
+
+    if CurrentKeyStatus == "No Key" then
+        CurrentKeyStatus = "Key"
+
+        KeyStatusButton.Text = "Key"
+        KeyStatusButton.BackgroundColor3 = CustomTabTheme.Key
+
+    else
+        CurrentKeyStatus = "No Key"
+
+        KeyStatusButton.Text = "No Key"
+        KeyStatusButton.BackgroundColor3 = CustomTabTheme.NoKey
+    end
+end)
+
+-- ============================================================================
+-- [ SOURCE INPUT ]
+-- ============================================================================
+
+local SourceInput = Instance.new("TextBox")
+SourceInput.Name = "ScriptSource"
+SourceInput.Size = UDim2.new(1, -16, 0, 82)
+SourceInput.Position = UDim2.new(0, 8, 0, 48)
+SourceInput.BackgroundColor3 = CustomTabTheme.Input
+SourceInput.BorderSizePixel = 0
+SourceInput.PlaceholderText = "Masukkan URL script..."
+SourceInput.PlaceholderColor3 = CustomTabTheme.Muted
+SourceInput.Text = ""
+SourceInput.TextColor3 = CustomTabTheme.White
+SourceInput.Font = Enum.Font.Gotham
+SourceInput.TextSize = 9
+SourceInput.TextWrapped = true
+SourceInput.TextXAlignment = Enum.TextXAlignment.Left
+SourceInput.TextYAlignment = Enum.TextYAlignment.Top
+SourceInput.ClearTextOnFocus = false
+SourceInput.MultiLine = true
+SourceInput.Parent = LeftPanel
+
+Instance.new("UICorner", SourceInput).CornerRadius = UDim.new(0, 8)
+
+-- ============================================================================
+-- [ ADD BUTTON ]
+-- ============================================================================
+
+local AddButton = Instance.new("TextButton")
+AddButton.Name = "AddScript"
+AddButton.Size = UDim2.new(1, -16, 0, 34)
+AddButton.Position = UDim2.new(0, 8, 1, -42)
+AddButton.BackgroundColor3 = CustomTabTheme.Blue
+AddButton.BorderSizePixel = 0
+AddButton.Text = "ADD"
+AddButton.TextColor3 = CustomTabTheme.White
+AddButton.Font = Enum.Font.GothamBold
+AddButton.TextSize = 10
+AddButton.Parent = LeftPanel
+
+Instance.new("UICorner", AddButton).CornerRadius = UDim.new(0, 9)
+
+-- ============================================================================
+-- [ RIGHT SIDE ]
+-- ============================================================================
+
+local RightPanel = Instance.new("Frame")
+RightPanel.Name = "SavedScriptsPanel"
+RightPanel.Size = UDim2.new(0.60, -6, 1, 0)
+RightPanel.Position = UDim2.new(0.40, 6, 0, 0)
+RightPanel.BackgroundTransparency = 1
+RightPanel.Parent = CustomTabContent
+
+-- ============================================================================
+-- [ SEARCH ]
+-- ============================================================================
+
+local SearchBox = Instance.new("TextBox")
+SearchBox.Name = "Search"
+SearchBox.Size = UDim2.new(1, 0, 0, 30)
+SearchBox.Position = UDim2.new(0, 0, 0, 0)
+SearchBox.BackgroundColor3 = CustomTabTheme.Card
+SearchBox.BorderSizePixel = 0
+SearchBox.PlaceholderText = "Cari script..."
+SearchBox.PlaceholderColor3 = CustomTabTheme.Muted
+SearchBox.Text = ""
+SearchBox.TextColor3 = CustomTabTheme.White
+SearchBox.Font = Enum.Font.Gotham
+SearchBox.TextSize = 9
+SearchBox.ClearTextOnFocus = false
+SearchBox.Parent = RightPanel
+
+Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
+
+local SearchStroke = Instance.new("UIStroke")
+SearchStroke.Color = CustomTabTheme.Border
+SearchStroke.Thickness = 1
+SearchStroke.Parent = SearchBox
+
+-- ============================================================================
+-- [ FILTER BAR ]
+-- ============================================================================
+
+local FilterAll = Instance.new("TextButton")
+FilterAll.Size = UDim2.fromOffset(48, 24)
+FilterAll.Position = UDim2.new(0, 0, 0, 36)
+FilterAll.BackgroundColor3 = CustomTabTheme.Card
+FilterAll.BorderSizePixel = 0
+FilterAll.Text = "ALL"
+FilterAll.TextColor3 = CustomTabTheme.White
+FilterAll.Font = Enum.Font.GothamBold
+FilterAll.TextSize = 8
+FilterAll.Parent = RightPanel
+
+Instance.new("UICorner", FilterAll).CornerRadius = UDim.new(0, 7)
+
+local FilterNoKey = Instance.new("TextButton")
+FilterNoKey.Size = UDim2.fromOffset(62, 24)
+FilterNoKey.Position = UDim2.new(0, 54, 0, 36)
+FilterNoKey.BackgroundColor3 = CustomTabTheme.Card
+FilterNoKey.BorderSizePixel = 0
+FilterNoKey.Text = "NO KEY"
+FilterNoKey.TextColor3 = CustomTabTheme.White
+FilterNoKey.Font = Enum.Font.GothamBold
+FilterNoKey.TextSize = 8
+FilterNoKey.Parent = RightPanel
+
+Instance.new("UICorner", FilterNoKey).CornerRadius = UDim.new(0, 7)
+
+local FilterKey = Instance.new("TextButton")
+FilterKey.Size = UDim2.fromOffset(48, 24)
+FilterKey.Position = UDim2.new(0, 122, 0, 36)
+FilterKey.BackgroundColor3 = CustomTabTheme.Card
+FilterKey.BorderSizePixel = 0
+FilterKey.Text = "KEY"
+FilterKey.TextColor3 = CustomTabTheme.White
+FilterKey.Font = Enum.Font.GothamBold
+FilterKey.TextSize = 8
+FilterKey.Parent = RightPanel
+
+Instance.new("UICorner", FilterKey).CornerRadius = UDim.new(0, 7)
+
+local Filter = "ALL"
+
+local function SetFilterOutline(button, active)
+
+    local stroke = button:FindFirstChild("ActiveOutline")
+
+    if active then
+
+        if not stroke then
+            stroke = Instance.new("UIStroke")
+            stroke.Name = "ActiveOutline"
+            stroke.Color = CustomTabTheme.Blue
+            stroke.Thickness = 1.5
+            stroke.Parent = button
+        end
+
+    elseif stroke then
+        stroke:Destroy()
+    end
+end
+
+local function UpdateFilterVisual()
+
+    SetFilterOutline(FilterAll, Filter == "ALL")
+    SetFilterOutline(FilterNoKey, Filter == "No Key")
+    SetFilterOutline(FilterKey, Filter == "Key")
+end
+
+-- ============================================================================
+-- [ SAVED LIST ]
+-- ============================================================================
+
+local SavedList = Instance.new("ScrollingFrame")
+SavedList.Name = "SavedScripts"
+SavedList.Size = UDim2.new(1, 0, 1, -70)
+SavedList.Position = UDim2.new(0, 0, 0, 70)
+SavedList.BackgroundTransparency = 1
+SavedList.BorderSizePixel = 0
+SavedList.ScrollBarThickness = 3
+SavedList.ScrollBarImageColor3 = CustomTabTheme.Blue
+SavedList.CanvasSize = UDim2.new(0, 0, 0, 0)
+SavedList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+SavedList.Parent = RightPanel
+
+local SavedLayout = Instance.new("UIListLayout")
+SavedLayout.Padding = UDim.new(0, 6)
+SavedLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SavedLayout.Parent = SavedList
+
+-- ============================================================================
+-- [ EMPTY LABEL ]
+-- ============================================================================
+
+local function CreateEmptyLabel(text)
+
+    local label = Instance.new("TextLabel")
+
+    label.Name = "Empty"
+    label.Size = UDim2.new(1, 0, 0, 40)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = CustomTabTheme.Muted
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 9
+    label.Parent = SavedList
+
+    return label
+end
+
+-- ============================================================================
+-- [ RENDER SCRIPT LIST ]
+-- ============================================================================
+
+local function RenderCustomScriptList()
+
+    for _, child in ipairs(SavedList:GetChildren()) do
+
+        if not child:IsA("UIListLayout") then
+            child:Destroy()
+        end
+    end
+
+    local query = SearchBox.Text or ""
+
+    local results = {}
+
+    query = query:lower()
+
+    for index, script in ipairs(CustomScriptsList) do
+
+        local name = tostring(script.name or ""):lower()
+        local status = NormalizeCustomScriptStatus(
+            script.keyStatus
+        )
+
+        local matchesFilter =
+            Filter == "ALL"
+            or status == Filter
+
+        local matchesSearch =
+            query == ""
+            or name:find(query, 1, true)
+            or status:lower():find(query, 1, true)
+
+        if matchesFilter and matchesSearch then
+
+            table.insert(results, {
+                index = index,
+                data = script
+            })
+        end
+    end
+
+    if #results == 0 then
+
+        local message = "Belum ada script."
+
+        if #CustomScriptsList > 0 then
+            message = "Tidak ada script yang cocok."
+        end
+
+        CreateEmptyLabel(message)
+
+        return
+    end
+
+    -- ========================================================================
+    -- [ CREATE EACH SCRIPT CARD ]
+    -- ========================================================================
+
+    for order, result in ipairs(results) do
+
+        local index = result.index
+        local script = result.data
+
+        local Card = Instance.new("Frame")
+        Card.Name = "Script_" .. tostring(index)
+        Card.Size = UDim2.new(1, -2, 0, 66)
+        Card.BackgroundColor3 = CustomTabTheme.Card
+        Card.BorderSizePixel = 0
+        Card.LayoutOrder = order
+        Card.Parent = SavedList
+
+        Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 10)
+
+        local CardStroke = Instance.new("UIStroke")
+        CardStroke.Color = CustomTabTheme.Border
+        CardStroke.Thickness = 1
+        CardStroke.Parent = Card
+
+        -- ================================================================
+        -- [ NAME ]
+        -- ================================================================
+
+        local NameLabel = Instance.new("TextLabel")
+        NameLabel.Name = "Name"
+        NameLabel.Size = UDim2.new(1, -155, 0, 24)
+        NameLabel.Position = UDim2.new(0, 10, 0, 5)
+        NameLabel.BackgroundTransparency = 1
+        NameLabel.Text = tostring(script.name or "Untitled")
+        NameLabel.TextColor3 = CustomTabTheme.White
+        NameLabel.Font = Enum.Font.GothamBold
+        NameLabel.TextSize = 9
+        NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        NameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        NameLabel.Parent = Card
+
+        -- ================================================================
+        -- [ STATUS ]
+        -- ================================================================
+
+        local Status = Instance.new("TextLabel")
+        Status.Name = "Status"
+        Status.Size = UDim2.fromOffset(48, 18)
+        Status.Position = UDim2.new(1, -140, 0, 8)
+        Status.BackgroundColor3 =
+            NormalizeCustomScriptStatus(script.keyStatus) == "Key"
+            and CustomTabTheme.Key
+            or CustomTabTheme.NoKey
+
+        Status.Text = NormalizeCustomScriptStatus(
+            script.keyStatus
+        )
+
+        Status.TextColor3 = CustomTabTheme.White
+        Status.Font = Enum.Font.GothamBold
+        Status.TextSize = 7
+        Status.Parent = Card
+
+        Instance.new("UICorner", Status).CornerRadius = UDim.new(1, 0)
+
+        -- ================================================================
+        -- [ FAVORITE ]
+        -- ================================================================
+
+        local FavoriteButton = Instance.new("TextButton")
+        FavoriteButton.Name = "Favorite"
+        FavoriteButton.Size = UDim2.fromOffset(24, 24)
+        FavoriteButton.Position = UDim2.new(1, -86, 0, 5)
+        FavoriteButton.BackgroundColor3 = CustomTabTheme.Input
+        FavoriteButton.BorderSizePixel = 0
+        FavoriteButton.Text = IsCustomScriptFavorite(script) and "🌟" or "☆"
+        FavoriteButton.TextColor3 = CustomTabTheme.White
+        FavoriteButton.Font = Enum.Font.GothamBold
+        FavoriteButton.TextSize = 12
+        FavoriteButton.Parent = Card
+
+        Instance.new("UICorner", FavoriteButton).CornerRadius = UDim.new(1, 0)
+
+        FavoriteButton.MouseButton1Click:Connect(function()
+
+            ToggleCustomScriptFavorite(index)
+
+            RenderCustomScriptList()
+        end)
+
+        -- ================================================================
+        -- [ DELETE ]
+        -- ================================================================
+
+        local DeleteButton = Instance.new("TextButton")
+        DeleteButton.Name = "Delete"
+        DeleteButton.Size = UDim2.fromOffset(24, 24)
+        DeleteButton.Position = UDim2.new(1, -56, 0, 5)
+        DeleteButton.BackgroundColor3 = CustomTabTheme.Input
+        DeleteButton.BorderSizePixel = 0
+        DeleteButton.Text = "✕"
+        DeleteButton.TextColor3 = CustomTabTheme.Key
+        DeleteButton.Font = Enum.Font.GothamBold
+        DeleteButton.TextSize = 9
+        DeleteButton.Parent = Card
+
+        Instance.new("UICorner", DeleteButton).CornerRadius = UDim.new(1, 0)
+
+        DeleteButton.MouseButton1Click:Connect(function()
+
+            DeleteCustomScript(index)
+
+            RenderCustomScriptList()
+        end)
+
+        -- ================================================================
+        -- [ EXECUTE ]
+        -- ================================================================
+
+        local ExecuteButton = Instance.new("TextButton")
+        ExecuteButton.Name = "Execute"
+        ExecuteButton.Size = UDim2.new(1, -20, 0, 24)
+        ExecuteButton.Position = UDim2.new(0, 10, 1, -29)
+        ExecuteButton.BackgroundColor3 = CustomTabTheme.Blue
+        ExecuteButton.BorderSizePixel = 0
+        ExecuteButton.Text = "EXECUTE"
+        ExecuteButton.TextColor3 = CustomTabTheme.White
+        ExecuteButton.Font = Enum.Font.GothamBold
+        ExecuteButton.TextSize = 8
+        ExecuteButton.Parent = Card
+
+        Instance.new("UICorner", ExecuteButton).CornerRadius = UDim.new(0, 7)
+
+        ExecuteButton.MouseButton1Click:Connect(function()
+
+            local success, message = ExecuteCustomScript(script)
+
+            if success then
+                ExecuteButton.Text = "EXECUTED"
+
+                task.delay(1, function()
+                    if ExecuteButton and ExecuteButton.Parent then
+                        ExecuteButton.Text = "EXECUTE"
+                    end
+                end)
+            else
+                ExecuteButton.Text = "FAILED"
+
+                task.delay(1.5, function()
+                    if ExecuteButton and ExecuteButton.Parent then
+                        ExecuteButton.Text = "EXECUTE"
+                    end
+                end)
+            end
+        end)
+    end
+end
+
+-- ============================================================================
+-- [ ADD BUTTON FUNCTION ]
+-- ============================================================================
+
+AddButton.MouseButton1Click:Connect(function()
+
+    local name = NameInput.Text
+    local source = SourceInput.Text
+
+    local success, result = AddCustomScript(
+        name,
+        CurrentKeyStatus,
+        source
+    )
+
+    if not success then
+        AddButton.Text = result or "ERROR"
+
+        task.delay(1.5, function()
+            if AddButton and AddButton.Parent then
+                AddButton.Text = "ADD"
+            end
+        end)
+
+        return
+    end
+
+    -- Clear form
+    NameInput.Text = ""
+    SourceInput.Text = ""
+
+    -- Reset status
+    CurrentKeyStatus = "No Key"
+    KeyStatusButton.Text = "No Key"
+    KeyStatusButton.BackgroundColor3 = CustomTabTheme.NoKey
+
+    -- Refresh kanan
+    RenderCustomScriptList()
+
+    AddButton.Text = "ADDED"
+
+    task.delay(1, function()
+        if AddButton and AddButton.Parent then
+            AddButton.Text = "ADD"
+        end
+    end)
+end)
+
+-- ============================================================================
+-- [ FILTER BUTTONS ]
+-- ============================================================================
+
+FilterAll.MouseButton1Click:Connect(function()
+
+    Filter = "ALL"
+
+    UpdateFilterVisual()
+    RenderCustomScriptList()
+end)
+
+FilterNoKey.MouseButton1Click:Connect(function()
+
+    Filter = "No Key"
+
+    UpdateFilterVisual()
+    RenderCustomScriptList()
+end)
+
+FilterKey.MouseButton1Click:Connect(function()
+
+    Filter = "Key"
+
+    UpdateFilterVisual()
+    RenderCustomScriptList()
+end)
+
+-- ============================================================================
+-- [ SEARCH ]
+-- ============================================================================
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    RenderCustomScriptList()
+end)
+
+-- ============================================================================
+-- [ INITIAL ]
+-- ============================================================================
+
+UpdateFilterVisual()
+RenderCustomScriptList()
+
+-- ============================================================================
+-- [ API ]
+-- ============================================================================
+
+CustomScriptTabLogic = {
+
+    Scripts = CustomScriptsList,
+    Favorites = CustomScriptFavorites,
+
+    Load = LoadCustomScriptData,
+    Save = SaveCustomScriptData,
+
+    Add = AddCustomScript,
+    Delete = DeleteCustomScript,
+
+    IsFavorite = IsCustomScriptFavorite,
+    ToggleFavorite = ToggleCustomScriptFavorite,
+
+    Execute = ExecuteCustomScript,
+
+    Search = function(query)
+        SearchBox.Text = query or ""
+    end,
+
+    SetFilter = function(filter)
+        filter = tostring(filter or "ALL")
+
+        if filter == "Key" then
+            Filter = "Key"
+        elseif filter == "No Key" then
+            Filter = "No Key"
+        else
+            Filter = "ALL"
+        end
+
+        UpdateFilterVisual()
+        RenderCustomScriptList()
+    end,
+
+    Refresh = RenderCustomScriptList
+}
