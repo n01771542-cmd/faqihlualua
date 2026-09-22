@@ -1,5 +1,6 @@
 -- ============================================================================
 -- LEON4951 HUB v2 - SIDEBAR KATEGORI + FILTER SYSTEM + ELEGANT INFO ALL SCRIPT
+-- + TAB "TAMBAHKAN SCRIPT MU" (CUSTOM SCRIPT)
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
@@ -218,6 +219,7 @@ end
 
 -- Duplikat URL sengaja dipertahankan
 local CleanedScripts = ScriptDataStealAnEgg
+
 -- [ SYSTEM CONFIG FAVORITE ]
 local FavoriteConfigName = "leon4951hub_favorites.json"
 local FavoriteList = {}
@@ -256,6 +258,32 @@ local function RefreshFavoritesData()
 end
 RefreshFavoritesData()
 
+-- [ SYSTEM CONFIG CUSTOM SCRIPT ]
+local CustomConfigName = "leon4951hub_custom.json"
+local CustomScriptsData = {}
+
+local function LoadCustomScripts()
+    if not readfile then return end
+    local success, raw = pcall(readfile, CustomConfigName)
+    if not success or type(raw) ~= "string" or raw == "" then return end
+    local decodedOk, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if decodedOk and type(decoded) == "table" then
+        CustomScriptsData = decoded
+    end
+end
+
+local function SaveCustomScripts()
+    if writefile then
+        pcall(function()
+            writefile(CustomConfigName, HttpService:JSONEncode(CustomScriptsData))
+        end)
+    end
+end
+
+LoadCustomScripts()
+
 local Categories = {
     {
         key = "StealAnEgg",
@@ -283,10 +311,10 @@ local Categories = {
         hasNotification = true,
     },
     {
-        key = "TambahScript",
+        key = "AddScript",
         name = "tambahkan script mu",
         type = "add_script",
-        scripts = {},
+        scripts = CustomScriptsData,
     },
 }
 
@@ -825,202 +853,340 @@ local function RenderContent(categoryIndex)
     elseif category.type == "add_script" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
-        ContentLabel.Text = "TAMBAHKAN SCRIPT MU -- FORM"
+        ContentLabel.Text = "TAMBAHKAN SCRIPT MU -- CUSTOM"
 
         local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim.new(0, 10)
+        ListLayout.Padding = UDim.new(0, 8)
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         ListLayout.Parent = ScriptScroll
 
-        -- Card container
-        local formCard = Instance.new("Frame")
-        formCard.Name = "AddScriptForm"
-        formCard.Size = UDim2.new(1, 0, 0, 0)
-        formCard.AutomaticSize = Enum.AutomaticSize.Y
-        formCard.BackgroundColor3 = Theme.CardBg
-        formCard.LayoutOrder = 1
-        formCard.Parent = ScriptScroll
-        Instance.new("UICorner", formCard).CornerRadius = UDim.new(0, 8)
+        -- ===== FORM INPUT =====
+        local FormFrame = Instance.new("Frame")
+        FormFrame.Name = "AddForm"
+        FormFrame.Size = UDim2.new(1, 0, 0, 148)
+        FormFrame.BackgroundColor3 = Theme.CardBg
+        FormFrame.LayoutOrder = 1
+        FormFrame.Parent = ScriptScroll
+        Instance.new("UICorner", FormFrame).CornerRadius = UDim.new(0, 7)
 
-        local formStroke = Instance.new("UIStroke")
-        formStroke.Color = Theme.BorderColor
-        formStroke.Thickness = 1
-        formStroke.Parent = formCard
+        local FormStroke = Instance.new("UIStroke")
+        FormStroke.Color = Theme.BorderColor
+        FormStroke.Thickness = 1
+        FormStroke.Parent = FormFrame
 
-        local formPad = Instance.new("UIPadding")
-        formPad.PaddingTop = UDim.new(0, 12)
-        formPad.PaddingBottom = UDim.new(0, 12)
-        formPad.PaddingLeft = UDim.new(0, 12)
-        formPad.PaddingRight = UDim.new(0, 12)
-        formPad.Parent = formCard
+        -- Nama Script
+        local NameLabel = Instance.new("TextLabel")
+        NameLabel.Font = Enum.Font.GothamBold
+        NameLabel.TextSize = 10
+        NameLabel.TextColor3 = Theme.TextSecondary
+        NameLabel.BackgroundTransparency = 1
+        NameLabel.Size = UDim2.new(1, -20, 0, 14)
+        NameLabel.Position = UDim2.new(0, 10, 0, 8)
+        NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        NameLabel.Text = "Masukan nama script"
+        NameLabel.Parent = FormFrame
 
-        local formLayout = Instance.new("UIListLayout")
-        formLayout.Padding = UDim.new(0, 8)
-        formLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        formLayout.Parent = formCard
+        local NameBox = Instance.new("TextBox")
+        NameBox.Name = "NameBox"
+        NameBox.Size = UDim2.new(1, -20, 0, 26)
+        NameBox.Position = UDim2.new(0, 10, 0, 24)
+        NameBox.BackgroundColor3 = Theme.Background
+        NameBox.PlaceholderText = "contoh: My Custom Hub"
+        NameBox.PlaceholderColor3 = Theme.TextMuted
+        NameBox.Text = ""
+        NameBox.TextColor3 = Theme.TextPrimary
+        NameBox.Font = Enum.Font.Gotham
+        NameBox.TextSize = 11
+        NameBox.ClearTextOnFocus = false
+        NameBox.Parent = FormFrame
+        Instance.new("UICorner", NameBox).CornerRadius = UDim.new(0, 5)
 
-        -- Nama
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(1, 0, 0, 14)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 10
-        nameLabel.TextColor3 = Theme.TextMuted
-        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        nameLabel.Text = "NAMA SCRIPT"
-        nameLabel.LayoutOrder = 1
-        nameLabel.Parent = formCard
+        local NameStroke = Instance.new("UIStroke")
+        NameStroke.Color = Theme.BorderColor
+        NameStroke.Thickness = 1
+        NameStroke.Parent = NameBox
 
-        local nameBox = Instance.new("TextBox")
-        nameBox.Name = "NameInput"
-        nameBox.Size = UDim2.new(1, 0, 0, 28)
-        nameBox.BackgroundColor3 = Theme.Background
-        nameBox.PlaceholderText = "masukan nama"
-        nameBox.PlaceholderColor3 = Theme.TextMuted
-        nameBox.Text = ""
-        nameBox.TextColor3 = Theme.TextPrimary
-        nameBox.Font = Enum.Font.Gotham
-        nameBox.TextSize = 11
-        nameBox.ClearTextOnFocus = false
-        nameBox.LayoutOrder = 2
-        nameBox.Parent = formCard
-        Instance.new("UICorner", nameBox).CornerRadius = UDim.new(0, 5)
+        -- URL / Loadstring
+        local UrlLabel = Instance.new("TextLabel")
+        UrlLabel.Font = Enum.Font.GothamBold
+        UrlLabel.TextSize = 10
+        UrlLabel.TextColor3 = Theme.TextSecondary
+        UrlLabel.BackgroundTransparency = 1
+        UrlLabel.Size = UDim2.new(1, -20, 0, 14)
+        UrlLabel.Position = UDim2.new(0, 10, 0, 54)
+        UrlLabel.TextXAlignment = Enum.TextXAlignment.Left
+        UrlLabel.Text = "Masukan URL / loadstring"
+        UrlLabel.Parent = FormFrame
 
-        local nameStroke = Instance.new("UIStroke")
-        nameStroke.Color = Theme.BorderColor
-        nameStroke.Thickness = 1
-        nameStroke.Parent = nameBox
+        local UrlBox = Instance.new("TextBox")
+        UrlBox.Name = "UrlBox"
+        UrlBox.Size = UDim2.new(1, -20, 0, 26)
+        UrlBox.Position = UDim2.new(0, 10, 0, 70)
+        UrlBox.BackgroundColor3 = Theme.Background
+        UrlBox.PlaceholderText = "https://... atau loadstring(...)"
+        UrlBox.PlaceholderColor3 = Theme.TextMuted
+        UrlBox.Text = ""
+        UrlBox.TextColor3 = Theme.TextPrimary
+        UrlBox.Font = Enum.Font.Gotham
+        UrlBox.TextSize = 11
+        UrlBox.ClearTextOnFocus = false
+        UrlBox.Parent = FormFrame
+        Instance.new("UICorner", UrlBox).CornerRadius = UDim.new(0, 5)
 
-        -- Status Key / No Key
-        local statusLabel = Instance.new("TextLabel")
-        statusLabel.Size = UDim2.new(1, 0, 0, 14)
-        statusLabel.BackgroundTransparency = 1
-        statusLabel.Font = Enum.Font.GothamBold
-        statusLabel.TextSize = 10
-        statusLabel.TextColor3 = Theme.TextMuted
-        statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-        statusLabel.Text = "STATUS (KEY / NO KEY)"
-        statusLabel.LayoutOrder = 3
-        statusLabel.Parent = formCard
+        local UrlStroke = Instance.new("UIStroke")
+        UrlStroke.Color = Theme.BorderColor
+        UrlStroke.Thickness = 1
+        UrlStroke.Parent = UrlBox
 
-        local statusRow = Instance.new("Frame")
-        statusRow.Size = UDim2.new(1, 0, 0, 26)
-        statusRow.BackgroundTransparency = 1
-        statusRow.LayoutOrder = 4
-        statusRow.Parent = formCard
-
-        local statusLayout = Instance.new("UIListLayout")
-        statusLayout.FillDirection = Enum.FillDirection.Horizontal
-        statusLayout.Padding = UDim.new(0, 6)
-        statusLayout.Parent = statusRow
+        -- Key / No Key selector
+        local StatusLabel = Instance.new("TextLabel")
+        StatusLabel.Font = Enum.Font.GothamBold
+        StatusLabel.TextSize = 10
+        StatusLabel.TextColor3 = Theme.TextSecondary
+        StatusLabel.BackgroundTransparency = 1
+        StatusLabel.Size = UDim2.new(0, 50, 0, 22)
+        StatusLabel.Position = UDim2.new(0, 10, 0, 104)
+        StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+        StatusLabel.Text = "Status:"
+        StatusLabel.Parent = FormFrame
 
         local selectedStatus = "No Key"
 
-        local function makeStatusBtn(text)
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.fromOffset(80, 24)
-            btn.BackgroundColor3 = Theme.CardBg
-            btn.Text = text
-            btn.Font = Enum.Font.GothamBold
-            btn.TextSize = 10
-            btn.TextColor3 = Theme.TextSecondary
-            btn.AutoButtonColor = false
-            btn.Parent = statusRow
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+        local KeyBtn = Instance.new("TextButton")
+        KeyBtn.Size = UDim2.fromOffset(52, 22)
+        KeyBtn.Position = UDim2.new(0, 62, 0, 104)
+        KeyBtn.BackgroundColor3 = Theme.CardBg
+        KeyBtn.Text = "Key"
+        KeyBtn.Font = Enum.Font.GothamBold
+        KeyBtn.TextSize = 10
+        KeyBtn.TextColor3 = Theme.TextSecondary
+        KeyBtn.AutoButtonColor = false
+        KeyBtn.Parent = FormFrame
+        Instance.new("UICorner", KeyBtn).CornerRadius = UDim.new(0, 4)
 
-            local stroke = Instance.new("UIStroke")
-            stroke.Color = Theme.BorderColor
-            stroke.Thickness = 1
-            stroke.Parent = btn
+        local NoKeyBtn = Instance.new("TextButton")
+        NoKeyBtn.Size = UDim2.fromOffset(62, 22)
+        NoKeyBtn.Position = UDim2.new(0, 118, 0, 104)
+        NoKeyBtn.BackgroundColor3 = Theme.NoKeyTagBg
+        NoKeyBtn.Text = "No Key"
+        NoKeyBtn.Font = Enum.Font.GothamBold
+        NoKeyBtn.TextSize = 10
+        NoKeyBtn.TextColor3 = Theme.TextPrimary
+        NoKeyBtn.AutoButtonColor = false
+        NoKeyBtn.Parent = FormFrame
+        Instance.new("UICorner", NoKeyBtn).CornerRadius = UDim.new(0, 4)
 
-            return btn
-        end
-
-        local keyBtn = makeStatusBtn("🔑 KEY")
-        local noKeyBtn = makeStatusBtn("🔓 NO KEY")
-
-        local function updateStatusVisual()
+        local function UpdateStatusButtons()
             if selectedStatus == "Key" then
-                keyBtn.BackgroundColor3 = Theme.KeyTagBg
-                keyBtn.TextColor3 = Theme.TextPrimary
-                noKeyBtn.BackgroundColor3 = Theme.CardBg
-                noKeyBtn.TextColor3 = Theme.TextSecondary
+                KeyBtn.BackgroundColor3 = Theme.KeyTagBg
+                KeyBtn.TextColor3 = Theme.TextPrimary
+                NoKeyBtn.BackgroundColor3 = Theme.CardBg
+                NoKeyBtn.TextColor3 = Theme.TextSecondary
             else
-                noKeyBtn.BackgroundColor3 = Theme.NoKeyTagBg
-                noKeyBtn.TextColor3 = Theme.TextPrimary
-                keyBtn.BackgroundColor3 = Theme.CardBg
-                keyBtn.TextColor3 = Theme.TextSecondary
+                KeyBtn.BackgroundColor3 = Theme.CardBg
+                KeyBtn.TextColor3 = Theme.TextSecondary
+                NoKeyBtn.BackgroundColor3 = Theme.NoKeyTagBg
+                NoKeyBtn.TextColor3 = Theme.TextPrimary
             end
         end
 
-        keyBtn.MouseButton1Click:Connect(function()
+        KeyBtn.MouseButton1Click:Connect(function()
             selectedStatus = "Key"
-            updateStatusVisual()
+            UpdateStatusButtons()
         end)
-        noKeyBtn.MouseButton1Click:Connect(function()
+
+        NoKeyBtn.MouseButton1Click:Connect(function()
             selectedStatus = "No Key"
-            updateStatusVisual()
+            UpdateStatusButtons()
         end)
 
-        updateStatusVisual() -- default No Key
+        -- Tombol ADD
+        local AddBtn = Instance.new("TextButton")
+        AddBtn.Size = UDim2.fromOffset(70, 26)
+        AddBtn.Position = UDim2.new(1, -80, 0, 102)
+        AddBtn.BackgroundColor3 = Theme.AccentBlue
+        AddBtn.Text = "ADD"
+        AddBtn.Font = Enum.Font.GothamBold
+        AddBtn.TextSize = 12
+        AddBtn.TextColor3 = Theme.TextPrimary
+        AddBtn.AutoButtonColor = false
+        AddBtn.Parent = FormFrame
+        Instance.new("UICorner", AddBtn).CornerRadius = UDim.new(0, 5)
 
-        -- URL
-        local urlLabel = Instance.new("TextLabel")
-        urlLabel.Size = UDim2.new(1, 0, 0, 14)
-        urlLabel.BackgroundTransparency = 1
-        urlLabel.Font = Enum.Font.GothamBold
-        urlLabel.TextSize = 10
-        urlLabel.TextColor3 = Theme.TextMuted
-        urlLabel.TextXAlignment = Enum.TextXAlignment.Left
-        urlLabel.Text = "LINK URL SCRIPT"
-        urlLabel.LayoutOrder = 5
-        urlLabel.Parent = formCard
-
-        local urlBox = Instance.new("TextBox")
-        urlBox.Name = "UrlInput"
-        urlBox.Size = UDim2.new(1, 0, 0, 28)
-        urlBox.BackgroundColor3 = Theme.Background
-        urlBox.PlaceholderText = "masukan link url script"
-        urlBox.PlaceholderColor3 = Theme.TextMuted
-        urlBox.Text = ""
-        urlBox.TextColor3 = Theme.TextPrimary
-        urlBox.Font = Enum.Font.Gotham
-        urlBox.TextSize = 11
-        urlBox.ClearTextOnFocus = false
-        urlBox.LayoutOrder = 6
-        urlBox.Parent = formCard
-        Instance.new("UICorner", urlBox).CornerRadius = UDim.new(0, 5)
-
-        local urlStroke = Instance.new("UIStroke")
-        urlStroke.Color = Theme.BorderColor
-        urlStroke.Thickness = 1
-        urlStroke.Parent = urlBox
-
-        -- ADD button
-        local addBtn = Instance.new("TextButton")
-        addBtn.Name = "AddBtn"
-        addBtn.Size = UDim2.new(1, 0, 0, 32)
-        addBtn.BackgroundColor3 = Theme.AccentBlue
-        addBtn.Text = "ADD"
-        addBtn.Font = Enum.Font.GothamBold
-        addBtn.TextSize = 12
-        addBtn.TextColor3 = Theme.TextPrimary
-        addBtn.AutoButtonColor = false
-        addBtn.LayoutOrder = 7
-        addBtn.Parent = formCard
-        Instance.new("UICorner", addBtn).CornerRadius = UDim.new(0, 6)
-
-        addBtn.MouseEnter:Connect(function()
-            TweenService:Create(addBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 140, 255) }):Play()
+        AddBtn.MouseEnter:Connect(function()
+            TweenService:Create(AddBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 140, 255) }):Play()
         end)
-        addBtn.MouseLeave:Connect(function()
-            TweenService:Create(addBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentBlue }):Play()
+        AddBtn.MouseLeave:Connect(function()
+            TweenService:Create(AddBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentBlue }):Play()
         end)
 
-        -- Logic kosong (sementara)
-        addBtn.MouseButton1Click:Connect(function()
-            -- kosong
+        AddBtn.MouseButton1Click:Connect(function()
+            local name = string.gsub(string.gsub(NameBox.Text, "^%s+", ""), "%s+$", "")
+            local url = string.gsub(string.gsub(UrlBox.Text, "^%s+", ""), "%s+$", "")
+
+            if name == "" or url == "" then
+                local orig = AddBtn.Text
+                AddBtn.Text = "ISI NAMA & URL!"
+                task.delay(1.2, function()
+                    if AddBtn and AddBtn.Parent then
+                        AddBtn.Text = orig
+                    end
+                end)
+                return
+            end
+
+            local newEntry = {
+                name = name,
+                status = selectedStatus,
+                recommended = false,
+                url = url,
+            }
+
+            table.insert(CustomScriptsData, newEntry)
+            SaveCustomScripts()
+
+            for _, cat in ipairs(Categories) do
+                if cat.key == "AddScript" then
+                    cat.scripts = CustomScriptsData
+                    break
+                end
+            end
+
+            NameBox.Text = ""
+            UrlBox.Text = ""
+            selectedStatus = "No Key"
+            UpdateStatusButtons()
+
+            RenderContent(activeCategoryIndex)
         end)
+
+        -- ===== LIST SCRIPT YANG SUDAH DITAMBAHKAN =====
+        if #category.scripts == 0 then
+            local emptyCard = Instance.new("Frame")
+            emptyCard.Size = UDim2.new(1, 0, 0, 42)
+            emptyCard.BackgroundColor3 = Theme.CardBg
+            emptyCard.LayoutOrder = 2
+            emptyCard.Parent = ScriptScroll
+            Instance.new("UICorner", emptyCard).CornerRadius = UDim.new(0, 7)
+
+            local emptyStroke = Instance.new("UIStroke")
+            emptyStroke.Color = Theme.BorderColor
+            emptyStroke.Thickness = 1
+            emptyStroke.Parent = emptyCard
+
+            local emptyLbl = Instance.new("TextLabel")
+            emptyLbl.Font = Enum.Font.GothamBold
+            emptyLbl.TextSize = 11
+            emptyLbl.TextColor3 = Theme.TextMuted
+            emptyLbl.BackgroundTransparency = 1
+            emptyLbl.Size = UDim2.new(1, 0, 1, 0)
+            emptyLbl.TextXAlignment = Enum.TextXAlignment.Center
+            emptyLbl.Text = "Belum ada script custom. Isi form di atas lalu tekan ADD."
+            emptyLbl.Parent = emptyCard
+        else
+            for i, scriptEntry in ipairs(category.scripts) do
+                local row = Instance.new("Frame")
+                row.Name = "CustomRow_" .. i
+                row.Size = UDim2.new(1, 0, 0, 38)
+                row.BackgroundColor3 = Theme.CardBg
+                row.LayoutOrder = i + 1
+                row.Parent = ScriptScroll
+                Instance.new("UICorner", row).CornerRadius = UDim.new(0, 7)
+
+                local nameLabel = Instance.new("TextLabel")
+                nameLabel.Font = Enum.Font.GothamBold
+                nameLabel.TextSize = 12
+                nameLabel.TextColor3 = Theme.TextPrimary
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Size = UDim2.new(1, -160, 1, 0)
+                nameLabel.Position = UDim2.new(0, 10, 0, 0)
+                nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+                nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                nameLabel.Text = scriptEntry.name
+                nameLabel.Parent = row
+
+                local runBtn = Instance.new("TextButton")
+                runBtn.Size = UDim2.fromOffset(52, 24)
+                runBtn.Position = UDim2.new(1, -58, 0.5, -12)
+                runBtn.BackgroundColor3 = Theme.RunPillBg
+                runBtn.Text = "run"
+                runBtn.Font = Enum.Font.GothamBold
+                runBtn.TextSize = 11
+                runBtn.TextColor3 = Color3.fromRGB(111, 168, 255)
+                runBtn.AutoButtonColor = false
+                runBtn.Parent = row
+                Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
+
+                runBtn.MouseEnter:Connect(function()
+                    TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentBlue }):Play()
+                end)
+                runBtn.MouseLeave:Connect(function()
+                    TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
+                end)
+
+                runBtn.MouseButton1Click:Connect(function()
+                    if scriptEntry.url and scriptEntry.url ~= "" then
+                        local ok, err = pcall(function()
+                            if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
+                                loadstring(scriptEntry.url)()
+                            else
+                                loadstring(game:HttpGet(scriptEntry.url))()
+                            end
+                        end)
+                        if not ok then
+                            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+                        end
+                    end
+                end)
+
+                local statusBadge = Instance.new("TextLabel")
+                statusBadge.Size = UDim2.fromOffset(58, 20)
+                statusBadge.Position = UDim2.new(1, -122, 0.5, -10)
+                local statusBg
+                if scriptEntry.status == "Key" then
+                    statusBg = Theme.KeyTagBg
+                elseif scriptEntry.status == "No Key" then
+                    statusBg = Theme.NoKeyTagBg
+                else
+                    statusBg = Theme.CardBg
+                end
+                statusBadge.BackgroundColor3 = statusBg
+                statusBadge.Text = scriptEntry.status
+                statusBadge.Font = Enum.Font.GothamBold
+                statusBadge.TextSize = 11
+                statusBadge.TextColor3 = Theme.TextPrimary
+                statusBadge.Parent = row
+                Instance.new("UICorner", statusBadge).CornerRadius = UDim.new(0, 4)
+
+                local favBtn = Instance.new("TextButton")
+                favBtn.Size = UDim2.fromOffset(24, 24)
+                favBtn.Position = UDim2.new(1, -152, 0.5, -12)
+                favBtn.BackgroundColor3 = Theme.RunPillBg
+                local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url
+                favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"
+                favBtn.Font = Enum.Font.GothamBold
+                favBtn.TextSize = 14
+                favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextSecondary
+                favBtn.AutoButtonColor = false
+                favBtn.Parent = row
+                Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 4)
+
+                favBtn.MouseButton1Click:Connect(function()
+                    if FavoriteList[fKeyId] then
+                        FavoriteList[fKeyId] = nil
+                        favBtn.Text = "☆"
+                        favBtn.TextColor3 = Theme.TextSecondary
+                    else
+                        FavoriteList[fKeyId] = true
+                        favBtn.Text = "★"
+                        favBtn.TextColor3 = Theme.GoldBadge
+                    end
+                    SaveFavorites()
+                    RefreshFavoritesData()
+                    Categories[2].scripts = FavoriteScriptsData
+                end)
+            end
+        end
 
         ScriptScroll.CanvasPosition = Vector2.new(0, 0)
         return
