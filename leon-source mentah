@@ -45,42 +45,192 @@ local Theme = {
 local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
 -- [ PRIVATE ARCHITECTURE LOADER CONFIG ]
+-- TODO: Sambungkan ke private endpoint/server Anda setelah siap.
 local PRIVATE_SOURCE_URL = "https://PRIVATE-ENDPOINT-NANTI"
 
--- [ 3. DATA KATEGORI & DAFTAR SCRIPT (Hanya FYY HUB) ]
-local ScriptDataStealAnEgg = {}
+-- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
+local RawScriptDataStealAnEgg = {
+    {"PET SPAWNER TERBAGUS","No Key",true,"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner"},
+    {"YANTO HUB KEY : YANTOHUB","Key",true,"https://raw.githubusercontent.com/YantoRoblox/Script-Free-YantoHUB/refs/heads/main/YantoHUB"},
+    {"FYY HUB","No Key",true,"https://FyyCommunity.my.id"},
+    {"SPEED HUB","Key",false,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
+    {"BIGFROOT HUB","Key",false,"https://raw.githubusercontent.com/hanniii1/Loader/refs/heads/main/BFLoader.lua"},
+    {"CHIYO HUB","Key",false,"https://raw.githubusercontent.com/kaisenlmao/loader/refs/heads/main/chiyo.lua"},
+    {"CLOVER HUB","Key",true,"https://cloverhub.app/clover.lua"},
+    {"ZERO POINT HUB","No Key",false,"https://raw.githubusercontent.com/JaxRol/ZeroPoint/refs/heads/main/KeySystem"},
+    {"UB HUB","No Key",false,"https://raw.githubusercontent.com/TeamUBHub/UBLoader/refs/heads/main/Loader.lua"},
+    {"VALINC HUB","No Key",false,"https://api.valincsyndicate.com/v1/releases/5502cba03703f4a3628d522d396b80d8.lua"},
+    {"OUROBOROS HUB","No Key",false,"https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua"},
+    {"OMG HUB","Key",false,"https://raw.githubusercontent.com/Omgshit/Scripts/main/MainLoader.lua"},
+    {"NASI RENDANG LUA","Key",true,"https://raw.githubusercontent.com/JualNasiRendang/loader/refs/heads/main/main.lua"},
+    {"UNKNOWN HUB","Key",false,"https://unknownhub.win/api/projects/54474b4c5d5a4f459909c4cb70e7b4f3/loader"},
+    {"RIFT","Key",false,"https://rifton.top/loader.lua"},
+    {"AIR FLOW","Key",false,"https://airflowscript.com/loader"},
+    {"SOLIX HUB","Key",false,"https://raw.githubusercontent.com/bao8jl/solixhub/main/loader"},
+    {"HOSHI HUB","No Key",false,"https://hoshihub.site/loader.lua"},
+    {"ZERO IMPACT","Key",false,"https://www.zeroimpact.online/raw/loader"},
+    {"SNOWY HUB","Key",false,"https://flowauth.net/v1/ui/a87f00d9adf63658655fcd02ab86a4ef.lua"},
+    {"AJJANS HUB","Key",true,"https://raw.githubusercontent.com/virtuososvisualedits-prog/Ww/refs/heads/main/final-obfuscated.lua"},
+    {"NEMESIS HUB","Key",false,"https://raw.githubusercontent.com/x2zu/loader/main/freeloader.lua"},
+    {"NIGHT HUB","No Key",false,"https://pastefy.app/J29hE5fR/raw"},
+    {"LUMIN HUB","No Key",false,"http://luminon.top/loader.lua"},
+    {"CIAO HUB SERVER HOP","No Key",false,"https://pastefy.app/YoZocJ8O/raw"},
+    {"ZHENN HUB SPAWNER","Key",false,"https://raw.githubusercontent.com/ZhennHub/PetSpawner/refs/heads/main/lua"},
+    {"DECODEX","No Key",false,"https://raw.githubusercontent.com/ItzYumi/Decode/refs/heads/main/DE%3ACODE.lua"},
+    {"CRZ HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
+    {"KEXXE HUB","Key",false,"https://raw.githubusercontent.com/premiumbuddy/kex/refs/heads/main/kexxxx"},
+    {"NOVA HUB","Key",false,"https://raw.githubusercontent.com/NovaHubRBLX/NovaHub/refs/heads/main/novahub.lua"},
+    {"VANTAGE","Key",false,"https://raw.githubusercontent.com/MisterNovitski/Vantage/refs/heads/main/mm2.txt"},
+    {"SPORTSCLUB HUB","Key",false,"https://loader.sportsclub.fun/loader.luau"},
+    {"SCRIPTVERSE HUB","Key",false,"https://scriptversekey.xyz/s/steal-an-egg"},
+    {"GS HUB","Key",false,"https://gist.githubusercontent.com/spiritualgaming1123-beep/46ef55c5f8284e076aafc5ebd12233f4/raw/5b24749c3931c1838a76e64c9af508dcdd03700a/gistfile1.lua"},
+    {"PROBEST","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/0199b576f5c2d5a34159f0f9f4e1de0a566b4d1da5b1cfa5d2f71ade9bdcaa24/download"},
+    {"SYSHUB FUN","Key",false,"https://syshub.fun/free"},
+    {"FOXNAME","No Key",true,"https://raw.githubusercontent.com/caomod2077/Script/refs/heads/main/Fn-stealanegg.lua"},
+    {"DUPE EGG + DUPE PET","No Key",false,"https://raw.githubusercontent.com/INF-Hub-PL/StealAEggScript/refs/heads/main/Pet_SpawnerV1"},
+    {"RONNEI HUB","No Key",true,"https://raw.githubusercontent.com/elonmod/skibidi/refs/heads/main/Ronneihub-keyless.lua"},
+    {"AXONIC HUB","Key",false,"https://raw.githubusercontent.com/Kenniel123/Steal-A-Egg/refs/heads/main/Steal%20A%20Egg"},
+    {"NEOX HUB","Key",false,"https://raw.githubusercontent.com/hassanxzayn-lua/NEOXHUBMAIN/refs/heads/main/loader"},
+    {"LENNON V3","No Key",true,"https://raw.githubusercontent.com/lennonxscripts/lennonhubv3/refs/heads/main/stealanegg.lua"},
+    {"SAIOPS HUB","Key",false,"https://api.saiops.cc/scripts/Steal-An-Egg-Script.lua"},
+    {"ZEROIN HUB","Key",false,"https://zeroinhub.com/api/script"},
+    {"ONHUB VIET","Key",false,"https://raw.githubusercontent.com/ronnei/freemium/refs/heads/main/loader.lua"},
+    {"MIRANDA HUB V3","No Key",true,"https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/mirandaafk.lua"},
+    {"PROJECT-MADARA","No Key",false,"https://raw.githubusercontent.com/IsThisMe01/Project-Madara/refs/heads/main/stealanegg"},
+    {"NEVERLOSE","Key",false,"https://raw.githubusercontent.com/inrate1337/NeverloseLoaderRoblox/refs/heads/main/main.luau"},
+    {"SPIRITUAL GAMING HUB","Key",false,"https://gist.githubusercontent.com/spiritualgaming1123-beep/f2c8c4009b2c4d4dda1b3d5fcb263ef3/raw/121ff8c9b59476a7a362b543edc61499e5832937/gistfile1.lua"},
+    {"CRYSTALIZED HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/a62237c6a75399adc9add4151ebeeb91c1f965fab665a650dcbc699a5622b37f/download"},
+    {"OCTOPUS HUB","Key",false,"https://www.octopushub.xyz/loader"},
+    {"SYSNEROX","Key",false,"https://raw.githubusercontent.com/DrakarDev/Hud/refs/heads/main/steal_an_egg.lua"},
+    {"JINHUB","Key",false,"https://jinhub.my.id/scripts/Universal.lua"},
+    {"OVERFLOW","Key",false,"https://overflow.cx/loader.lua"},
+    {"BLYXO HUB","No Key",true,"https://flowauth.net/v1/loaders/69d3463240384f3a73fbe32c178093a2.lua"},
+    {"SENA V3","No Key",true,"https://raw.githubusercontent.com/senarblx/sena/refs/heads/main/senav3go"},
+    {"TOOLBOX","No Key",false,"https://raw.githubusercontent.com/Abdullahking20/loader-lua/main/loader"},
+    {"SOLVEXGUI HUB","Key",false,"https://raw.githubusercontent.com/Solvexxxx/Scripts/refs/heads/main/SolvexGUI_SAE.lua"},
+    {"SPEED BYPASS","No Key",false,"https://pastefy.app/iedWaiQX/raw"},
+    {"SAKURA HUB","Key",false,"https://flowauth.net/v1/ui/d00ec69382de97372fc9559efc722298.lua"},
+    {"LUNARIS HUB","Key",false,"https://jnkie.com/loaders/lunaris"},
+    {"FORGE HUB","Key",false,"https://cdn.forgehub.store/loader"},
+    {"BASEMENT HUB","Key",false,"https://thebsmt.xyz/BSMT"},
+    {"KALI HUB","Key",false,"https://kalihub.xyz/loader.lua"},
+    {"CORE HUB","Key",false,"https://getcore.lol/loader.lua"},
+    {"INDRA HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/2b7d97ed2525cef705b26f22d6964b87dd4b64a1bf533ac61d9edf6df14e8471/download"},
+    {"PET/EGG SPAWNER","No Key",false,"https://api.luarmor.net/files/v4/loaders/d8f1c691a58edb11ef782849f80e9b61.lua"},
+    {"APEL HUB","Key",false,"https://apelhub.com/loader.lua"},
+    {"PANDA HUB","Key",false,"https://raw.githubusercontent.com/Muhammad6196/Project-Infinity-X/refs/heads/main/main.lua"},
+    {"LUCID HUB","Key",false,"https://gist.githubusercontent.com/IlyassSama/d4c20dcabe62c225b3e96a43cdb0eae9/raw/82020fd08fbff2ad69731e650d960f7d59a07fac/notifier.lua"},
+    {"FISHY","Key",false,"https://jnkie.com/loaders/fishyhub"},
+    {"SCRIPTFARMER","Key",false,"https://scriptfarmer.dpdns.org/loader/stealanegg-serverhoper"},
+    {"VIVID LUA","Key",false,"https://vivid.vividhub.workers.dev/loader.lua"},
+    {"BERRI HUB","Key",false,"https://raw.githubusercontent.com/moshixzn/ahhagdienavd/refs/heads/main/loader.lua.txt"},
+    {"NOCTRUNHUB","Key",false,"https://raw.githubusercontent.com/insanecontenty2k-blip/scriptss/main/universalscriptsofop"},
+    {"CITRA HUB","No Key",false,"https://raw.githubusercontent.com/gilgameshfate59/ohbfoosk8tid/main/CitraLoader.lua"},
+    {"VINCI HUB","No Key",true,"https://raw.githubusercontent.com/tutorkah104-rgb/Steal-an-Egg/refs/heads/main/Vincitore.luau"},
+    {"HORIZON HUB ANTI HIT","No Key",false,"script_key = \"Trial\"; loadstring(game:HttpGet(\"https://api.getpolsec.com/scripts/hosted/6582551b42d21c6b7eb55f1d76d8d50ce53cb35592093d6615b5e83437594dc0.lua\"))()"},
+    {"CHILLI HUB","No Key",true,"https://raw.githubusercontent.com/tienkhanh1/spicy/main/Chilli.lua"},
+    {"TSUO HUB","No Key",true,"https://raw.githubusercontent.com/Tsuo7/TsuoHub/main/stealanegg"},
+    {"LKZ HUB","No Key",true,"https://raw.githubusercontent.com/LucasggkX/LKZ-Hub/refs/heads/main/Loader.lua"},
+    {"REZZY HUB","Key",false,"https://raw.githubusercontent.com/Roman666Cabj/Nether/refs/heads/main/RezzyStealAnEgg.lua"},
+    {"RAVANGE HUB","Key",false,"https://raw.githubusercontent.com/Revenge-Hub-Roblox/Scripts/refs/heads/main/Loader.lua"},
+    {"ZNEX HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/181cfe2bd5df35ce78607b5ffb37c6666abd76eda11ff33b0f24a1b2d8ee935f/download"},
+    {"ASVARA HUB","Key",false,"https://raw.githubusercontent.com/asvraRoblox/stealegg/refs/heads/main/main"},
+    {"VSN","No Key",false,"https://raw.githubusercontent.com/NetNullv1/VSN/refs/heads/main/HUB"},
+    {"SHADOW HUB","Key",false,"https://pastebin.com/raw/QAvDbBKa"},
+    {"VELOX HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/f0b3ce85f588800ae7e46415fc4dd79ff2b0d09c9b6a8e19cea8a67b47f1bcbd/download"},
+    {"KING VYPER (KEY: KV-FREE-TRIAL-WOKS)","Key",false,"https://kingvypers.site/raw/TrialLoader"},
+    {"HIP-HUP","Key",true,"https://hiphub.cloud/api/script-roblox/loader"},
+    {"BK HUB","No Key",true,"https://api.luarmor.net/files/v4/loaders/9ee4edde227ac85f50872bf9e4226508.lua"},
+    {"AXURS","No Key",false,"https://raw.githubusercontent.com/XE3Scripts/Axur-sGamesHub/refs/heads/main/StealAnEgg"},
+    {"POTATO HUB","Key",false,"https://raw.githubusercontent.com/potatohub67/potatoscripts/refs/heads/main/stealaegg.lua"},
+    {"JANE HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
+    {"WIS HUB","No Key",true,"https://api.wishub.cloud/files/loader.lua"},
+    {"SOFTKILLZ","No Key",false,"https://pastebin.com/raw/ZuEBwb5K"},
+    {"VOIDHUB","No Key",false,"loadstring(game:HttpGet(\"https://voidon.top/api/loader/main\"))()"},
+    {"LIMBO HUB","No Key",false,"loadstring(game:HttpGet(\"https://limbohub.my.id/loader.lua\"))()"},
+    {"OXIDE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua\"))()"},
+    {"PULSE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PulseZax/Loader/refs/heads/main/.lua\"))()"},
+    {"YARHM HUB","No Key",false,"loadstring(game:HttpGet(\"https://yarhm.com\"))()"},
+    {"RIFT GOHA","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
+    {"ATHERHUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v3/loaders/2529a5f9dfddd5523ca4e22f21cceffa.lua\"))()"},
+    {"VANITY HUB","Key",false,"loadstring(game:HttpGet(\"https://vanityscript.xyz/loader\"))()"},
+    {"RONIX HUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v3/loaders/fda9babd071d6b536a745774b6bc681c.lua\"))()"},
+    {"MONARCHH","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/nobuxy/monarch.win/refs/heads/main/Monarch.lua\"))()"},
+    {"UNREXL","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/unrexl/Scripts/refs/heads/main/StealaEgg\"))()"},
+    {"WADIDIS HUB","Key",false,"loadstring(game:HttpGet(\"https://api.jnkie.com/api/v1/luascripts/public/809c81e15814d1c016f44d9fe56587f5f38c55a97f203f11bc1a3f7cc3725c5f/download\"))()"},
+    {"H4XSCRIPTS","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/H4xScripts/Loader/refs/heads/main/loader.lua\", true))()"},
+    {"RBX LIFE / DIVINE EGG","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/SynergyNetworkz/VULN/refs/heads/main/STEALANEGG.lua\"))()"},
+    {"THAN HUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/d1c82862a093e64c6bd82bb6d6f7a46b.lua\"))()"},
+    {"TOKINU","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Tokinu-Scripts/Steal-An-Egg/refs/heads/main/Instant/Tp\"))()"},
+    {"NEVA HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/VEZ2/NEVAHUB/main/2\"))()"},
+    {"LEVON HUB","No Key",false,"loadstring(game:HttpGet('https://pastefy.app/nasHhfko/raw'))()"},
+}
 
--- [ DATA NEW SCRIPTS (Dikosongkan sesuai permintaan) ]
-local NewScriptsData = {}
+local RawNewScriptsData = {
+    {"OTC","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Aerlro/OTC/refs/heads/main/Steal%20an%20Egg/main.lua\"))()"},
+    {"AKIPOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/akipox/Roblox/main/Mods/Games/StealanEgg.lua\"))()"},
+    {"MENGHUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/GrexXMeng/Mengs/refs/heads/main/StealAnEgg.lua\"))()"},
+    {"MY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/pespapankon-del/MyHub/main/Games/StealAnEgg.lua\"))()"},
+    {"TUROK JAPAN HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lvjunling/r-s-zh/refs/heads/main/stealegg/lua_zh_mobile.lua\"))()"},
+    {"FROST","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Frost-GG-Hud/Loader/main/src/Loader.luau\"))()"},
+    {"SOLARIS","Key",false,"loadstring(game:HttpGet(\"https://api.obscuravm.com/scripts/1231452106622100334\"))()"},
+    {"SEISEN V1","Key",false,"loadstring(game:HttpGet(\"https://api.jnkie.com/api/v1/luascripts/public/8ac2e97282ac0718aeeb3bb3856a2821d71dc9e57553690ab508ebdb0d1569da/download\"))()"},
+    {"SELUX","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/seltonmt012/sel01-rbx/main/loader.lua\"))()"},
+    {"SYSCALL","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/enzukaix/Syscall/refs/heads/main/Loader.lua\"))()"},
+    {"RBXZ HUB","Key",false,"loadstring(game:HttpGet(\"https://rbxscriptz.fun/RBXZ-HUB\"))()"},
+    {"SEISEN V2","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Mentos4/roblox/refs/heads/main/Script/Steal%20an%20Egg\"))()"},
+    {"VOID SHELL HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/VoidShell-null/VoidShell-Hub/refs/heads/main/Scripts/StealAnEgg.luau\"))()"},
+    {"NOYCHOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/yNopaak/STEAL-AN-EGG-NOYCHOX/main/main.lua\"))()"},
+    {"PELATICO","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PELATICO/steal-an-egg-hub/main/main.lua\"))()"},
+    {"XENON BYTE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/fivetagz-prog/xenon-byte-steal-an-egg/refs/heads/main/xenon-byte-sac.lua\"))()"},
+    {"VORTEX X SAGE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Israel-Vortex/vortex-x-scripts/refs/heads/main/Official-Vortex-Software/Dev-Project/StealAnEgg.lua\"))()"},
+    {"PHUCMAX VIET","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/phucmax/THANHPHUC/refs/heads/main/PHUCMAX(2).lua\"))()"},
+    {"DRAGON SECURITY HUB V2.5","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/conmemaynguhsjs/scrip/refs/heads/main/gemini-code-1789308407861.lua.txt\"))()"},
+    {"BUGXIE Visual Spawner","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner\"))()"},
+    {"BUGXIE Hit Aura","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/steal%20an%20egg%20hit%20aura-obfuscated.lua\"))()"},
+    {"CLOUT HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ClouthubOnTop/Loader/main/main.lua\"))()"},
+    {"LUXY","No Key",false,"loadstring(game:HttpGet(\"https://flowauth.net/v1/loaders/16b55b285584ec6d065913f5d59fb105.lua\"))()"},
+    {"OJIASA","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
+    {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
+    {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
+}
 
--- Otomatis masukkan NewScriptsData ke dalam ScriptDataStealAnEgg
+-- Compact data format: {name, status, recommended, url}
+local function NormalizeScriptData(raw)
+    local result = {}
+    for i, entry in ipairs(raw) do
+        result[i] = {
+            name = entry[1],
+            status = entry[2],
+            recommended = entry[3],
+            url = entry[4],
+        }
+    end
+    return result
+end
+
+local ScriptDataStealAnEgg = NormalizeScriptData(RawScriptDataStealAnEgg)
+local NewScriptsData = NormalizeScriptData(RawNewScriptsData)
+-- Otomatis masukkan NewScriptsData ke dalam ScriptDataStealAnEgg agar masuk ke tab Steal An Egg & Info
 for _, newScript in ipairs(NewScriptsData) do
     table.insert(ScriptDataStealAnEgg, newScript)
 end
 
--- Deduplikasi
-local CleanedScripts = {}
-local DuplicateTracker = {}
-for _, s in ipairs(ScriptDataStealAnEgg) do
-    local identifier = s.url
-    if not DuplicateTracker[identifier] then
-        DuplicateTracker[identifier] = true
-        table.insert(CleanedScripts, s)
-    end
-end
-
+-- Duplikat URL sengaja dipertahankan
+local CleanedScripts = ScriptDataStealAnEgg
 -- [ SYSTEM CONFIG FAVORITE ]
 local FavoriteConfigName = "leon4951hub_favorites.json"
 local FavoriteList = {}
 
 local function LoadFavorites()
-    if readfile and pcall(readfile, FavoriteConfigName) then
-        local success, decoded = pcall(function()
-            return HttpService:JSONDecode(readfile(FavoriteConfigName))
-        end)
-        if success and type(decoded) == "table" then
-            FavoriteList = decoded
-        end
+    if not readfile then return end
+    local success, raw = pcall(readfile, FavoriteConfigName)
+    if not success or type(raw) ~= "string" or raw == "" then return end
+    local decodedOk, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if decodedOk and type(decoded) == "table" then
+        FavoriteList = decoded
     end
 end
 
@@ -132,6 +282,12 @@ local Categories = {
         scripts = NewScriptsData,
         hasNotification = true,
     },
+    {
+        key = "TambahScript",
+        name = "tambahkan script mu",
+        type = "add_script",
+        scripts = {},
+    },
 }
 
 local activeCategoryIndex = 1
@@ -144,7 +300,9 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+if not ScreenGui.Parent then
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -250,7 +408,7 @@ WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(175, 26)
 WaBtn.Position = UDim2.new(0, 172, 0, 10)
 WaBtn.BackgroundColor3 = Theme.WaGreen
-WaBtn.Text = "💬 LINK SALURAN WA (COPY)"
+WaBtn.Text = "💬 masih kurang 30 script(SALURAN WA) "
 WaBtn.Font = Enum.Font.GothamBold
 WaBtn.TextSize = 9
 WaBtn.TextColor3 = Theme.TextPrimary
@@ -450,7 +608,11 @@ local function RenderContent(categoryIndex)
         local noKeyCount = 0
 
         for _, s in ipairs(category.scripts) do
-            if s.status == "Key" then keyCount = keyCount + 1 else noKeyCount = noKeyCount + 1 end
+            if s.status == "Key" then
+                keyCount = keyCount + 1
+            elseif s.status == "No Key" then
+                noKeyCount = noKeyCount + 1
+            end
         end
 
         local StatsBanner = Instance.new("Frame")
@@ -595,20 +757,31 @@ local function RenderContent(categoryIndex)
 
                 runBtn.MouseButton1Click:Connect(function()
                     if scriptEntry.url and scriptEntry.url ~= "" then
-                        pcall(function()
+                        local ok, err = pcall(function()
                             if string.sub(scriptEntry.url, 1, 10) == "loadstring" then
                                 loadstring(scriptEntry.url)()
                             else
                                 loadstring(game:HttpGet(scriptEntry.url))()
                             end
                         end)
+                        if not ok then
+                            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+                        end
                     end
                 end)
 
                 local statusBadge = Instance.new("TextLabel")
                 statusBadge.Size = UDim2.fromOffset(58, 20)
                 statusBadge.Position = UDim2.new(1, -122, 0.5, -10)
-                statusBadge.BackgroundColor3 = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
+                local statusBg
+                if scriptEntry.status == "Key" then
+                    statusBg = Theme.KeyTagBg
+                elseif scriptEntry.status == "No Key" then
+                    statusBg = Theme.NoKeyTagBg
+                else
+                    statusBg = Theme.CardBg
+                end
+                statusBadge.BackgroundColor3 = statusBg
                 statusBadge.Text = scriptEntry.status
                 statusBadge.Font = Enum.Font.GothamBold
                 statusBadge.TextSize = 11
@@ -641,9 +814,213 @@ local function RenderContent(categoryIndex)
                     end
                     SaveFavorites()
                     RefreshFavoritesData()
+                    Categories[2].scripts = FavoriteScriptsData
                 end)
             end
         end
+
+        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+        return
+
+    elseif category.type == "add_script" then
+        FilterContainer.Visible = false
+        SearchBox.Visible = false
+        ContentLabel.Text = "TAMBAHKAN SCRIPT MU -- FORM"
+
+        local ListLayout = Instance.new("UIListLayout")
+        ListLayout.Padding = UDim.new(0, 10)
+        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        ListLayout.Parent = ScriptScroll
+
+        -- Card container
+        local formCard = Instance.new("Frame")
+        formCard.Name = "AddScriptForm"
+        formCard.Size = UDim2.new(1, 0, 0, 0)
+        formCard.AutomaticSize = Enum.AutomaticSize.Y
+        formCard.BackgroundColor3 = Theme.CardBg
+        formCard.LayoutOrder = 1
+        formCard.Parent = ScriptScroll
+        Instance.new("UICorner", formCard).CornerRadius = UDim.new(0, 8)
+
+        local formStroke = Instance.new("UIStroke")
+        formStroke.Color = Theme.BorderColor
+        formStroke.Thickness = 1
+        formStroke.Parent = formCard
+
+        local formPad = Instance.new("UIPadding")
+        formPad.PaddingTop = UDim.new(0, 12)
+        formPad.PaddingBottom = UDim.new(0, 12)
+        formPad.PaddingLeft = UDim.new(0, 12)
+        formPad.PaddingRight = UDim.new(0, 12)
+        formPad.Parent = formCard
+
+        local formLayout = Instance.new("UIListLayout")
+        formLayout.Padding = UDim.new(0, 8)
+        formLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        formLayout.Parent = formCard
+
+        -- Nama
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 0, 14)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 10
+        nameLabel.TextColor3 = Theme.TextMuted
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.Text = "NAMA SCRIPT"
+        nameLabel.LayoutOrder = 1
+        nameLabel.Parent = formCard
+
+        local nameBox = Instance.new("TextBox")
+        nameBox.Name = "NameInput"
+        nameBox.Size = UDim2.new(1, 0, 0, 28)
+        nameBox.BackgroundColor3 = Theme.Background
+        nameBox.PlaceholderText = "masukan nama"
+        nameBox.PlaceholderColor3 = Theme.TextMuted
+        nameBox.Text = ""
+        nameBox.TextColor3 = Theme.TextPrimary
+        nameBox.Font = Enum.Font.Gotham
+        nameBox.TextSize = 11
+        nameBox.ClearTextOnFocus = false
+        nameBox.LayoutOrder = 2
+        nameBox.Parent = formCard
+        Instance.new("UICorner", nameBox).CornerRadius = UDim.new(0, 5)
+
+        local nameStroke = Instance.new("UIStroke")
+        nameStroke.Color = Theme.BorderColor
+        nameStroke.Thickness = 1
+        nameStroke.Parent = nameBox
+
+        -- Status Key / No Key
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Size = UDim2.new(1, 0, 0, 14)
+        statusLabel.BackgroundTransparency = 1
+        statusLabel.Font = Enum.Font.GothamBold
+        statusLabel.TextSize = 10
+        statusLabel.TextColor3 = Theme.TextMuted
+        statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+        statusLabel.Text = "STATUS (KEY / NO KEY)"
+        statusLabel.LayoutOrder = 3
+        statusLabel.Parent = formCard
+
+        local statusRow = Instance.new("Frame")
+        statusRow.Size = UDim2.new(1, 0, 0, 26)
+        statusRow.BackgroundTransparency = 1
+        statusRow.LayoutOrder = 4
+        statusRow.Parent = formCard
+
+        local statusLayout = Instance.new("UIListLayout")
+        statusLayout.FillDirection = Enum.FillDirection.Horizontal
+        statusLayout.Padding = UDim.new(0, 6)
+        statusLayout.Parent = statusRow
+
+        local selectedStatus = "No Key"
+
+        local function makeStatusBtn(text)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.fromOffset(80, 24)
+            btn.BackgroundColor3 = Theme.CardBg
+            btn.Text = text
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 10
+            btn.TextColor3 = Theme.TextSecondary
+            btn.AutoButtonColor = false
+            btn.Parent = statusRow
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+
+            local stroke = Instance.new("UIStroke")
+            stroke.Color = Theme.BorderColor
+            stroke.Thickness = 1
+            stroke.Parent = btn
+
+            return btn
+        end
+
+        local keyBtn = makeStatusBtn("🔑 KEY")
+        local noKeyBtn = makeStatusBtn("🔓 NO KEY")
+
+        local function updateStatusVisual()
+            if selectedStatus == "Key" then
+                keyBtn.BackgroundColor3 = Theme.KeyTagBg
+                keyBtn.TextColor3 = Theme.TextPrimary
+                noKeyBtn.BackgroundColor3 = Theme.CardBg
+                noKeyBtn.TextColor3 = Theme.TextSecondary
+            else
+                noKeyBtn.BackgroundColor3 = Theme.NoKeyTagBg
+                noKeyBtn.TextColor3 = Theme.TextPrimary
+                keyBtn.BackgroundColor3 = Theme.CardBg
+                keyBtn.TextColor3 = Theme.TextSecondary
+            end
+        end
+
+        keyBtn.MouseButton1Click:Connect(function()
+            selectedStatus = "Key"
+            updateStatusVisual()
+        end)
+        noKeyBtn.MouseButton1Click:Connect(function()
+            selectedStatus = "No Key"
+            updateStatusVisual()
+        end)
+
+        updateStatusVisual() -- default No Key
+
+        -- URL
+        local urlLabel = Instance.new("TextLabel")
+        urlLabel.Size = UDim2.new(1, 0, 0, 14)
+        urlLabel.BackgroundTransparency = 1
+        urlLabel.Font = Enum.Font.GothamBold
+        urlLabel.TextSize = 10
+        urlLabel.TextColor3 = Theme.TextMuted
+        urlLabel.TextXAlignment = Enum.TextXAlignment.Left
+        urlLabel.Text = "LINK URL SCRIPT"
+        urlLabel.LayoutOrder = 5
+        urlLabel.Parent = formCard
+
+        local urlBox = Instance.new("TextBox")
+        urlBox.Name = "UrlInput"
+        urlBox.Size = UDim2.new(1, 0, 0, 28)
+        urlBox.BackgroundColor3 = Theme.Background
+        urlBox.PlaceholderText = "masukan link url script"
+        urlBox.PlaceholderColor3 = Theme.TextMuted
+        urlBox.Text = ""
+        urlBox.TextColor3 = Theme.TextPrimary
+        urlBox.Font = Enum.Font.Gotham
+        urlBox.TextSize = 11
+        urlBox.ClearTextOnFocus = false
+        urlBox.LayoutOrder = 6
+        urlBox.Parent = formCard
+        Instance.new("UICorner", urlBox).CornerRadius = UDim.new(0, 5)
+
+        local urlStroke = Instance.new("UIStroke")
+        urlStroke.Color = Theme.BorderColor
+        urlStroke.Thickness = 1
+        urlStroke.Parent = urlBox
+
+        -- ADD button
+        local addBtn = Instance.new("TextButton")
+        addBtn.Name = "AddBtn"
+        addBtn.Size = UDim2.new(1, 0, 0, 32)
+        addBtn.BackgroundColor3 = Theme.AccentBlue
+        addBtn.Text = "ADD"
+        addBtn.Font = Enum.Font.GothamBold
+        addBtn.TextSize = 12
+        addBtn.TextColor3 = Theme.TextPrimary
+        addBtn.AutoButtonColor = false
+        addBtn.LayoutOrder = 7
+        addBtn.Parent = formCard
+        Instance.new("UICorner", addBtn).CornerRadius = UDim.new(0, 6)
+
+        addBtn.MouseEnter:Connect(function()
+            TweenService:Create(addBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 140, 255) }):Play()
+        end)
+        addBtn.MouseLeave:Connect(function()
+            TweenService:Create(addBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentBlue }):Play()
+        end)
+
+        -- Logic kosong (sementara)
+        addBtn.MouseButton1Click:Connect(function()
+            -- kosong
+        end)
 
         ScriptScroll.CanvasPosition = Vector2.new(0, 0)
         return
@@ -740,20 +1117,31 @@ local function RenderContent(categoryIndex)
 
         runBtn.MouseButton1Click:Connect(function()
             if scriptEntry.url and scriptEntry.url ~= "" then
-                pcall(function()
+                local ok, err = pcall(function()
                     if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
                         loadstring(scriptEntry.url)()
                     else
                         loadstring(game:HttpGet(scriptEntry.url))()
                     end
                 end)
+                if not ok then
+                    warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+                end
             end
         end)
 
         local statusBadge = Instance.new("TextLabel")
         statusBadge.Size = UDim2.fromOffset(58, 20)
         statusBadge.Position = UDim2.new(1, -122, 0.5, -10)
-        statusBadge.BackgroundColor3 = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
+        local statusBg
+        if scriptEntry.status == "Key" then
+            statusBg = Theme.KeyTagBg
+        elseif scriptEntry.status == "No Key" then
+            statusBg = Theme.NoKeyTagBg
+        else
+            statusBg = Theme.CardBg
+        end
+        statusBadge.BackgroundColor3 = statusBg
         statusBadge.Text = scriptEntry.status
         statusBadge.Font = Enum.Font.GothamBold
         statusBadge.TextSize = 11
@@ -801,6 +1189,7 @@ local function RenderContent(categoryIndex)
             end
             SaveFavorites()
             RefreshFavoritesData()
+            Categories[2].scripts = FavoriteScriptsData
         end)
     end
 
@@ -812,7 +1201,7 @@ local filterDefs = {
     { id = "ALL", text = "ALL" },
     { id = "Key", text = "🔑 KEY" },
     { id = "No Key", text = "🔓 NO KEY" },
-    { id = "Recommended", text = "🌟 RECOMEND" }
+    { id = "Recommended", text = "🌟 RECOMMENDED" }
 }
 
 for _, fDef in ipairs(filterDefs) do
