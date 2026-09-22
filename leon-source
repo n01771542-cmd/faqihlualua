@@ -167,10 +167,10 @@ local RawScriptDataStealAnEgg = {
 }
 
 local RawNewScriptsData = {
-    {"OTC","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Aerlro/OTC/refs/heads/main/Steal%20an%20Egg/main.lua\"))()"},
+    {"OTC","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Aerlro/OTC/refs/heads/main/Steal%20an%20Egg/main.lua\"))()"},
     {"AKIPOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/akipox/Roblox/main/Mods/Games/StealanEgg.lua\"))()"},
     {"MENGHUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/GrexXMeng/Mengs/refs/heads/main/StealAnEgg.lua\"))()"},
-    {"MY HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/pespapankon-del/MyHub/main/Games/StealAnEgg.lua\"))()"},
+    {"MY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/pespapankon-del/MyHub/main/Games/StealAnEgg.lua\"))()"},
     {"TUROK JAPAN HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lvjunling/r-s-zh/refs/heads/main/stealegg/lua_zh_mobile.lua\"))()"},
     {"FROST","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Frost-GG-Hud/Loader/main/src/Loader.luau\"))()"},
     {"SOLARIS","Key",false,"loadstring(game:HttpGet(\"https://api.obscuravm.com/scripts/1231452106622100334\"))()"},
@@ -186,13 +186,13 @@ local RawNewScriptsData = {
     {"VORTEX X SAGE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Israel-Vortex/vortex-x-scripts/refs/heads/main/Official-Vortex-Software/Dev-Project/StealAnEgg.lua\"))()"},
     {"PHUCMAX VIET","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/phucmax/THANHPHUC/refs/heads/main/PHUCMAX(2).lua\"))()"},
     {"DRAGON SECURITY HUB V2.5","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/conmemaynguhsjs/scrip/refs/heads/main/gemini-code-1789308407861.lua.txt\"))()"},
-    {"BUGXIE Visual Spawner","Unknown",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner\"))()"},
-    {"BUGXIE Hit Aura","Unknown",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/steal%20an%20egg%20hit%20aura-obfuscated.lua\"))()"},
-    {"CLOUT HUB","Unknown",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ClouthubOnTop/Loader/main/main.lua\"))()"},
-    {"LUXY","Unknown",false,"loadstring(game:HttpGet(\"https://flowauth.net/v1/loaders/16b55b285584ec6d065913f5d59fb105.lua\"))()"},
-    {"OJIASA","Unknown",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
-    {"DODOYUNG24","Unknown",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
-    {"MIRACLE HUB","Unknown",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
+    {"BUGXIE Visual Spawner","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner\"))()"},
+    {"BUGXIE Hit Aura","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/steal%20an%20egg%20hit%20aura-obfuscated.lua\"))()"},
+    {"CLOUT HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ClouthubOnTop/Loader/main/main.lua\"))()"},
+    {"LUXY","No Key",false,"loadstring(game:HttpGet(\"https://flowauth.net/v1/loaders/16b55b285584ec6d065913f5d59fb105.lua\"))()"},
+    {"OJIASA","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
+    {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
+    {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
 }
 
 -- Compact data format: {name, status, recommended, url}
