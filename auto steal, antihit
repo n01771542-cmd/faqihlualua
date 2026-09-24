@@ -1,0 +1,1000 @@
+-- ============================================================================
+-- LEONHUB - ANTI-HIT & ADVANCED AUTO STEAL (ARC ENGINE) + ANTICHEAT BYPASS
+-- ============================================================================
+
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local LocalPlayerId = LocalPlayer.UserId
+local GUI_NAME = "LeonHubGui"
+local SAFE_ZONE_POS = Vector3.new(491, 70, -371)
+
+-- Cleanup GUI Lama
+pcall(function()
+	local oldCore = CoreGui:FindFirstChild(GUI_NAME)
+	if oldCore then oldCore:Destroy() end
+end)
+
+pcall(function()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if playerGui then
+		local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
+		if oldPlayer then oldPlayer:Destroy() end
+	end
+end)
+
+-- INTEGRASI MODULE GAME (ARC HUB ENGINE)
+local EggState, PlotState, AreasData, RarityData, AssetsData, EggToolDisplay, AreaEggSlotIdentity
+pcall(function() EggState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("EggState")) end)
+pcall(function() PlotState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("PlotState")) end)
+pcall(function() AreasData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("Areas")) end)
+pcall(function() RarityData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("Rarity")) end)
+pcall(function() AssetsData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("Assets")) end)
+pcall(function() EggToolDisplay = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Eggs"):WaitForChild("EggToolDisplay")) end)
+pcall(function()
+	AreaEggSlotIdentity = (ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Util") and require(ReplicatedStorage.Shared.Util.AreaEggSlotIdentity))
+		or (ReplicatedStorage:FindFirstChild("Util") and require(ReplicatedStorage.Util.AreaEggSlotIdentity))
+		or (ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Utils") and require(ReplicatedStorage.Shared.Utils.AreaEggSlotIdentity))
+end)
+
+-- ============================================================================
+-- LOGIKA RUNTIME ANTICHEAT BYPASS ENGINE
+-- ============================================================================
+local AC_State = nil
+
+local function FetchAnticheatState()
+	if AC_State then return AC_State end
+	if not getgc then return nil end
+	
+	for _, obj in ipairs(getgc(true)) do
+		if type(obj) == "table" and rawget(obj, "SampleHistory") and rawget(obj, "Evidence") then
+			AC_State = obj
+			return AC_State
+		end
+	end
+	return nil
+end
+
+local function AdoptTeleportBaseline(targetCFrame)
+	local ac = FetchAnticheatState()
+	if not ac then return end
+	
+	pcall(function()
+		if ac.SampleHistory and type(ac.SampleHistory) == "table" then
+			table.clear(ac.SampleHistory)
+		end
+		if ac.Evidence and type(ac.Evidence) == "table" then
+			if ac.Evidence.Speed then ac.Evidence.Speed = 0 end
+			if ac.Evidence.Flight then ac.Evidence.Flight = 0 end
+			if ac.Evidence.Teleport then ac.Evidence.Teleport = 0 end
+		end
+		if ac.Mode then
+			ac.Mode = "Grounded"
+		end
+		if ac.BaselineSample and type(ac.BaselineSample) == "table" then
+			ac.BaselineSample.CFrame = targetCFrame
+			ac.BaselineSample.Position = targetCFrame.Position
+			ac.BaselineSample.Time = os.clock()
+		end
+	end)
+end
+
+-- CONFIGURATION & ARC VARIABLES
+local MAIN_ROAD_Z = -364.5
+local SAFE_BOUNDARY_X = 580
+local SAFE_ZONE_SPEED = 245
+
+local isAntiHitActive = false
+local isAutoStealActive = false
+
+local isProcessing = false
+local IsMinimized = false
+local IsTransitioning = false
+
+local autoStealThread = nil
+local glideSpeed = 500 -- Kecepatan pergerakan Auto Steal default
+local avoidTrapsEnabled = true
+local ignoredEggs = {}
+
+local selectedStealAreas = {}
+local selectedStealRarities = {}
+selectedStealRarities["All"] = true
+
+local RARITY_SCORE_MAP = {
+	["LightDark"] = 1300, ["Light & Dark"] = 1300, ["Titan"] = 1100, ["Divine"] = 1000,
+	["Transcendent"] = 1000, ["Superior"] = 1000, ["Eternal"] = 900, ["Limited"] = 900,
+	["Secret"] = 800, ["Exotic"] = 800, ["Cosmic"] = 700, ["Exclusive"] = 700,
+	["Admin"] = 700, ["Mythic"] = 600, ["Mythical"] = 600, ["Prismatic"] = 600,
+	["Rainbow"] = 600, ["Squishy God"] = 600, ["BrainrotGod"] = 600, ["Legendary"] = 500,
+	["Epic"] = 400, ["Rare"] = 300, ["SuperRare"] = 200, ["Celestial"] = 200,
+	["Uncommon"] = 200, ["Basic"] = 100, ["Common"] = 100
+}
+
+local AREA_NAMES = {
+	"All", "Forest", "Lake", "Desert", "Jungle", "Snow", "Volcano",
+	"Abyss Ocean", "Prehistoric", "Cosmic", "Cherry Blossom", "Titan Temple",
+	"Light Dark", "Angels & Demons"
+}
+
+local RARITY_NAMES = {
+	"All", "Light & Dark", "Titan", "Divine", "Superior", "Eternal", "Limited",
+	"Secret", "Exotic", "Cosmic", "Exclusive", "Mythic", "Rainbow",
+	"Squishy God", "Celestial", "Legendary", "Epic", "Rare", "SuperRare",
+	"Uncommon", "Common"
+}
+
+-- Theme Styling
+local Theme = {
+	Background = Color3.fromRGB(7, 10, 17),
+	Card = Color3.fromRGB(14, 20, 32),
+	Accent = Color3.fromRGB(37, 120, 255),
+	AccentLight = Color3.fromRGB(82, 151, 255),
+	Text = Color3.fromRGB(245, 247, 255),
+	TextSecondary = Color3.fromRGB(151, 163, 186),
+	TextMuted = Color3.fromRGB(88, 100, 123),
+	Border = Color3.fromRGB(34, 48, 73),
+	Off = Color3.fromRGB(20, 27, 40),
+	OffStroke = Color3.fromRGB(50, 64, 88),
+	On = Color3.fromRGB(18, 48, 43),
+	OnStroke = Color3.fromRGB(46, 146, 116),
+	OnAccent = Color3.fromRGB(76, 220, 163),
+}
+
+local function Tween(object, duration, properties, style, direction)
+	if not object or not object.Parent then return end
+	local info = TweenInfo.new(
+		duration or 0.2,
+		style or Enum.EasingStyle.Quart,
+		direction or Enum.EasingDirection.Out
+	)
+	local tween = TweenService:Create(object, info, properties)
+	tween:Play()
+	return tween
+end
+
+local function getCharacterAndRoot()
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+	return char, hum, root
+end
+
+-- ============================================================================
+-- LOGIKA STEAL & NAVIGATION ENGINE (ARC HUB INTEGRATION)
+-- ============================================================================
+local function GetLocalPlotCenter()
+	local plotObj = PlotState and PlotState.ResolvePlot and PlotState.ResolvePlot()
+	local pt = plotObj and plotObj.CenterPoint and (typeof(plotObj.CenterPoint) == "Vector3" and plotObj.CenterPoint or (plotObj.CenterPoint:IsA("BasePart") and plotObj.CenterPoint.Position))
+	if pt then
+		return Vector3.new(pt.X, math.max(pt.Y, 70.4), pt.Z), CFrame.new(pt.X, math.max(pt.Y, 70.4), pt.Z)
+	end
+	return Vector3.new(464.7, 70.4, -364.0), CFrame.new(464.7, 70.4, -364.0)
+end
+
+local function NeutralizeTraps()
+	local debris = Workspace:FindFirstChild("__DEBRIS")
+	if not debris then return end
+	for _, d in ipairs(debris:GetChildren()) do
+		if d.Name == "PlayerTrap" and d:GetAttribute("Owner") ~= LocalPlayer.Name then
+			if d:IsA("BasePart") then d.CanTouch = false; d.CanQuery = false end
+			for _, c in ipairs(d:GetChildren()) do
+				if c:IsA("BasePart") then
+					c.CanTouch = false; c.CanQuery = false
+					if c.Name == "Hitbox" then c.CFrame = CFrame.new(0, -999, 0) end
+				end
+			end
+			local tt = d:FindFirstChildWhichIsA("TouchTransmitter", true)
+			if tt then pcall(function() tt:Destroy() end) end
+		end
+	end
+end
+
+local function MoveToPoint(target, speed, easeOut)
+	local _, _, hrp = getCharacterAndRoot()
+	if not hrp or not target then return false end
+	local start = hrp.Position
+	local dist = (target - start).Magnitude
+	if dist < 1.0 then
+		local newCF = CFrame.new(target.X, math.max(target.Y, 70.0), target.Z)
+		AdoptTeleportBaseline(newCF)
+		hrp.CFrame = newCF
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		return true
+	end
+	speed = math.clamp(tonumber(speed) or glideSpeed, 50, 750)
+	local t0 = os.clock()
+	local totalDist = dist
+	while isAutoStealActive do
+		local dt = RunService.Heartbeat:Wait()
+		local curPos = hrp.Position
+		local toTarget = target - curPos
+		local remain = toTarget.Magnitude
+		if remain < 1.0 then break end
+		local stepSpeed = speed
+		if easeOut then
+			local progress = 1 - math.clamp(remain / totalDist, 0, 1)
+			stepSpeed = math.max(speed * (1 - progress * 0.8), 35)
+		end
+		local step = math.min(stepSpeed * dt, remain)
+		local dir = toTarget.Unit
+		local nextPos = curPos + dir * step
+		local nextCF = CFrame.lookAt(nextPos, nextPos + dir)
+		AdoptTeleportBaseline(nextCF)
+		hrp.CFrame = nextCF
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		if os.clock() - t0 > (totalDist / 50 + 5) then break end
+	end
+	local finalCF = CFrame.new(target.X, math.max(target.Y, 70.0), target.Z)
+	AdoptTeleportBaseline(finalCF)
+	hrp.CFrame = finalCF
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+	return true
+end
+
+local function TravelRoadPath(targetPos, speed, isApproach)
+	local _, _, hrp = getCharacterAndRoot()
+	if not hrp or not targetPos then return false end
+	if avoidTrapsEnabled then pcall(NeutralizeTraps) end
+	local startPos = hrp.Position
+	local safeY = math.max(startPos.Y, targetPos.Y, 70.4)
+	local isReturningToBase = (targetPos.X < 560)
+	if isReturningToBase and startPos.X > SAFE_BOUNDARY_X then
+		local p1 = Vector3.new(startPos.X, safeY, MAIN_ROAD_Z)
+		MoveToPoint(p1, speed, false)
+		local pSafeApproach = Vector3.new(SAFE_BOUNDARY_X, safeY, MAIN_ROAD_Z)
+		MoveToPoint(pSafeApproach, speed, false)
+		local pBaseRoad = Vector3.new(targetPos.X, safeY, MAIN_ROAD_Z)
+		MoveToPoint(pBaseRoad, SAFE_ZONE_SPEED, false)
+		local pPen = targetPos + Vector3.new(0, 1.2, 0)
+		MoveToPoint(pPen, SAFE_ZONE_SPEED, isApproach == true)
+		return true
+	else
+		local p1 = Vector3.new(startPos.X, safeY, MAIN_ROAD_Z)
+		local p2 = Vector3.new(targetPos.X, safeY, MAIN_ROAD_Z)
+		local p3 = targetPos + Vector3.new(0, 1.2, 0)
+		MoveToPoint(p1, speed, false)
+		MoveToPoint(p2, speed, false)
+		MoveToPoint(p3, speed, isApproach == true)
+		return true
+	end
+end
+
+local function GetEggRarityInfo(egg)
+	if not egg then return "Common", 100 end
+	if egg.Rarity then
+		local r = egg.Rarity
+		local name = type(r) == "table" and (r.DisplayName or r._id or r.Name) or tostring(r)
+		local score = RARITY_SCORE_MAP[name] or (type(r) == "table" and tonumber(r.RarityNumber) and r.RarityNumber * 100) or 100
+		return name, score
+	end
+	local cat = egg.AssetCategory or egg.Category or egg.Name
+	if cat and AssetsData then
+		local assetsDir = AssetsData.Directory or AssetsData
+		local aInfo = assetsDir[cat]
+		if aInfo and aInfo.Rarity then
+			local r = aInfo.Rarity
+			local name = type(r) == "table" and (r.DisplayName or r._id or r.Name) or tostring(r)
+			local score = RARITY_SCORE_MAP[name] or (type(r) == "table" and tonumber(r.RarityNumber) and r.RarityNumber * 100) or 100
+			return name, score
+		end
+	end
+	local areaData = AreasData and (AreasData.Directory or AreasData) and (AreasData.Directory or AreasData)[egg.AreaId]
+	local rarity = areaData and areaData.Rarity
+	local rarityId = (type(rarity) == "table" and (rarity._id or rarity.DisplayName or rarity.Name)) or (type(rarity) == "string" and rarity) or "Common"
+	local raritiesTable = RarityData and (RarityData.Rarities or RarityData) or {}
+	local rInfo = raritiesTable[rarityId] or {}
+	local rarityDisplayName = (type(rInfo) == "table" and (rInfo.DisplayName or rInfo._id)) or (type(rarity) == "table" and rarity.DisplayName) or rarityId or "Common"
+	local baseScore = RARITY_SCORE_MAP[rarityDisplayName] or RARITY_SCORE_MAP[rarityId] or (type(rarity) == "table" and tonumber(rarity.RarityNumber) and rarity.RarityNumber * 100) or 100
+	return rarityDisplayName, baseScore
+end
+
+local function isRarityAllowed(rarityName, filter)
+	if not filter or type(filter) ~= "table" or filter["All"] then return true end
+	return filter[rarityName] == true
+end
+
+local function isAreaAllowed(areaId, filter)
+	if not filter or type(filter) ~= "table" or filter["All"] then return true end
+	return filter[areaId] == true
+end
+
+local function GetMatchingFieldEggs()
+	if not EggState or not EggState.ReadFieldEggs then return {} end
+	local ok, snapshot = pcall(EggState.ReadFieldEggs)
+	if not ok or not snapshot or not snapshot.Records then return {} end
+	local matched = {}
+	for _, record in ipairs(snapshot.Records) do
+		if record.State == "Slot" and record.BoundsCFrame then
+			local isIgnored = ignoredEggs[record.Uid] and (os.clock() - ignoredEggs[record.Uid] < 2.5)
+			if not isIgnored then
+				local areaOk = isAreaAllowed(record.AreaId, selectedStealAreas)
+				local rarityName, baseScore = GetEggRarityInfo(record)
+				local rarityOk = isRarityAllowed(rarityName, selectedStealRarities)
+				
+				if areaOk and rarityOk then
+					table.insert(matched, {
+						record = record,
+						rarity = rarityName,
+						score = baseScore
+					})
+				end
+			end
+		end
+	end
+	if #matched > 1 then
+		table.sort(matched, function(a, b) return a.score > b.score end)
+	end
+	return matched
+end
+
+local function isPlayerCarryingEgg()
+	local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	local dropGui = pg and pg:FindFirstChild("DropHeldEgg")
+	if dropGui and dropGui.Enabled == true then return true end
+	local char = LocalPlayer.Character
+	if char then
+		for _, t in ipairs(char:GetChildren()) do
+			if t:IsA("Model") and (t.Name:lower():find("egg") or t:GetAttribute("Uid") or t:GetAttribute("AssetCategory")) then
+				return true
+			end
+			if t:IsA("Tool") then
+				if EggToolDisplay and EggToolDisplay.IsEggTool and EggToolDisplay.IsEggTool(t) then return true end
+				if t:GetAttribute("IsEgg") == true or t:GetAttribute("Uid") ~= nil or t:GetAttribute("AssetCategory") ~= nil then return true end
+				local tName = t.Name:lower()
+				if tName:find("egg") or (tName ~= "bat" and tName ~= "defaulttool" and not tName:find("bat") and not tName:find("slap") and not tName:find("coil") and not tName:find("potion") and not tName:find("lantern")) then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function StealSpecificEggRobust(targetItem)
+	local record = targetItem.record or targetItem
+	if not record or not record.Uid or not record.BoundsCFrame then return false end
+	local _, _, hrp = getCharacterAndRoot()
+	if not hrp then return false end
+
+	local targetPos = record.BoundsCFrame.Position
+	TravelRoadPath(targetPos + Vector3.new(0, 1.2, 0), glideSpeed, true)
+	if hrp then
+		local newCF = CFrame.new(targetPos + Vector3.new(0, 1.2, 0))
+		AdoptTeleportBaseline(newCF)
+		hrp.CFrame = newCF
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+	end
+	task.wait(0.3)
+
+	local slotKey = nil
+	if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
+		slotKey = AreaEggSlotIdentity.SlotKey(record.AreaId, record.NestId)
+	end
+
+	local net = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking")
+	local carryRemote = net and net:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
+	if carryRemote then pcall(function() carryRemote:InvokeServer({ Uid = record.Uid, FirstAreaSlotKey = slotKey }) end) end
+	pcall(function()
+		if EggState and EggState.CarryFieldEgg then EggState.CarryFieldEgg(record.Uid, slotKey) end
+	end)
+
+	local prompt = nil
+	for _, d in ipairs(Workspace:GetDescendants()) do
+		if d:IsA("ProximityPrompt") and d.Name == "CarryAreaEgg" and d.Enabled then
+			local p = d.Parent
+			if p:IsA("Attachment") then p = p.Parent end
+			if p and (p.Position - hrp.Position).Magnitude < 14 then prompt = d; break end
+		end
+	end
+	if prompt then
+		prompt.HoldDuration = 0
+		pcall(function() fireproximityprompt(prompt) end)
+	end
+
+	local safePlotCenter, _ = GetLocalPlotCenter()
+	local tPickup = os.clock()
+	local carried = false
+	while os.clock() - tPickup < 1.5 do
+		if isPlayerCarryingEgg() then carried = true; break end
+		task.wait(0.08)
+	end
+
+	if not carried then ignoredEggs[record.Uid] = os.clock(); return false end
+
+	TravelRoadPath(safePlotCenter, glideSpeed, true)
+	local tDeliver = os.clock()
+	while os.clock() - tDeliver < 1.5 and isPlayerCarryingEgg() do task.wait(0.08) end
+	
+	return carried
+end
+
+local function startAutoStealLoop()
+	if autoStealThread then return end
+	autoStealThread = task.spawn(function()
+		while isAutoStealActive do
+			local eggs = GetMatchingFieldEggs()
+			if #eggs > 0 then
+				StealSpecificEggRobust(eggs[1])
+			end
+			task.wait(1)
+		end
+	end)
+end
+
+local function stopAutoStealLoop()
+	if autoStealThread then
+		task.cancel(autoStealThread)
+		autoStealThread = nil
+	end
+end
+
+-- ============================================================================
+-- GUI INITIALIZATION (LEONHUB VISUAL STYLE)
+-- ============================================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = GUI_NAME
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999
+
+local guiParented = false
+pcall(function()
+	ScreenGui.Parent = CoreGui
+	guiParented = ScreenGui.Parent ~= nil
+end)
+if not guiParented then
+	ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local MAIN_WIDTH = 360
+local MAIN_HEIGHT = 380
+local MAIN_HOME_POSITION = UDim2.fromScale(0.5, 0.5)
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT)
+MainFrame.Position = MAIN_HOME_POSITION
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 20)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.Border
+MainStroke.Thickness = 1.5
+MainStroke.Transparency = 0.08
+MainStroke.Parent = MainFrame
+
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 55)
+Header.BackgroundTransparency = 1
+Header.Active = true
+Header.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -125, 0, 24)
+Title.Position = UDim2.fromOffset(20, 12)
+Title.BackgroundTransparency = 1
+Title.RichText = true
+Title.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
+Title.TextColor3 = Theme.Text
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 17
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Size = UDim2.new(1, -125, 0, 16)
+Subtitle.Position = UDim2.fromOffset(21, 33)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "ADVANCED STEAL ENGINE"
+Subtitle.TextColor3 = Theme.TextMuted
+Subtitle.Font = Enum.Font.GothamMedium
+Subtitle.TextSize = 8
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.Parent = Header
+
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.fromOffset(36, 36)
+MinimizeButton.Position = UDim2.new(1, -48, 0, 10)
+MinimizeButton.BackgroundColor3 = Theme.Card
+MinimizeButton.Text = "−"
+MinimizeButton.TextColor3 = Theme.TextSecondary
+MinimizeButton.Font = Enum.Font.GothamMedium
+MinimizeButton.TextSize = 20
+MinimizeButton.Parent = Header
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 12)
+MinCorner.Parent = MinimizeButton
+
+local ScrollContent = Instance.new("ScrollingFrame")
+ScrollContent.Size = UDim2.new(1, -20, 1, -65)
+ScrollContent.Position = UDim2.fromOffset(10, 55)
+ScrollContent.BackgroundTransparency = 1
+ScrollContent.BorderSizePixel = 0
+ScrollContent.ScrollBarThickness = 3
+ScrollContent.ScrollBarImageColor3 = Theme.Accent
+ScrollContent.Parent = MainFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+UIListLayout.Parent = ScrollContent
+
+local function CreateToggleButton(parent, titleText, subText, callback)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -6, 0, 52)
+	btn.BackgroundColor3 = Theme.Off
+	btn.Text = ""
+	btn.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 14)
+	corner.Parent = btn
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Theme.OffStroke
+	stroke.Thickness = 1
+	stroke.Transparency = 0.2
+	stroke.Parent = btn
+
+	local dot = Instance.new("Frame")
+	dot.Size = UDim2.fromOffset(8, 8)
+	dot.Position = UDim2.fromOffset(16, 22)
+	dot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+	dot.Parent = btn
+
+	local dotCorner = Instance.new("UICorner")
+	dotCorner.CornerRadius = UDim.new(1, 0)
+	dotCorner.Parent = dot
+
+	local tTitle = Instance.new("TextLabel")
+	tTitle.Size = UDim2.new(1, -100, 0, 18)
+	tTitle.Position = UDim2.fromOffset(32, 8)
+	tTitle.BackgroundTransparency = 1
+	tTitle.Text = titleText
+	tTitle.TextColor3 = Theme.Text
+	tTitle.Font = Enum.Font.GothamBold
+	tTitle.TextSize = 11
+	tTitle.TextXAlignment = Enum.TextXAlignment.Left
+	tTitle.Parent = btn
+
+	local tSub = Instance.new("TextLabel")
+	tSub.Size = UDim2.new(1, -100, 0, 14)
+	tSub.Position = UDim2.fromOffset(32, 26)
+	tSub.BackgroundTransparency = 1
+	tSub.Text = subText
+	tSub.TextColor3 = Theme.TextMuted
+	tSub.Font = Enum.Font.GothamMedium
+	tSub.TextSize = 8
+	tSub.TextXAlignment = Enum.TextXAlignment.Left
+	tSub.Parent = btn
+
+	local sText = Instance.new("TextLabel")
+	sText.Size = UDim2.fromOffset(50, 20)
+	sText.Position = UDim2.new(1, -60, 0, 16)
+	sText.BackgroundTransparency = 1
+	sText.Text = "OFF"
+	sText.TextColor3 = Theme.TextMuted
+	sText.Font = Enum.Font.GothamBold
+	sText.TextSize = 9
+	sText.TextXAlignment = Enum.TextXAlignment.Right
+	sText.Parent = btn
+
+	local active = false
+	btn.MouseButton1Click:Connect(function()
+		active = not active
+		if active then
+			sText.Text = "ON"
+			sText.TextColor3 = Theme.OnAccent
+			dot.BackgroundColor3 = Theme.OnAccent
+			Tween(btn, 0.2, { BackgroundColor3 = Theme.On })
+			Tween(stroke, 0.2, { Color = Theme.OnStroke })
+		else
+			sText.Text = "OFF"
+			sText.TextColor3 = Theme.TextMuted
+			dot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+			Tween(btn, 0.2, { BackgroundColor3 = Theme.Off })
+			Tween(stroke, 0.2, { Color = Theme.OffStroke })
+		end
+		callback(active)
+	end)
+
+	return btn
+end
+
+local function CreateDropdown(parent, titleText, options, callback)
+	local card = Instance.new("Frame")
+	card.Size = UDim2.new(1, -6, 0, 48)
+	card.BackgroundColor3 = Theme.Card
+	card.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 12)
+	corner.Parent = card
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Theme.Border
+	stroke.Thickness = 1
+	stroke.Transparency = 0.5
+	stroke.Parent = card
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(0.4, 0, 1, 0)
+	lbl.Position = UDim2.fromOffset(14, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = titleText
+	lbl.TextColor3 = Theme.Text
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextSize = 10
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Parent = card
+
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.52, 0, 0, 28)
+	btn.Position = UDim2.new(0.45, 0, 0.5, -14)
+	btn.BackgroundColor3 = Theme.Off
+	btn.Text = options[1] or "Select"
+	btn.TextColor3 = Theme.AccentLight
+	btn.Font = Enum.Font.GothamMedium
+	btn.TextSize = 10
+	btn.Parent = card
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 8)
+	btnCorner.Parent = btn
+
+	local btnStroke = Instance.new("UIStroke")
+	btnStroke.Color = Theme.Border
+	btnStroke.Thickness = 1
+	btnStroke.Parent = btn
+
+	local idx = 1
+	btn.MouseButton1Click:Connect(function()
+		idx = (idx % #options) + 1
+		btn.Text = options[idx]
+		callback(options[idx])
+	end)
+
+	return card
+end
+
+-- DOKUMEN MENU UI
+CreateToggleButton(ScrollContent, "ANTI HIT ONLY", "Teleport protection saat terdeteksi", function(v)
+	isAntiHitActive = v
+end)
+
+CreateToggleButton(ScrollContent, "AUTO STEAL (ARC ENGINE)", "Mencuri telur secara otomatis", function(v)
+	isAutoStealActive = v
+	if isAutoStealActive then startAutoStealLoop() else stopAutoStealLoop() end
+end)
+
+CreateDropdown(ScrollContent, "SELECT AREA", AREA_NAMES, function(v)
+	selectedStealAreas = {}
+	if v == "All" then selectedStealAreas["All"] = true else selectedStealAreas[v] = true end
+end)
+
+CreateDropdown(ScrollContent, "SELECT RARITY", RARITY_NAMES, function(v)
+	selectedStealRarities = {}
+	if v == "All" then selectedStealRarities["All"] = true else selectedStealRarities[v] = true end
+end)
+
+-- Auto Steal Speed Slider Card
+local SliderCard = Instance.new("Frame")
+SliderCard.Size = UDim2.new(1, -6, 0, 62)
+SliderCard.BackgroundColor3 = Theme.Card
+SliderCard.Parent = ScrollContent
+
+local SliderCorner = Instance.new("UICorner")
+SliderCorner.CornerRadius = UDim.new(0, 12)
+SliderCorner.Parent = SliderCard
+
+local SliderStroke = Instance.new("UIStroke")
+SliderStroke.Color = Theme.Border
+SliderStroke.Thickness = 1
+SliderStroke.Transparency = 0.5
+SliderStroke.Parent = SliderCard
+
+local SliderLabel = Instance.new("TextLabel")
+SliderLabel.Size = UDim2.new(1, -70, 0, 20)
+SliderLabel.Position = UDim2.fromOffset(14, 8)
+SliderLabel.BackgroundTransparency = 1
+SliderLabel.Text = "KECEPATAN AUTO STEAL"
+SliderLabel.TextColor3 = Theme.Text
+SliderLabel.Font = Enum.Font.GothamBold
+SliderLabel.TextSize = 10
+SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+SliderLabel.Parent = SliderCard
+
+local SliderValue = Instance.new("TextLabel")
+SliderValue.Size = UDim2.fromOffset(50, 20)
+SliderValue.Position = UDim2.new(1, -60, 0, 8)
+SliderValue.BackgroundTransparency = 1
+SliderValue.Text = tostring(glideSpeed)
+SliderValue.TextColor3 = Theme.AccentLight
+SliderValue.Font = Enum.Font.GothamBold
+SliderValue.TextSize = 11
+SliderValue.TextXAlignment = Enum.TextXAlignment.Right
+SliderValue.Parent = SliderCard
+
+local SliderBar = Instance.new("Frame")
+SliderBar.Size = UDim2.new(1, -28, 0, 6)
+SliderBar.Position = UDim2.fromOffset(14, 38)
+SliderBar.BackgroundColor3 = Theme.Off
+SliderBar.Parent = SliderCard
+
+local SliderBarCorner = Instance.new("UICorner")
+SliderBarCorner.CornerRadius = UDim.new(1, 0)
+SliderBarCorner.Parent = SliderBar
+
+local MIN_STEAL_SPEED, MAX_STEAL_SPEED = 50, 750
+local initialAlpha = math.clamp((glideSpeed - MIN_STEAL_SPEED) / (MAX_STEAL_SPEED - MIN_STEAL_SPEED), 0, 1)
+
+local SliderFill = Instance.new("Frame")
+SliderFill.Size = UDim2.new(initialAlpha, 0, 1, 0)
+SliderFill.BackgroundColor3 = Theme.Accent
+SliderFill.Parent = SliderBar
+
+local SliderFillCorner = Instance.new("UICorner")
+SliderFillCorner.CornerRadius = UDim.new(1, 0)
+SliderFillCorner.Parent = SliderFill
+
+local SliderKnob = Instance.new("Frame")
+SliderKnob.Size = UDim2.fromOffset(12, 12)
+SliderKnob.Position = UDim2.new(initialAlpha, -6, 0.5, -6)
+SliderKnob.BackgroundColor3 = Theme.Text
+SliderKnob.Parent = SliderBar
+
+local KnobCorner = Instance.new("UICorner")
+KnobCorner.CornerRadius = UDim.new(1, 0)
+KnobCorner.Parent = SliderKnob
+
+local isDraggingSlider = false
+
+local function UpdateSlider(input)
+	local barAbsPos = SliderBar.AbsolutePosition.X
+	local barAbsSize = SliderBar.AbsoluteSize.X
+	local mouseX = input.Position.X
+	local alpha = math.clamp((mouseX - barAbsPos) / barAbsSize, 0, 1)
+	local currentSpeed = math.floor(MIN_STEAL_SPEED + (alpha * (MAX_STEAL_SPEED - MIN_STEAL_SPEED)))
+	
+	glideSpeed = currentSpeed
+	
+	SliderValue.Text = tostring(currentSpeed)
+	SliderFill.Size = UDim2.fromScale(alpha, 1)
+	SliderKnob.Position = UDim2.new(alpha, -6, 0.5, -6)
+end
+
+SliderBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDraggingSlider = true
+		UpdateSlider(input)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if isDraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		UpdateSlider(input)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDraggingSlider = false
+	end
+end)
+
+UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	ScrollContent.CanvasSize = UDim2.fromOffset(0, UIListLayout.AbsoluteContentSize.Y + 15)
+end)
+
+-- Minimize Restore Button
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.fromOffset(200, 42)
+ToggleButton.Position = UDim2.fromScale(0.5, 0.5)
+ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+ToggleButton.BackgroundColor3 = Theme.Background
+ToggleButton.Text = ""
+ToggleButton.Visible = false
+ToggleButton.Parent = ScreenGui
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 16)
+ToggleCorner.Parent = ToggleButton
+
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Color = Theme.Border
+ToggleStroke.Thickness = 1.5
+ToggleStroke.Parent = ToggleButton
+
+local ToggleTitle = Instance.new("TextLabel")
+ToggleTitle.Size = UDim2.new(1, 0, 1, 0)
+ToggleTitle.BackgroundTransparency = 1
+ToggleTitle.RichText = true
+ToggleTitle.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
+ToggleTitle.TextColor3 = Theme.Text
+ToggleTitle.Font = Enum.Font.GothamBold
+ToggleTitle.TextSize = 12
+ToggleTitle.Parent = ToggleButton
+
+-- Dragging Logic
+local MainDragging, MainDragStart, MainStartPosition = false, nil, nil
+Header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		MainDragging = true
+		MainDragStart = input.Position
+		MainStartPosition = MainFrame.Position
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if MainDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - MainDragStart
+		MainFrame.Position = UDim2.new(
+			MainStartPosition.X.Scale,
+			MainStartPosition.X.Offset + delta.X,
+			MainStartPosition.Y.Scale,
+			MainStartPosition.Y.Offset + delta.Y
+		)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		MainDragging = false
+	end
+end)
+
+-- Minimize System
+local function MinimizeUI()
+	if IsTransitioning or IsMinimized then return end
+	IsTransitioning = true
+	IsMinimized = true
+
+	Tween(MainFrame, 0.3, { Position = UDim2.fromScale(0.5, 0.5) })
+	task.wait(0.3)
+	MainFrame.Visible = false
+	ToggleButton.Visible = true
+	Tween(ToggleButton, 0.4, { Position = UDim2.fromOffset(Workspace.CurrentCamera.ViewportSize.X * 0.5, -5) })
+	task.wait(0.4)
+	IsTransitioning = false
+end
+
+local function RestoreUI()
+	if IsTransitioning or not IsMinimized then return end
+	IsTransitioning = true
+
+	Tween(ToggleButton, 0.3, { Position = UDim2.fromScale(0.5, 0.5) })
+	task.wait(0.3)
+	ToggleButton.Visible = false
+	MainFrame.Visible = true
+	Tween(MainFrame, 0.4, { Position = MAIN_HOME_POSITION })
+	task.wait(0.4)
+	IsMinimized = false
+	IsTransitioning = false
+end
+
+MinimizeButton.MouseButton1Click:Connect(MinimizeUI)
+ToggleButton.MouseButton1Click:Connect(RestoreUI)
+
+-- ============================================================================
+-- ANTI HIT SYSTEM
+-- ============================================================================
+local function CreateFakeAndTeleportReal()
+	local char = LocalPlayer.Character
+	if not char then return end
+
+	local root = char:FindFirstChild("HumanoidRootPart")
+	local realHumanoid = char:FindFirstChildOfClass("Humanoid")
+	if not root or not realHumanoid then return end
+
+	local originalCFrame = root.CFrame
+
+	char.Archivable = true
+	local fakeChar = char:Clone()
+	char.Archivable = false
+
+	fakeChar.Name = "FakeVisualPlayer"
+	for _, part in ipairs(fakeChar:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+			part.Anchored = true
+		elseif part:IsA("Script") or part:IsA("LocalScript") then
+			part:Destroy()
+		end
+	end
+
+	fakeChar.Parent = Workspace
+	fakeChar:PivotTo(originalCFrame)
+
+	local camera = Workspace.CurrentCamera
+	if realHumanoid and camera then camera.CameraSubject = fakeChar:FindFirstChildOfClass("Humanoid") or realHumanoid end
+
+	local targetCFrame = CFrame.new(SAFE_ZONE_POS + Vector3.new(0, 3, 0))
+	local startTime = os.clock()
+	local holdConnection
+
+	holdConnection = RunService.Heartbeat:Connect(function()
+		if not char or not root or not root.Parent then
+			if holdConnection then holdConnection:Disconnect() end
+			return
+		end
+
+		AdoptTeleportBaseline(targetCFrame)
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+		root.CFrame = targetCFrame
+
+		if os.clock() - startTime >= 0.3 then
+			holdConnection:Disconnect()
+		end
+	end)
+
+	task.delay(0.3, function()
+		if fakeChar then fakeChar:Destroy() end
+		if realHumanoid and camera then camera.CameraSubject = realHumanoid end
+	end)
+end
+
+local function ExecuteDropAndTeleport()
+	if isProcessing then return end
+	isProcessing = true
+
+	task.wait(0.1)
+	local char = LocalPlayer.Character
+
+	if isAntiHitActive and char then
+		for _, item in ipairs(char:GetChildren()) do
+			if item:IsA("Tool") then item.Parent = Workspace end
+		end
+		CreateFakeAndTeleportReal()
+	end
+
+	task.delay(0.1, function()
+		isProcessing = false
+	end)
+end
+
+ProximityPromptService.PromptTriggered:Connect(function(prompt, playerWhoTriggered)
+	if playerWhoTriggered == LocalPlayer then
+		if isAntiHitActive then
+			task.spawn(ExecuteDropAndTeleport)
+		end
+	end
+end)
+
+local function SetupCharacterDetection(char)
+	char.ChildAdded:Connect(function(child)
+		if not child:IsA("Tool") then
+			local name = string.lower(child.Name)
+			if string.find(name, "egg") or string.find(name, "telur") then
+				if isAntiHitActive then
+					task.spawn(ExecuteDropAndTeleport)
+				end
+			end
+		end
+	end)
+end
+
+if LocalPlayer.Character then SetupCharacterDetection(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+	task.wait(0.2)
+	SetupCharacterDetection(newChar)
+end)
