@@ -39,7 +39,7 @@ local activeBlock = nil
 
 -- SETTING ANTI HIT VARIABLES
 local safeZoneHoldDuration = 0.6 -- Default 0.6s (0.1 - 1.0s)
-local isReturnTeleport = true -- true: Teleport dua kali (bolak-balik), false: Teleport sekali
+local isReturnTeleport = true -- true: Bolak-balik (SafeZone -> Kembali), false: Sekali (SafeZone saja)
 local teleportDelayAfterEgg = 0.0 -- Default 0s delay (0.0 - 1.0s)
 
 local function UpdateOrCreateBlock(position)
@@ -241,7 +241,7 @@ end
 if not guiParented then return end
 
 local MAIN_WIDTH = 350
-local MAIN_HEIGHT = 275 -- Ditingkatkan sedikit agar pesan keterangan di bawah muat dengan rapi
+local MAIN_HEIGHT = 275
 local MAIN_HOME_POSITION = UDim2.fromScale(0.20, 0.43)
 
 local MainFrame = Instance.new("Frame")
@@ -297,7 +297,7 @@ Header.ZIndex = 10
 Header.Parent = MainFrame
 
 --------------------------------------------------------------------------------
--- LOGO CUSTOM (HURUF F STYLE)
+-- LOGO CUSTOM
 --------------------------------------------------------------------------------
 local LogoHolder = Instance.new("Frame")
 LogoHolder.Name = "LogoHolder"
@@ -817,7 +817,8 @@ end)
 --------------------------------------------------------------------------------
 -- TAB 2: SETTING ANTI HIT CONTENT
 --------------------------------------------------------------------------------
--- 1. HOLD SAFE ZONE SLIDER (0.1 - 1.0 SECONDS)
+
+-- 1. TAHAN KARAKTER DI SAFE ZONE (SLIDER 0.1 - 1.0 DETIK)
 local HoldCard = Instance.new("Frame")
 HoldCard.Name = "HoldCard"
 HoldCard.Size = UDim2.new(1, 0, 0, 46)
@@ -842,10 +843,10 @@ local HoldTitle = Instance.new("TextLabel")
 HoldTitle.Size = UDim2.new(1, -100, 0, 16)
 HoldTitle.Position = UDim2.fromOffset(15, 7)
 HoldTitle.BackgroundTransparency = 1
-HoldTitle.Text = "TAHAN DI SAFE ZONE"
+HoldTitle.Text = "TAHAN KARAKTER DI SAFE ZONE"
 HoldTitle.TextColor3 = Theme.Text
 HoldTitle.Font = Enum.Font.GothamBold
-HoldTitle.TextSize = 10
+HoldTitle.TextSize = 9
 HoldTitle.TextXAlignment = Enum.TextXAlignment.Left
 HoldTitle.ZIndex = 9
 HoldTitle.Parent = HoldCard
@@ -928,7 +929,7 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- 2. TELEPORT MODE TOGGLE (SEKALI / BOLAK BALIK)
+-- 2. MODE ANTI HIT (TOGGLE: BOLAK-BALIK / SEKALI)
 local TeleModeBtn = Instance.new("TextButton")
 TeleModeBtn.Name = "TeleModeBtn"
 TeleModeBtn.Size = UDim2.new(1, 0, 0, 46)
@@ -955,7 +956,7 @@ local TeleModeTitle = Instance.new("TextLabel")
 TeleModeTitle.Size = UDim2.new(1, -100, 0, 18)
 TeleModeTitle.Position = UDim2.fromOffset(15, 6)
 TeleModeTitle.BackgroundTransparency = 1
-TeleModeTitle.Text = "MODE TELEPORT"
+TeleModeTitle.Text = "MODE ANTI HIT"
 TeleModeTitle.TextColor3 = Theme.Text
 TeleModeTitle.Font = Enum.Font.GothamBold
 TeleModeTitle.TextSize = 10
@@ -998,7 +999,7 @@ TeleModeBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- 3. JEDA DELAY SEBELUM TELEPORT (0.0 - 1.0 SECONDS)
+-- 3. KAPAN ANTI HIT AKTIF SETELAH AMBIL EGG (SLIDER DELAY 0.0 - 1.0 DETIK)
 local DelayCard = Instance.new("Frame")
 DelayCard.Name = "DelayCard"
 DelayCard.Size = UDim2.new(1, 0, 0, 46)
@@ -1023,10 +1024,10 @@ local DelayTitle = Instance.new("TextLabel")
 DelayTitle.Size = UDim2.new(1, -100, 0, 16)
 DelayTitle.Position = UDim2.fromOffset(15, 7)
 DelayTitle.BackgroundTransparency = 1
-DelayTitle.Text = "DELAY TELEPORT (AMBIL EGG)"
+DelayTitle.Text = "KAPAN ANTI HIT AKTIF SETELAH AMBIL EGG"
 DelayTitle.TextColor3 = Theme.Text
 DelayTitle.Font = Enum.Font.GothamBold
-DelayTitle.TextSize = 9
+DelayTitle.TextSize = 8
 DelayTitle.TextXAlignment = Enum.TextXAlignment.Left
 DelayTitle.ZIndex = 9
 DelayTitle.Parent = DelayCard
@@ -1110,7 +1111,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 --------------------------------------------------------------------------------
--- 4. KETERANGAN DI BAGIAN BAWAH TAB SETTING
+-- KETERANGAN DI BAGIAN BAWAH TAB SETTING
 --------------------------------------------------------------------------------
 local DeliveryNoticeLabel = Instance.new("TextLabel")
 DeliveryNoticeLabel.Name = "DeliveryNoticeLabel"
