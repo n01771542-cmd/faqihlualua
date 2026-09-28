@@ -1111,24 +1111,6 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 --------------------------------------------------------------------------------
--- KETERANGAN DI BAGIAN BAWAH TAB SETTING
---------------------------------------------------------------------------------
-local DeliveryNoticeLabel = Instance.new("TextLabel")
-DeliveryNoticeLabel.Name = "DeliveryNoticeLabel"
-DeliveryNoticeLabel.Size = UDim2.new(1, 0, 0, 24)
-DeliveryNoticeLabel.Position = UDim2.fromOffset(0, 154)
-DeliveryNoticeLabel.BackgroundTransparency = 1
-DeliveryNoticeLabel.Text = "DELIVERY FAILED? AMBIL SATU EGG RANDOM DI AREA FOREST/LAKE"
-DeliveryNoticeLabel.TextColor3 = Theme.AccentLight
-DeliveryNoticeLabel.Font = Enum.Font.GothamBold
-DeliveryNoticeLabel.TextSize = 8
-DeliveryNoticeLabel.TextWrapped = true
-DeliveryNoticeLabel.TextXAlignment = Enum.TextXAlignment.Center
-DeliveryNoticeLabel.TextYAlignment = Enum.TextYAlignment.Center
-DeliveryNoticeLabel.ZIndex = 9
-DeliveryNoticeLabel.Parent = TabSettingsContent
-
---------------------------------------------------------------------------------
 -- UPDATE LOGIKA ANTI HIT & TELEPORT SAFE ZONE
 --------------------------------------------------------------------------------
 local function ExecuteDropAndTeleport()
@@ -1642,8 +1624,6 @@ DelayTrack.BackgroundTransparency = 1
 DelayFill.BackgroundTransparency = 1
 DelayKnob.BackgroundTransparency = 1
 
-DeliveryNoticeLabel.TextTransparency = 1
-
 Tween(MainFrame, 0.55, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT), BackgroundTransparency = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
 task.delay(0.05, function()
@@ -1712,6 +1692,4 @@ task.delay(0.22, function()
 	Tween(DelayTrack, 0.3, { BackgroundTransparency = 0 })
 	Tween(DelayFill, 0.3, { BackgroundTransparency = 0 })
 	Tween(DelayKnob, 0.3, { BackgroundTransparency = 0 })
-
-	Tween(DeliveryNoticeLabel, 0.35, { TextTransparency = 0 })
 end)
