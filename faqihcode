@@ -313,7 +313,7 @@ local MOVE_SPEED = 60
 local BLOCK_OFFSET_Y = 3.5
 local activeBlock = nil
 
-local safeZoneHoldDuration = 1.0
+local safeZoneHoldDuration = 1.2
 
 local function UpdateOrCreateBlock(position)
         if not activeBlock or not activeBlock.Parent then
@@ -1010,7 +1010,7 @@ AntiHitButton.MouseLeave:Connect(function()
 end)
 
 --------------------------------------------------------------------------------
--- LOGIKA INSTANT HOLD 1 DETIK & BYPASS FAST RESPAWN
+-- LOGIKA INSTANT HOLD 1.2 DETIK & BYPASS FAST RESPAWN
 --------------------------------------------------------------------------------
 local function FastBypassRespawn()
         pcall(function()
