@@ -10,7 +10,7 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 -- KOORDINAT TARGET
-local WAYPOINT_POS = Vector3.new(514.30, 71.69, -369.40) -- Koordinat Baru (Transit 2x agar tidak nabrak tembok)
+local WAYPOINT_POS = Vector3.new(514.30, 71.69, -369.40) -- Titik Transit
 local TARGET_POS = Vector3.new(565.74, 71.69, -368.14)   -- Safe Zone Awal
 local FINAL_POS = Vector3.new(518.55, 71.69, -365.52)    -- Titik Akhir
 
@@ -44,7 +44,7 @@ end)
 local isAutoEggGrabActive = false
 local ignoredEggs = {}
 
--- Fungsi Helper Teleportasi Kunci Posisi
+-- Helper Teleportasi Posisi (Dipakai untuk titik akhir / kunci posisi)
 local function TeleportToTarget(char, targetPos)
         if not char then return end
         local root = char:WaitForChild("HumanoidRootPart", 5)
@@ -58,6 +58,36 @@ local function TeleportToTarget(char, targetPos)
                         RunService.Stepped:Wait()
                 end
         end
+end
+
+-- LOGIC: FAST GLIDE MOVEMENT
+local function FastGlideTo(char, targetPos, speed)
+        if not char then return end
+        local root = char:WaitForChild("HumanoidRootPart", 5)
+        if not root then return end
+
+        speed = speed or 250 -- Kecepatan glide (semakin besar semakin cepat)
+
+        local attachment = Instance.new("Attachment")
+        attachment.Parent = root
+
+        local lv = Instance.new("LinearVelocity")
+        lv.MaxForce = 9999999
+        lv.VectorVelocity = Vector3.zero
+        lv.RelativeTo = Enum.ActuatorRelativeTo.World
+        lv.Attachment0 = attachment
+        lv.Parent = root
+
+        while (root.Position - targetPos).Magnitude > 4 and char.Parent do
+                local dir = (targetPos - root.Position).Unit
+                lv.VectorVelocity = dir * speed
+                RunService.Stepped:Wait()
+        end
+
+        lv:Destroy()
+        attachment:Destroy()
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.CFrame = CFrame.new(targetPos)
 end
 
 -- LOGIC: GET FIELD EGGS
@@ -88,7 +118,7 @@ local function GetNearestFieldEgg()
         return closestEgg
 end
 
--- LOGIC: INSTANT GRAB (DIRECT NETWORK & PROXIMITY PROMPT FIRE)
+-- LOGIC: INSTANT GRAB
 local function InstantGrabEgg(record)
         if not record or not record.Uid then return false end
 
@@ -96,7 +126,6 @@ local function InstantGrabEgg(record)
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return false end
 
-        -- 1. Direct Network Invoke
         local slotKey = nil
         if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
                 slotKey = AreaEggSlotIdentity.SlotKey(record.AreaId, record.NestId)
@@ -114,7 +143,6 @@ local function InstantGrabEgg(record)
                 end
         end)
 
-        -- 2. Instant Proximity Prompt Trigger (Bypass Hold Duration)
         for _, d in ipairs(Workspace:GetDescendants()) do
                 if d:IsA("ProximityPrompt") and d.Name == "CarryAreaEgg" and d.Enabled then
                         local p = d.Parent
@@ -136,13 +164,12 @@ local function TriggerAutoGrabEggProcess()
         if not isAutoEggGrabActive then return end
 
         task.spawn(function()
-                task.wait(0.1) -- Jeda setelah teleport awal
+                task.wait(0.1)
                 local targetEgg = GetNearestFieldEgg()
                 if targetEgg then
                         InstantGrabEgg(targetEgg)
                 end
 
-                -- JEDA 0.1 DETIK DARI PENGAMBILAN EGG DILANJUTKAN TELEPORT KE TITIK AKHIR
                 task.wait(0.1)
                 if LocalPlayer.Character then
                         TeleportToTarget(LocalPlayer.Character, FINAL_POS)
@@ -306,7 +333,7 @@ if LocalPlayer.Character then
 end
 
 --------------------------------------------------------------------------------
--- FAST RESPAWN & MULTI-STEP TELEPORT TO SAFE ZONE
+-- FAST RESPAWN & FAST GLIDE MOVEMENT TO SAFE ZONE
 --------------------------------------------------------------------------------
 local isAntiHitActive = false
 local isProcessing = false
@@ -316,20 +343,13 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
 
         if isAntiHitActive then
                 task.spawn(function()
-                        -- Step 1: Teleport PERTAMA ke Waypoint Baru
-                        TeleportToTarget(newChar, WAYPOINT_POS)
-                        task.wait(0.08)
+                        -- Step 1: Meluncur (Glide) cepat ke Waypoint Baru
+                        FastGlideTo(newChar, WAYPOINT_POS, 250)
 
-                        -- Step 2: Teleport KEDUA ke Waypoint Baru (Double Teleport)
-                        TeleportToTarget(newChar, WAYPOINT_POS)
-                        task.wait(0.08)
+                        -- Step 2: Meluncur (Glide) cepat ke Safe Zone
+                        FastGlideTo(newChar, TARGET_POS, 250)
 
-                        -- Step 3: Teleport ke Koordinat Awal (Safe Zone)
-                        TeleportToTarget(newChar, TARGET_POS)
-                        task.wait(0.1)
-                        TeleportToTarget(newChar, TARGET_POS)
-
-                        -- Step 4: Jalankan Auto Grab Egg & Teleport ke Titik Akhir
+                        -- Step 3: Jalankan Auto Grab Egg & Teleport ke Titik Akhir
                         isAutoEggGrabActive = true
                         TriggerAutoGrabEggProcess()
                 end)
