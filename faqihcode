@@ -4,30 +4,151 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Koordinat Target Safe Zone
-local TARGET_POS = Vector3.new(527.05, 71.68, -368.57)
+-- KOORDINAT TARGET
+local WAYPOINT_POS = Vector3.new(514.30, 71.69, -369.40) -- Koordinat Baru (Transit 2x agar tidak nabrak tembok)
+local TARGET_POS = Vector3.new(565.74, 71.69, -368.14)   -- Safe Zone Awal
+local FINAL_POS = Vector3.new(518.55, 71.69, -365.52)    -- Titik Akhir
 
 local GUI_NAME = "LeonHubGui"
 
 pcall(function()
-	local oldCore = CoreGui:FindFirstChild(GUI_NAME)
-	if oldCore then
-		oldCore:Destroy()
-	end
+        local oldCore = CoreGui:FindFirstChild(GUI_NAME)
+        if oldCore then oldCore:Destroy() end
 end)
 
 pcall(function()
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if playerGui then
-		local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
-		if oldPlayer then
-			oldPlayer:Destroy()
-		end
-	end
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+                local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
+                if oldPlayer then oldPlayer:Destroy() end
+        end
 end)
+
+--------------------------------------------------------------------------------
+-- MODULE INTEGRATION & INSTANT EGG GRAB LOGIC
+--------------------------------------------------------------------------------
+local EggState, PlotState, AreaEggSlotIdentity
+pcall(function() EggState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("EggState")) end)
+pcall(function() PlotState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("PlotState")) end)
+pcall(function()
+        AreaEggSlotIdentity = (ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Util") and require(ReplicatedStorage.Shared.Util.AreaEggSlotIdentity))
+                or (ReplicatedStorage:FindFirstChild("Util") and require(ReplicatedStorage.Util.AreaEggSlotIdentity))
+                or (ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Utils") and require(ReplicatedStorage.Shared.Utils.AreaEggSlotIdentity))
+end)
+
+local isAutoEggGrabActive = false
+local ignoredEggs = {}
+
+-- Fungsi Helper Teleportasi Kunci Posisi
+local function TeleportToTarget(char, targetPos)
+        if not char then return end
+        local root = char:WaitForChild("HumanoidRootPart", 5)
+        if root then
+                local targetCFrame = CFrame.new(targetPos)
+                for _ = 1, 6 do
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                        root.CFrame = targetCFrame
+                        char:PivotTo(targetCFrame)
+                        RunService.Stepped:Wait()
+                end
+        end
+end
+
+-- LOGIC: GET FIELD EGGS
+local function GetNearestFieldEgg()
+        if not EggState or not EggState.ReadFieldEggs then return nil end
+        local ok, snapshot = pcall(EggState.ReadFieldEggs)
+        if not ok or not snapshot or not snapshot.Records then return nil end
+
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        local closestEgg = nil
+        local shortestDist = math.huge
+
+        for _, record in ipairs(snapshot.Records) do
+                if record.State == "Slot" and record.BoundsCFrame then
+                        local isIgnored = ignoredEggs[record.Uid] and (os.clock() - ignoredEggs[record.Uid] < 2.5)
+                        if not isIgnored then
+                                local dist = (record.BoundsCFrame.Position - root.Position).Magnitude
+                                if dist < shortestDist then
+                                        shortestDist = dist
+                                        closestEgg = record
+                                end
+                        end
+                end
+        end
+        return closestEgg
+end
+
+-- LOGIC: INSTANT GRAB (DIRECT NETWORK & PROXIMITY PROMPT FIRE)
+local function InstantGrabEgg(record)
+        if not record or not record.Uid then return false end
+
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return false end
+
+        -- 1. Direct Network Invoke
+        local slotKey = nil
+        if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
+                slotKey = AreaEggSlotIdentity.SlotKey(record.AreaId, record.NestId)
+        end
+
+        local net = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking")
+        local carryRemote = net and net:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
+        if carryRemote then 
+                pcall(function() carryRemote:InvokeServer({ Uid = record.Uid, FirstAreaSlotKey = slotKey }) end) 
+        end
+
+        pcall(function()
+                if EggState and EggState.CarryFieldEgg then 
+                        EggState.CarryFieldEgg(record.Uid, slotKey) 
+                end
+        end)
+
+        -- 2. Instant Proximity Prompt Trigger (Bypass Hold Duration)
+        for _, d in ipairs(Workspace:GetDescendants()) do
+                if d:IsA("ProximityPrompt") and d.Name == "CarryAreaEgg" and d.Enabled then
+                        local p = d.Parent
+                        if p:IsA("Attachment") then p = p.Parent end
+                        if p and (p.Position - root.Position).Magnitude < 15 then
+                                d.HoldDuration = 0
+                                pcall(function() fireproximityprompt(d) end)
+                                break
+                        end
+                end
+        end
+
+        ignoredEggs[record.Uid] = os.clock()
+        return true
+end
+
+-- LOGIC: AUTO AMBIL EGG THREAD & TELEPORT KE KOORDINAT AKHIR
+local function TriggerAutoGrabEggProcess()
+        if not isAutoEggGrabActive then return end
+
+        task.spawn(function()
+                task.wait(0.1) -- Jeda setelah teleport awal
+                local targetEgg = GetNearestFieldEgg()
+                if targetEgg then
+                        InstantGrabEgg(targetEgg)
+                end
+
+                -- JEDA 0.1 DETIK DARI PENGAMBILAN EGG DILANJUTKAN TELEPORT KE TITIK AKHIR
+                task.wait(0.1)
+                if LocalPlayer.Character then
+                        TeleportToTarget(LocalPlayer.Character, FINAL_POS)
+                end
+        end)
+end
 
 --------------------------------------------------------------------------------
 -- INFINITE BLOCK GENERATOR & FLY SYSTEM
@@ -37,194 +158,213 @@ local MOVE_SPEED = 60
 local BLOCK_OFFSET_Y = 3.5
 local activeBlock = nil
 
--- SETTING ANTI HIT VARIABLES
-local safeZoneHoldDuration = 0.6 -- Default 0.6s (0.1 - 1.0s)
-local isReturnTeleport = true -- true: Bolak-balik (SafeZone -> Kembali), false: Sekali (SafeZone saja)
-local teleportDelayAfterEgg = 0.0 -- Default 0s delay (0.0 - 1.0s)
+local safeZoneHoldDuration = 1.0
 
 local function UpdateOrCreateBlock(position)
-	if not activeBlock or not activeBlock.Parent then
-		local block = Instance.new("Part")
-		block.Name = "MovingDynamicBlock"
-		block.Size = Vector3.new(6, 1, 6)
-		block.Transparency = 1
-		block.CanCollide = true
-		block.Anchored = true
-		block.Material = Enum.Material.SmoothPlastic
-		block.Parent = workspace
-		activeBlock = block
-	end
+        if not activeBlock or not activeBlock.Parent then
+                local block = Instance.new("Part")
+                block.Name = "MovingDynamicBlock"
+                block.Size = Vector3.new(6, 1, 6)
+                block.Transparency = 1
+                block.CanCollide = true
+                block.Anchored = true
+                block.Material = Enum.Material.SmoothPlastic
+                block.Parent = workspace
+                activeBlock = block
+        end
 
-	activeBlock.CFrame = CFrame.new(position)
-	return activeBlock
+        activeBlock.CFrame = CFrame.new(position)
+        return activeBlock
 end
 
 local function RemoveBlock()
-	if activeBlock and activeBlock.Parent then
-		activeBlock:Destroy()
-		activeBlock = nil
-	end
+        if activeBlock and activeBlock.Parent then
+                activeBlock:Destroy()
+                activeBlock = nil
+        end
 end
 
-local function ApplyFakeDeathState(character)
-	if not character then return end
+--------------------------------------------------------------------------------
+-- BYPASS STATE & METATABLE
+--------------------------------------------------------------------------------
+local function ApplyInstantBypassState(character)
+        if not character then return end
 
-	local humanoid = character:WaitForChild("Humanoid", 5)
-	local root = character:WaitForChild("HumanoidRootPart", 5)
-	if not humanoid or not root then return end
+        local humanoid = character:WaitForChild("Humanoid", 5)
+        local root = character:WaitForChild("HumanoidRootPart", 5)
+        if not humanoid or not root then return end
 
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
-	humanoid.PlatformStand = isFlyActive
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
 
-	humanoid.Health = humanoid.MaxHealth
-	humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-		if humanoid.Health < humanoid.MaxHealth then
-			humanoid.Health = humanoid.MaxHealth
-		end
-	end)
+        workspace.CurrentCamera.CameraSubject = humanoid
 
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanTouch = true
-			part.Touched:Connect(function(hit)
-				if hit and hit.Parent then
-					local lowerName = string.lower(hit.Name)
-					local lowerParent = string.lower(hit.Parent.Name)
+        for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                        part.CanTouch = true
+                        part.Touched:Connect(function(hit)
+                                if hit and hit.Parent then
+                                        local lowerName = string.lower(hit.Name)
+                                        local lowerParent = string.lower(hit.Parent.Name)
 
-					if string.find(lowerName, "kill") or string.find(lowerName, "lava") or string.find(lowerName, "void") or string.find(lowerName, "anticheat") or string.find(lowerParent, "anticheat") then
-						hit.CanTouch = false
-					end
-				end
-			end)
-		end
-	end
+                                        if string.find(lowerName, "kill") or string.find(lowerName, "lava") or string.find(lowerName, "void") or string.find(lowerName, "anticheat") or string.find(lowerParent, "anticheat") then
+                                                hit.CanTouch = false
+                                        end
+                                end
+                        end)
+                end
+        end
 end
 
 -- METATABLE BYPASS
 if getrawmetatable and setreadonly then
-	local gmt = getrawmetatable(game)
-	local oldNamecall = gmt.__namecall
-	setreadonly(gmt, false)
+        local gmt = getrawmetatable(game)
+        local oldNamecall = gmt.__namecall
+        setreadonly(gmt, false)
 
-	gmt.__namecall = newcclosure(function(self, ...)
-		local method = getnamecallmethod()
+        gmt.__namecall = newcclosure(function(self, ...)
+                local method = getnamecallmethod()
 
-		if method == "Kick" or method == "kick" then
-			return nil
-		end
+                if method == "Kick" or method == "kick" then
+                        return nil
+                end
 
-		if method == "FireServer" or method == "InvokeServer" then
-			local name = string.lower(tostring(self.Name))
-			if string.find(name, "anticheat") or string.find(name, "ban") or string.find(name, "detect") or string.find(name, "check") or string.find(name, "flag") or string.find(name, "died") or string.find(name, "kill") then
-				return nil
-			end
-		end
+                if method == "FireServer" or method == "InvokeServer" then
+                        local name = string.lower(tostring(self.Name))
+                        if string.find(name, "anticheat") or string.find(name, "ban") or string.find(name, "detect") or string.find(name, "check") or string.find(name, "flag") or string.find(name, "died") or string.find(name, "kill") then
+                                return nil
+                        end
+                end
 
-		return oldNamecall(self, ...)
-	end)
+                return oldNamecall(self, ...)
+        end)
 
-	setreadonly(gmt, true)
+        setreadonly(gmt, true)
 end
 
 -- RUNSERVICE FLY
 RunService.Heartbeat:Connect(function(deltaTime)
-	if not isFlyActive then 
-		RemoveBlock()
-		return 
-	end
+        if not isFlyActive then 
+                RemoveBlock()
+                return 
+        end
 
-	local char = LocalPlayer.Character
-	if not char then return end
+        local char = LocalPlayer.Character
+        if not char then return end
 
-	local root = char:FindFirstChild("HumanoidRootPart")
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local camera = workspace.CurrentCamera
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local camera = workspace.CurrentCamera
 
-	if root and hum and camera then
-		hum.PlatformStand = true
+        if root and hum and camera then
+                hum.PlatformStand = true
 
-		local moveDir = Vector3.zero
+                local moveDir = Vector3.zero
 
-		if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
-		if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
-		if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
-		if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
 
-		if moveDir.Magnitude == 0 and hum.MoveDirection.Magnitude > 0 then
-			local localMove = camera.CFrame:VectorToObjectSpace(hum.MoveDirection)
-			moveDir = Vector3.new(localMove.X, 0, localMove.Z)
-		end
+                if moveDir.Magnitude == 0 and hum.MoveDirection.Magnitude > 0 then
+                        local localMove = camera.CFrame:VectorToObjectSpace(hum.MoveDirection)
+                        moveDir = Vector3.new(localMove.X, 0, localMove.Z)
+                end
 
-		local verticalMove = 0
-		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalMove = verticalMove + 1 end
-		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalMove = verticalMove - 1 end
+                local verticalMove = 0
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalMove = verticalMove + 1 end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalMove = verticalMove - 1 end
 
-		root.AssemblyLinearVelocity = Vector3.zero
-		root.AssemblyAngularVelocity = Vector3.zero
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
 
-		if moveDir.Magnitude > 0 or verticalMove ~= 0 then
-			if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
+                if moveDir.Magnitude > 0 or verticalMove ~= 0 then
+                        if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
 
-			local camCFrame = camera.CFrame
-			local worldDirection = (camCFrame.RightVector * moveDir.X) 
-				+ (camCFrame.LookVector * -moveDir.Z) 
-				+ (Vector3.new(0, 1, 0) * verticalMove)
+                        local camCFrame = camera.CFrame
+                        local worldDirection = (camCFrame.RightVector * moveDir.X) 
+                                + (camCFrame.LookVector * -moveDir.Z) 
+                                + (Vector3.new(0, 1, 0) * verticalMove)
 
-			if worldDirection.Magnitude > 0 then worldDirection = worldDirection.Unit end
+                        if worldDirection.Magnitude > 0 then worldDirection = worldDirection.Unit end
 
-			local targetPos = root.Position + (worldDirection * (MOVE_SPEED * deltaTime))
-			local lookAtPos = targetPos + Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z)
+                        local targetPos = root.Position + (worldDirection * (MOVE_SPEED * deltaTime))
+                        local lookAtPos = targetPos + Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z)
 
-			root.CFrame = CFrame.new(targetPos, lookAtPos)
-			UpdateOrCreateBlock(targetPos - Vector3.new(0, BLOCK_OFFSET_Y, 0))
-		else
-			UpdateOrCreateBlock(root.Position - Vector3.new(0, BLOCK_OFFSET_Y, 0))
-		end
-	end
+                        root.CFrame = CFrame.new(targetPos, lookAtPos)
+                        UpdateOrCreateBlock(targetPos - Vector3.new(0, BLOCK_OFFSET_Y, 0))
+                else
+                        UpdateOrCreateBlock(root.Position - Vector3.new(0, BLOCK_OFFSET_Y, 0))
+                end
+        end
 end)
 
 if LocalPlayer.Character then
-	task.spawn(function() ApplyFakeDeathState(LocalPlayer.Character) end)
+        task.spawn(function() ApplyInstantBypassState(LocalPlayer.Character) end)
 end
 
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-	task.wait(0.2)
-	ApplyFakeDeathState(newChar)
-end)
-
 --------------------------------------------------------------------------------
--- MAIN UI SETUP & TAB SYSTEM
+-- FAST RESPAWN & MULTI-STEP TELEPORT TO SAFE ZONE
 --------------------------------------------------------------------------------
 local isAntiHitActive = false
 local isProcessing = false
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+        ApplyInstantBypassState(newChar)
+
+        if isAntiHitActive then
+                task.spawn(function()
+                        -- Step 1: Teleport PERTAMA ke Waypoint Baru
+                        TeleportToTarget(newChar, WAYPOINT_POS)
+                        task.wait(0.08)
+
+                        -- Step 2: Teleport KEDUA ke Waypoint Baru (Double Teleport)
+                        TeleportToTarget(newChar, WAYPOINT_POS)
+                        task.wait(0.08)
+
+                        -- Step 3: Teleport ke Koordinat Awal (Safe Zone)
+                        TeleportToTarget(newChar, TARGET_POS)
+                        task.wait(0.1)
+                        TeleportToTarget(newChar, TARGET_POS)
+
+                        -- Step 4: Jalankan Auto Grab Egg & Teleport ke Titik Akhir
+                        isAutoEggGrabActive = true
+                        TriggerAutoGrabEggProcess()
+                end)
+        end
+end)
+
+--------------------------------------------------------------------------------
+-- MAIN UI SETUP 
+--------------------------------------------------------------------------------
 local IsMinimized = false
 local IsTransitioning = false
 
 local Theme = {
-	Background = Color3.fromRGB(7, 10, 17),
-	Background2 = Color3.fromRGB(10, 14, 23),
-	Card = Color3.fromRGB(14, 20, 32),
-	CardHover = Color3.fromRGB(20, 29, 46),
-	Accent = Color3.fromRGB(37, 120, 255),
-	AccentLight = Color3.fromRGB(82, 151, 255),
-	Text = Color3.fromRGB(245, 247, 255),
-	TextSecondary = Color3.fromRGB(151, 163, 186),
-	TextMuted = Color3.fromRGB(88, 100, 123),
-	Border = Color3.fromRGB(34, 48, 73),
-	Off = Color3.fromRGB(20, 27, 40),
-	OffStroke = Color3.fromRGB(50, 64, 88),
-	On = Color3.fromRGB(18, 48, 43),
-	OnStroke = Color3.fromRGB(46, 146, 116),
-	OnAccent = Color3.fromRGB(76, 220, 163),
+        Background = Color3.fromRGB(7, 10, 17),
+        Card = Color3.fromRGB(14, 20, 32),
+        CardHover = Color3.fromRGB(20, 29, 46),
+        Accent = Color3.fromRGB(37, 120, 255),
+        AccentLight = Color3.fromRGB(82, 151, 255),
+        Text = Color3.fromRGB(245, 247, 255),
+        TextSecondary = Color3.fromRGB(151, 163, 186),
+        TextMuted = Color3.fromRGB(88, 100, 123),
+        Border = Color3.fromRGB(34, 48, 73),
+        Off = Color3.fromRGB(20, 27, 40),
+        OffStroke = Color3.fromRGB(50, 64, 88),
+        On = Color3.fromRGB(18, 48, 43),
+        OnStroke = Color3.fromRGB(46, 146, 116),
+        OnAccent = Color3.fromRGB(76, 220, 163),
 }
 
 local function Tween(object, duration, properties, style, direction)
-	if not object or not object.Parent then return end
-	local info = TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quart, direction or Enum.EasingDirection.Out)
-	local tween = TweenService:Create(object, info, properties)
-	tween:Play()
-	return tween
+        if not object or not object.Parent then return end
+        local info = TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quart, direction or Enum.EasingDirection.Out)
+        local tween = TweenService:Create(object, info, properties)
+        tween:Play()
+        return tween
 end
 
 local ScreenGui = Instance.new("ScreenGui")
@@ -236,12 +376,12 @@ ScreenGui.DisplayOrder = 999
 local guiParented = false
 pcall(function() ScreenGui.Parent = CoreGui guiParented = ScreenGui.Parent ~= nil end)
 if not guiParented then
-	pcall(function() ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") guiParented = ScreenGui.Parent ~= nil end)
+        pcall(function() ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") guiParented = ScreenGui.Parent ~= nil end)
 end
 if not guiParented then return end
 
 local MAIN_WIDTH = 350
-local MAIN_HEIGHT = 275
+local MAIN_HEIGHT = 215
 local MAIN_HOME_POSITION = UDim2.fromScale(0.20, 0.43)
 
 local MainFrame = Instance.new("Frame")
@@ -269,9 +409,9 @@ MainStroke.Parent = MainFrame
 local BackgroundGradient = Instance.new("UIGradient")
 BackgroundGradient.Rotation = 135
 BackgroundGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 13, 22)),
-	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 12, 20)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 20, 34))
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 13, 22)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 12, 20)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 20, 34))
 })
 BackgroundGradient.Parent = MainFrame
 
@@ -296,9 +436,6 @@ Header.Active = true
 Header.ZIndex = 10
 Header.Parent = MainFrame
 
---------------------------------------------------------------------------------
--- LOGO CUSTOM
---------------------------------------------------------------------------------
 local LogoHolder = Instance.new("Frame")
 LogoHolder.Name = "LogoHolder"
 LogoHolder.Size = UDim2.fromOffset(34, 34)
@@ -397,96 +534,17 @@ MinStroke.Thickness = 1
 MinStroke.Transparency = 0.25
 MinStroke.Parent = MinimizeButton
 
---------------------------------------------------------------------------------
--- TAB NAVIGATION SYSTEM
---------------------------------------------------------------------------------
-local TabBar = Instance.new("Frame")
-TabBar.Name = "TabBar"
-TabBar.Size = UDim2.new(1, -30, 0, 28)
-TabBar.Position = UDim2.fromOffset(15, 50)
-TabBar.BackgroundColor3 = Theme.Card
-TabBar.BorderSizePixel = 0
-TabBar.ZIndex = 10
-TabBar.Parent = MainFrame
-
-local TabBarCorner = Instance.new("UICorner")
-TabBarCorner.CornerRadius = UDim.new(0, 8)
-TabBarCorner.Parent = TabBar
-
-local TabMainBtn = Instance.new("TextButton")
-TabMainBtn.Name = "TabMainBtn"
-TabMainBtn.Size = UDim2.new(0.5, -3, 1, -4)
-TabMainBtn.Position = UDim2.fromOffset(2, 2)
-TabMainBtn.BackgroundColor3 = Theme.Accent
-TabMainBtn.BorderSizePixel = 0
-TabMainBtn.Text = "Main"
-TabMainBtn.TextColor3 = Theme.Text
-TabMainBtn.Font = Enum.Font.GothamBold
-TabMainBtn.TextSize = 10
-TabMainBtn.ZIndex = 11
-TabMainBtn.Parent = TabBar
-
-local TabMainCorner = Instance.new("UICorner")
-TabMainCorner.CornerRadius = UDim.new(0, 6)
-TabMainCorner.Parent = TabMainBtn
-
-local TabSettingsBtn = Instance.new("TextButton")
-TabSettingsBtn.Name = "TabSettingsBtn"
-TabSettingsBtn.Size = UDim2.new(0.5, -3, 1, -4)
-TabSettingsBtn.Position = UDim2.new(0.5, 1, 0, 2)
-TabSettingsBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-TabSettingsBtn.BackgroundTransparency = 1
-TabSettingsBtn.BorderSizePixel = 0
-TabSettingsBtn.Text = "Setting Anti Hit"
-TabSettingsBtn.TextColor3 = Theme.TextMuted
-TabSettingsBtn.Font = Enum.Font.GothamBold
-TabSettingsBtn.TextSize = 10
-TabSettingsBtn.ZIndex = 11
-TabSettingsBtn.Parent = TabBar
-
-local TabSettingsCorner = Instance.new("UICorner")
-TabSettingsCorner.CornerRadius = UDim.new(0, 6)
-TabSettingsCorner.Parent = TabSettingsBtn
-
--- CONTAINER TAB CONTENT
 local TabMainContent = Instance.new("Frame")
 TabMainContent.Name = "TabMainContent"
-TabMainContent.Size = UDim2.new(1, -30, 0, 180)
-TabMainContent.Position = UDim2.fromOffset(15, 84)
+TabMainContent.Size = UDim2.new(1, -30, 0, 150)
+TabMainContent.Position = UDim2.fromOffset(15, 50)
 TabMainContent.BackgroundTransparency = 1
 TabMainContent.Visible = true
 TabMainContent.ZIndex = 5
 TabMainContent.Parent = MainFrame
 
-local TabSettingsContent = Instance.new("Frame")
-TabSettingsContent.Name = "TabSettingsContent"
-TabSettingsContent.Size = UDim2.new(1, -30, 0, 180)
-TabSettingsContent.Position = UDim2.fromOffset(15, 84)
-TabSettingsContent.BackgroundTransparency = 1
-TabSettingsContent.Visible = false
-TabSettingsContent.ZIndex = 5
-TabSettingsContent.Parent = MainFrame
-
-TabMainBtn.MouseButton1Click:Connect(function()
-	TabMainContent.Visible = true
-	TabSettingsContent.Visible = false
-	Tween(TabMainBtn, 0.2, { BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0 })
-	TabMainBtn.TextColor3 = Theme.Text
-	Tween(TabSettingsBtn, 0.2, { BackgroundTransparency = 1 })
-	TabSettingsBtn.TextColor3 = Theme.TextMuted
-end)
-
-TabSettingsBtn.MouseButton1Click:Connect(function()
-	TabMainContent.Visible = false
-	TabSettingsContent.Visible = true
-	Tween(TabSettingsBtn, 0.2, { BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0 })
-	TabSettingsBtn.TextColor3 = Theme.Text
-	Tween(TabMainBtn, 0.2, { BackgroundTransparency = 1 })
-	TabMainBtn.TextColor3 = Theme.TextMuted
-end)
-
 --------------------------------------------------------------------------------
--- TAB 1: MAIN CONTENT
+-- MAIN CONTENT
 --------------------------------------------------------------------------------
 local AntiHitButton = Instance.new("TextButton")
 AntiHitButton.Name = "AntiHitButton"
@@ -527,7 +585,7 @@ local AntiHitTitle = Instance.new("TextLabel")
 AntiHitTitle.Size = UDim2.new(1, -100, 0, 18)
 AntiHitTitle.Position = UDim2.fromOffset(32, 6)
 AntiHitTitle.BackgroundTransparency = 1
-AntiHitTitle.Text = "ANTI HIT GUARDS"
+AntiHitTitle.Text = "Instant teleport v1"
 AntiHitTitle.TextColor3 = Theme.Text
 AntiHitTitle.Font = Enum.Font.GothamBold
 AntiHitTitle.TextSize = 11
@@ -744,452 +802,150 @@ local MAX_SPEED = 450
 local isDraggingSlider = false
 
 local function UpdateSliderInput(input)
-	local trackAbsoluteSize = SliderTrack.AbsoluteSize.X
-	local trackAbsolutePosition = SliderTrack.AbsolutePosition.X
-	local mouseX = input.Position.X
+        local trackAbsoluteSize = SliderTrack.AbsoluteSize.X
+        local trackAbsolutePosition = SliderTrack.AbsolutePosition.X
+        local mouseX = input.Position.X
 
-	local relativeX = math.clamp(mouseX - trackAbsolutePosition, 0, trackAbsoluteSize)
-	local alpha = relativeX / trackAbsoluteSize
+        local relativeX = math.clamp(mouseX - trackAbsolutePosition, 0, trackAbsoluteSize)
+        local alpha = relativeX / trackAbsoluteSize
 
-	local calculatedSpeed = math.floor(MIN_SPEED + (alpha * (MAX_SPEED - MIN_SPEED)))
-	MOVE_SPEED = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
+        local calculatedSpeed = math.floor(MIN_SPEED + (alpha * (MAX_SPEED - MIN_SPEED)))
+        MOVE_SPEED = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
 
-	SliderFill.Size = UDim2.new((MOVE_SPEED - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1, 0)
-	SliderValueLabel.Text = tostring(MOVE_SPEED)
+        SliderFill.Size = UDim2.new((MOVE_SPEED - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1, 0)
+        SliderValueLabel.Text = tostring(MOVE_SPEED)
 end
 
 SliderTrack.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingSlider = true
-		Tween(SliderStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
-		UpdateSliderInput(input)
-	end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDraggingSlider = true
+                Tween(SliderStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
+                UpdateSliderInput(input)
+        end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if isDraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		UpdateSliderInput(input)
-	end
+        if isDraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                UpdateSliderInput(input)
+        end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		if isDraggingSlider then
-			isDraggingSlider = false
-			Tween(SliderStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-		end
-	end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                if isDraggingSlider then
+                        isDraggingSlider = false
+                        Tween(SliderStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
+                end
+        end
 end)
 
--- Hover Visual Effect untuk Button Tab Main
 FlyBetaButton.MouseEnter:Connect(function()
-	if IsTransitioning then return end
-	Tween(FlyBetaButton, 0.16, { BackgroundColor3 = isFlyActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-	Tween(FlyBetaStroke, 0.16, { Transparency = 0, Color = isFlyActive and Theme.OnStroke or Theme.Accent })
+        if IsTransitioning then return end
+        Tween(FlyBetaButton, 0.16, { BackgroundColor3 = isFlyActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
+        Tween(FlyBetaStroke, 0.16, { Transparency = 0, Color = isFlyActive and Theme.OnStroke or Theme.Accent })
 end)
 
 FlyBetaButton.MouseLeave:Connect(function()
-	if isFlyActive then
-		Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.On })
-		Tween(FlyBetaStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-	else
-		Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.Off })
-		Tween(FlyBetaStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-	end
+        if isFlyActive then
+                Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.On })
+                Tween(FlyBetaStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
+        else
+                Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.Off })
+                Tween(FlyBetaStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
+        end
 end)
 
 AntiHitButton.MouseEnter:Connect(function()
-	if IsTransitioning then return end
-	Tween(AntiHitButton, 0.16, { BackgroundColor3 = isAntiHitActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-	Tween(AntiHitStroke, 0.16, { Transparency = 0, Color = isAntiHitActive and Theme.OnStroke or Theme.Accent })
+        if IsTransitioning then return end
+        Tween(AntiHitButton, 0.16, { BackgroundColor3 = isAntiHitActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
+        Tween(AntiHitStroke, 0.16, { Transparency = 0, Color = isAntiHitActive and Theme.OnStroke or Theme.Accent })
 end)
 
 AntiHitButton.MouseLeave:Connect(function()
-	if isAntiHitActive then
-		Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.On })
-		Tween(AntiHitStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-	else
-		Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.Off })
-		Tween(AntiHitStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-	end
+        if isAntiHitActive then
+                Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.On })
+                Tween(AntiHitStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
+        else
+                Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.Off })
+                Tween(AntiHitStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
+        end
 end)
 
 --------------------------------------------------------------------------------
--- TAB 2: SETTING ANTI HIT CONTENT
+-- LOGIKA INSTANT HOLD 1 DETIK & BYPASS FAST RESPAWN
 --------------------------------------------------------------------------------
+local function FastBypassRespawn()
+        pcall(function()
+                LocalPlayer:LoadCharacter()
+        end)
+end
 
--- 1. TAHAN KARAKTER DI SAFE ZONE (SLIDER 0.1 - 1.0 DETIK)
-local HoldCard = Instance.new("Frame")
-HoldCard.Name = "HoldCard"
-HoldCard.Size = UDim2.new(1, 0, 0, 46)
-HoldCard.Position = UDim2.fromOffset(0, 0)
-HoldCard.BackgroundColor3 = Theme.Off
-HoldCard.BorderSizePixel = 0
-HoldCard.ZIndex = 7
-HoldCard.Parent = TabSettingsContent
+local function ExecuteDropAndFastRespawn()
+        if isProcessing or not isAntiHitActive then return end
+        isProcessing = true
+        isAutoEggGrabActive = false
 
-local HoldCorner = Instance.new("UICorner")
-HoldCorner.CornerRadius = UDim.new(0, 10)
-HoldCorner.Parent = HoldCard
+        local char = LocalPlayer.Character
+        if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                        for _, item in ipairs(char:GetChildren()) do
+                                if item:IsA("Tool") then
+                                        item.Parent = workspace
+                                end
+                        end
 
-local HoldStroke = Instance.new("UIStroke")
-HoldStroke.Name = "HoldStroke"
-HoldStroke.Color = Theme.OffStroke
-HoldStroke.Thickness = 1
-HoldStroke.Transparency = 0.2
-HoldStroke.Parent = HoldCard
+                        local targetSafeZoneCFrame = CFrame.new(TARGET_POS)
+                        local startTime = os.clock()
+                        local holdConnection
 
-local HoldTitle = Instance.new("TextLabel")
-HoldTitle.Size = UDim2.new(1, -100, 0, 16)
-HoldTitle.Position = UDim2.fromOffset(15, 7)
-HoldTitle.BackgroundTransparency = 1
-HoldTitle.Text = "TAHAN KARAKTER DI SAFE ZONE"
-HoldTitle.TextColor3 = Theme.Text
-HoldTitle.Font = Enum.Font.GothamBold
-HoldTitle.TextSize = 9
-HoldTitle.TextXAlignment = Enum.TextXAlignment.Left
-HoldTitle.ZIndex = 9
-HoldTitle.Parent = HoldCard
+                        holdConnection = RunService.Heartbeat:Connect(function()
+                                if not char or not root or not root.Parent then
+                                        if holdConnection then holdConnection:Disconnect() end
+                                        return
+                                end
 
-local HoldValueLabel = Instance.new("TextLabel")
-HoldValueLabel.Size = UDim2.fromOffset(70, 16)
-HoldValueLabel.Position = UDim2.new(1, -82, 0, 7)
-HoldValueLabel.BackgroundTransparency = 1
-HoldValueLabel.Text = string.format("%.1fs", safeZoneHoldDuration)
-HoldValueLabel.TextColor3 = Theme.AccentLight
-HoldValueLabel.Font = Enum.Font.GothamBold
-HoldValueLabel.TextSize = 10
-HoldValueLabel.TextXAlignment = Enum.TextXAlignment.Right
-HoldValueLabel.ZIndex = 9
-HoldValueLabel.Parent = HoldCard
+                                root.AssemblyLinearVelocity = Vector3.zero
+                                root.AssemblyAngularVelocity = Vector3.zero
+                                root.CFrame = targetSafeZoneCFrame
+                                char:PivotTo(targetSafeZoneCFrame)
 
-local HoldTrack = Instance.new("TextButton")
-HoldTrack.Name = "HoldTrack"
-HoldTrack.Size = UDim2.new(1, -30, 0, 6)
-HoldTrack.Position = UDim2.fromOffset(15, 29)
-HoldTrack.BackgroundColor3 = Color3.fromRGB(12, 17, 27)
-HoldTrack.BorderSizePixel = 0
-HoldTrack.AutoButtonColor = false
-HoldTrack.Text = ""
-HoldTrack.ZIndex = 9
-HoldTrack.Parent = HoldCard
+                                if os.clock() - startTime >= safeZoneHoldDuration then
+                                        holdConnection:Disconnect()
+                                end
+                        end)
 
-local HoldTrackCorner = Instance.new("UICorner")
-HoldTrackCorner.CornerRadius = UDim.new(1, 0)
-HoldTrackCorner.Parent = HoldTrack
+                        task.wait(safeZoneHoldDuration)
+                        FastBypassRespawn()
+                end
+        end
 
-local HoldFill = Instance.new("Frame")
-HoldFill.Name = "HoldFill"
-HoldFill.Size = UDim2.new((safeZoneHoldDuration - 0.1) / (1.0 - 0.1), 0, 1, 0)
-HoldFill.BackgroundColor3 = Theme.Accent
-HoldFill.BorderSizePixel = 0
-HoldFill.ZIndex = 10
-HoldFill.Parent = HoldTrack
-
-local HoldFillCorner = Instance.new("UICorner")
-HoldFillCorner.CornerRadius = UDim.new(1, 0)
-HoldFillCorner.Parent = HoldFill
-
-local HoldKnob = Instance.new("Frame")
-HoldKnob.Name = "HoldKnob"
-HoldKnob.Size = UDim2.fromOffset(12, 12)
-HoldKnob.AnchorPoint = Vector2.new(0.5, 0.5)
-HoldKnob.Position = UDim2.new(1, 0, 0.5, 0)
-HoldKnob.BackgroundColor3 = Theme.Text
-HoldKnob.BorderSizePixel = 0
-HoldKnob.ZIndex = 11
-HoldKnob.Parent = HoldFill
-
-local HoldKnobCorner = Instance.new("UICorner")
-HoldKnobCorner.CornerRadius = UDim.new(1, 0)
-HoldKnobCorner.Parent = HoldKnob
-
-local isDraggingHold = false
-HoldTrack.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingHold = true
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if isDraggingHold and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local trackAbsoluteSize = HoldTrack.AbsoluteSize.X
-		local trackAbsolutePosition = HoldTrack.AbsolutePosition.X
-		local relativeX = math.clamp(input.Position.X - trackAbsolutePosition, 0, trackAbsoluteSize)
-		local alpha = relativeX / trackAbsoluteSize
-		safeZoneHoldDuration = math.clamp(math.floor((0.1 + alpha * 0.9) * 10 + 0.5) / 10, 0.1, 1.0)
-		HoldFill.Size = UDim2.new((safeZoneHoldDuration - 0.1) / 0.9, 0, 1, 0)
-		HoldValueLabel.Text = string.format("%.1fs", safeZoneHoldDuration)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingHold = false
-	end
-end)
-
--- 2. MODE ANTI HIT (TOGGLE: BOLAK-BALIK / SEKALI)
-local TeleModeBtn = Instance.new("TextButton")
-TeleModeBtn.Name = "TeleModeBtn"
-TeleModeBtn.Size = UDim2.new(1, 0, 0, 46)
-TeleModeBtn.Position = UDim2.fromOffset(0, 52)
-TeleModeBtn.BackgroundColor3 = Theme.Off
-TeleModeBtn.BorderSizePixel = 0
-TeleModeBtn.AutoButtonColor = false
-TeleModeBtn.Text = ""
-TeleModeBtn.ZIndex = 7
-TeleModeBtn.Parent = TabSettingsContent
-
-local TeleModeCorner = Instance.new("UICorner")
-TeleModeCorner.CornerRadius = UDim.new(0, 10)
-TeleModeCorner.Parent = TeleModeBtn
-
-local TeleModeStroke = Instance.new("UIStroke")
-TeleModeStroke.Name = "TeleModeStroke"
-TeleModeStroke.Color = Theme.OffStroke
-TeleModeStroke.Thickness = 1
-TeleModeStroke.Transparency = 0.2
-TeleModeStroke.Parent = TeleModeBtn
-
-local TeleModeTitle = Instance.new("TextLabel")
-TeleModeTitle.Size = UDim2.new(1, -100, 0, 18)
-TeleModeTitle.Position = UDim2.fromOffset(15, 6)
-TeleModeTitle.BackgroundTransparency = 1
-TeleModeTitle.Text = "MODE ANTI HIT"
-TeleModeTitle.TextColor3 = Theme.Text
-TeleModeTitle.Font = Enum.Font.GothamBold
-TeleModeTitle.TextSize = 10
-TeleModeTitle.TextXAlignment = Enum.TextXAlignment.Left
-TeleModeTitle.ZIndex = 9
-TeleModeTitle.Parent = TeleModeBtn
-
-local TeleModeSub = Instance.new("TextLabel")
-TeleModeSub.Size = UDim2.new(1, -20, 0, 14)
-TeleModeSub.Position = UDim2.fromOffset(15, 23)
-TeleModeSub.BackgroundTransparency = 1
-TeleModeSub.Text = isReturnTeleport and "Teleport 2x (SafeZone -> Kembali)" or "Teleport 1x (SafeZone saja)"
-TeleModeSub.TextColor3 = Theme.TextMuted
-TeleModeSub.Font = Enum.Font.GothamMedium
-TeleModeSub.TextSize = 8
-TeleModeSub.TextXAlignment = Enum.TextXAlignment.Left
-TeleModeSub.ZIndex = 9
-TeleModeSub.Parent = TeleModeBtn
-
-local TeleModeStatus = Instance.new("TextLabel")
-TeleModeStatus.Size = UDim2.fromOffset(80, 20)
-TeleModeStatus.Position = UDim2.new(1, -95, 0, 6)
-TeleModeStatus.BackgroundTransparency = 1
-TeleModeStatus.Text = isReturnTeleport and "BOLAK-BALIK" or "SEKALI"
-TeleModeStatus.TextColor3 = Theme.AccentLight
-TeleModeStatus.Font = Enum.Font.GothamBold
-TeleModeStatus.TextSize = 9
-TeleModeStatus.TextXAlignment = Enum.TextXAlignment.Right
-TeleModeStatus.ZIndex = 9
-TeleModeStatus.Parent = TeleModeBtn
-
-TeleModeBtn.MouseButton1Click:Connect(function()
-	isReturnTeleport = not isReturnTeleport
-	if isReturnTeleport then
-		TeleModeStatus.Text = "BOLAK-BALIK"
-		TeleModeSub.Text = "Teleport 2x (SafeZone -> Kembali)"
-	else
-		TeleModeStatus.Text = "SEKALI"
-		TeleModeSub.Text = "Teleport 1x (SafeZone saja)"
-	end
-end)
-
--- 3. KAPAN ANTI HIT AKTIF SETELAH AMBIL EGG (SLIDER DELAY 0.0 - 1.0 DETIK)
-local DelayCard = Instance.new("Frame")
-DelayCard.Name = "DelayCard"
-DelayCard.Size = UDim2.new(1, 0, 0, 46)
-DelayCard.Position = UDim2.fromOffset(0, 104)
-DelayCard.BackgroundColor3 = Theme.Off
-DelayCard.BorderSizePixel = 0
-DelayCard.ZIndex = 7
-DelayCard.Parent = TabSettingsContent
-
-local DelayCorner = Instance.new("UICorner")
-DelayCorner.CornerRadius = UDim.new(0, 10)
-DelayCorner.Parent = DelayCard
-
-local DelayStroke = Instance.new("UIStroke")
-DelayStroke.Name = "DelayStroke"
-DelayStroke.Color = Theme.OffStroke
-DelayStroke.Thickness = 1
-DelayStroke.Transparency = 0.2
-DelayStroke.Parent = DelayCard
-
-local DelayTitle = Instance.new("TextLabel")
-DelayTitle.Size = UDim2.new(1, -100, 0, 16)
-DelayTitle.Position = UDim2.fromOffset(15, 7)
-DelayTitle.BackgroundTransparency = 1
-DelayTitle.Text = "KAPAN ANTI HIT AKTIF SETELAH AMBIL EGG"
-DelayTitle.TextColor3 = Theme.Text
-DelayTitle.Font = Enum.Font.GothamBold
-DelayTitle.TextSize = 8
-DelayTitle.TextXAlignment = Enum.TextXAlignment.Left
-DelayTitle.ZIndex = 9
-DelayTitle.Parent = DelayCard
-
-local DelayValueLabel = Instance.new("TextLabel")
-DelayValueLabel.Size = UDim2.fromOffset(70, 16)
-DelayValueLabel.Position = UDim2.new(1, -82, 0, 7)
-DelayValueLabel.BackgroundTransparency = 1
-DelayValueLabel.Text = string.format("%.1fs", teleportDelayAfterEgg)
-DelayValueLabel.TextColor3 = Theme.AccentLight
-DelayValueLabel.Font = Enum.Font.GothamBold
-DelayValueLabel.TextSize = 10
-DelayValueLabel.TextXAlignment = Enum.TextXAlignment.Right
-DelayValueLabel.ZIndex = 9
-DelayValueLabel.Parent = DelayCard
-
-local DelayTrack = Instance.new("TextButton")
-DelayTrack.Name = "DelayTrack"
-DelayTrack.Size = UDim2.new(1, -30, 0, 6)
-DelayTrack.Position = UDim2.fromOffset(15, 29)
-DelayTrack.BackgroundColor3 = Color3.fromRGB(12, 17, 27)
-DelayTrack.BorderSizePixel = 0
-DelayTrack.AutoButtonColor = false
-DelayTrack.Text = ""
-DelayTrack.ZIndex = 9
-DelayTrack.Parent = DelayCard
-
-local DelayTrackCorner = Instance.new("UICorner")
-DelayTrackCorner.CornerRadius = UDim.new(1, 0)
-DelayTrackCorner.Parent = DelayTrack
-
-local DelayFill = Instance.new("Frame")
-DelayFill.Name = "DelayFill"
-DelayFill.Size = UDim2.new((teleportDelayAfterEgg - 0.0) / (1.0 - 0.0), 0, 1, 0)
-DelayFill.BackgroundColor3 = Theme.Accent
-DelayFill.BorderSizePixel = 0
-DelayFill.ZIndex = 10
-DelayFill.Parent = DelayTrack
-
-local DelayFillCorner = Instance.new("UICorner")
-DelayFillCorner.CornerRadius = UDim.new(1, 0)
-DelayFillCorner.Parent = DelayFill
-
-local DelayKnob = Instance.new("Frame")
-DelayKnob.Name = "DelayKnob"
-DelayKnob.Size = UDim2.fromOffset(12, 12)
-DelayKnob.AnchorPoint = Vector2.new(0.5, 0.5)
-DelayKnob.Position = UDim2.new(1, 0, 0.5, 0)
-DelayKnob.BackgroundColor3 = Theme.Text
-DelayKnob.BorderSizePixel = 0
-DelayKnob.ZIndex = 11
-DelayKnob.Parent = DelayFill
-
-local DelayKnobCorner = Instance.new("UICorner")
-DelayKnobCorner.CornerRadius = UDim.new(1, 0)
-DelayKnobCorner.Parent = DelayKnob
-
-local isDraggingDelay = false
-DelayTrack.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingDelay = true
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if isDraggingDelay and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local trackAbsoluteSize = DelayTrack.AbsoluteSize.X
-		local trackAbsolutePosition = DelayTrack.AbsolutePosition.X
-		local relativeX = math.clamp(input.Position.X - trackAbsolutePosition, 0, trackAbsoluteSize)
-		local alpha = relativeX / trackAbsoluteSize
-		teleportDelayAfterEgg = math.clamp(math.floor((0.0 + alpha * 1.0) * 10 + 0.5) / 10, 0.0, 1.0)
-		DelayFill.Size = UDim2.new((teleportDelayAfterEgg - 0.0) / 1.0, 0, 1, 0)
-		DelayValueLabel.Text = string.format("%.1fs", teleportDelayAfterEgg)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDraggingDelay = false
-	end
-end)
-
---------------------------------------------------------------------------------
--- UPDATE LOGIKA ANTI HIT & TELEPORT SAFE ZONE
---------------------------------------------------------------------------------
-local function ExecuteDropAndTeleport()
-	if isProcessing or not isAntiHitActive then return end
-	isProcessing = true
-
-	if teleportDelayAfterEgg > 0 then
-		task.wait(teleportDelayAfterEgg)
-	end
-
-	local char = LocalPlayer.Character
-	if char then
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if root then
-			local originalCFrame = root.CFrame
-
-			for _, item in ipairs(char:GetChildren()) do
-				if item:IsA("Tool") then
-					item.Parent = workspace
-				end
-			end
-
-			local targetSafeZoneCFrame = CFrame.new(TARGET_POS + Vector3.new(0, 3, 0))
-			local startTime = os.clock()
-			local holdConnection
-
-			holdConnection = RunService.Heartbeat:Connect(function()
-				if not char or not root or not root.Parent then
-					if holdConnection then holdConnection:Disconnect() end
-					return
-				end
-
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = targetSafeZoneCFrame
-				char:PivotTo(targetSafeZoneCFrame)
-
-				if os.clock() - startTime >= safeZoneHoldDuration then
-					holdConnection:Disconnect()
-				end
-			end)
-
-			task.delay(safeZoneHoldDuration, function()
-				if isReturnTeleport and char and root and root.Parent then
-					root.AssemblyLinearVelocity = Vector3.zero
-					root.AssemblyAngularVelocity = Vector3.zero
-					root.CFrame = originalCFrame
-					char:PivotTo(originalCFrame)
-				end
-			end)
-		end
-	end
-
-	task.delay(safeZoneHoldDuration + 0.1, function()
-		isProcessing = false
-	end)
+        task.delay(0.05, function()
+                isProcessing = false
+        end)
 end
 
 ProximityPromptService.PromptTriggered:Connect(function(prompt, playerWhoTriggered)
-	if isAntiHitActive and playerWhoTriggered == LocalPlayer then
-		task.spawn(function() ExecuteDropAndTeleport() end)
-	end
+        if isAntiHitActive and playerWhoTriggered == LocalPlayer then
+                task.spawn(function() ExecuteDropAndFastRespawn() end)
+        end
 end)
 
 local function SetupCharacterDetection(char)
-	char.ChildAdded:Connect(function(child)
-		if isAntiHitActive and not child:IsA("Tool") then
-			local name = string.lower(child.Name)
-			if string.find(name, "egg") or string.find(name, "telur") then
-				task.spawn(function() ExecuteDropAndTeleport() end)
-			end
-		end
-	end)
+        char.ChildAdded:Connect(function(child)
+                if isAntiHitActive and not child:IsA("Tool") then
+                        local name = string.lower(child.Name)
+                        if string.find(name, "egg") or string.find(name, "telur") then
+                                task.spawn(function() ExecuteDropAndFastRespawn() end)
+                        end
+                end
+        end)
 end
 
 if LocalPlayer.Character then SetupCharacterDetection(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(function(newChar)
-	task.wait(0.1)
-	SetupCharacterDetection(newChar)
+        task.wait(0.05)
+        SetupCharacterDetection(newChar)
 end)
 
 --------------------------------------------------------------------------------
@@ -1222,8 +978,8 @@ ToggleStroke.Parent = ToggleButton
 local ToggleGradient = Instance.new("UIGradient")
 ToggleGradient.Rotation = 90
 ToggleGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 16, 26)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 15))
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 16, 26)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 15))
 })
 ToggleGradient.Parent = ToggleButton
 
@@ -1301,257 +1057,257 @@ ToggleSubtitle.Parent = ToggleButton
 local MainDragging, MainDragStart, MainStartPosition, MainDragInput = false, nil, nil, nil
 
 Header.InputBegan:Connect(function(input)
-	if IsTransitioning then return end
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		MainDragging = true
-		MainDragStart = input.Position
-		MainStartPosition = MainFrame.Position
-		MainDragInput = input
-	end
+        if IsTransitioning then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                MainDragging = true
+                MainDragStart = input.Position
+                MainStartPosition = MainFrame.Position
+                MainDragInput = input
+        end
 end)
 
 Header.InputEnded:Connect(function(input)
-	if input == MainDragInput then
-		MainDragging = false
-		MainDragInput = nil
-	end
+        if input == MainDragInput then
+                MainDragging = false
+                MainDragInput = nil
+        end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if not MainDragging then return end
-	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-		if not MainDragStart or not MainStartPosition then return end
-		local delta = input.Position - MainDragStart
-		MainFrame.Position = UDim2.new(MainStartPosition.X.Scale, MainStartPosition.X.Offset + delta.X, MainStartPosition.Y.Scale, MainStartPosition.Y.Offset + delta.Y)
-	end
+        if not MainDragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                if not MainDragStart or not MainStartPosition then return end
+                local delta = input.Position - MainDragStart
+                MainFrame.Position = UDim2.new(MainStartPosition.X.Scale, MainStartPosition.X.Offset + delta.X, MainStartPosition.Y.Scale, MainStartPosition.Y.Offset + delta.Y)
+        end
 end)
 
 local ToggleDragging, ToggleDragStart, ToggleStartPosition, ToggleMoved = false, nil, nil, false
 
 ToggleButton.InputBegan:Connect(function(input)
-	if IsTransitioning then return end
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		ToggleDragging = true
-		ToggleMoved = false
-		ToggleDragStart = input.Position
-		ToggleStartPosition = ToggleButton.Position
-	end
+        if IsTransitioning then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                ToggleDragging = true
+                ToggleMoved = false
+                ToggleDragStart = input.Position
+                ToggleStartPosition = ToggleButton.Position
+        end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if not ToggleDragging then return end
-	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-		if not ToggleDragStart or not ToggleStartPosition then return end
-		local delta = input.Position - ToggleDragStart
-		if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then ToggleMoved = true end
-		ToggleButton.Position = UDim2.new(ToggleStartPosition.X.Scale, ToggleStartPosition.X.Offset + delta.X, ToggleStartPosition.Y.Scale, ToggleStartPosition.Y.Offset + delta.Y)
-	end
+        if not ToggleDragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                if not ToggleDragStart or not ToggleStartPosition then return end
+                local delta = input.Position - ToggleDragStart
+                if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then ToggleMoved = true end
+                ToggleButton.Position = UDim2.new(ToggleStartPosition.X.Scale, ToggleStartPosition.X.Offset + delta.X, ToggleStartPosition.Y.Scale, ToggleStartPosition.Y.Offset + delta.Y)
+        end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		ToggleDragging = false
-	end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                ToggleDragging = false
+        end
 end)
 
 ToggleButton.MouseEnter:Connect(function()
-	if ToggleDragging or IsTransitioning then return end
-	Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(252, 52) })
-	Tween(ToggleStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
+        if ToggleDragging or IsTransitioning then return end
+        Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(252, 52) })
+        Tween(ToggleStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
 end)
 
 ToggleButton.MouseLeave:Connect(function()
-	if ToggleDragging then return end
-	Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(245, 50) })
-	Tween(ToggleStroke, 0.15, { Color = Theme.Border, Transparency = 0.05 })
+        if ToggleDragging then return end
+        Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(245, 50) })
+        Tween(ToggleStroke, 0.15, { Color = Theme.Border, Transparency = 0.05 })
 end)
 
 --------------------------------------------------------------------------------
 -- ANIMATED TRANSITION MINIMIZE & RESTORE
 --------------------------------------------------------------------------------
 local function GetViewport()
-	local camera = workspace.CurrentCamera
-	return camera and camera.ViewportSize or Vector2.new(1920, 1080)
+        local camera = workspace.CurrentCamera
+        return camera and camera.ViewportSize or Vector2.new(1920, 1080)
 end
 
 local function GetCenterPosition()
-	local viewport = GetViewport()
-	return UDim2.fromOffset(viewport.X * 0.5, viewport.Y * 0.5)
+        local viewport = GetViewport()
+        return UDim2.fromOffset(viewport.X * 0.5, viewport.Y * 0.5)
 end
 
 local function GetTopTogglePosition()
-	local viewport = GetViewport()
-	return UDim2.fromOffset(viewport.X * 0.5, -5)
+        local viewport = GetViewport()
+        return UDim2.fromOffset(viewport.X * 0.5, -5)
 end
 
 local function GetTopRightTogglePosition()
-	local viewport = GetViewport()
-	return UDim2.fromOffset(viewport.X - 10, -5)
+        local viewport = GetViewport()
+        return UDim2.fromOffset(viewport.X - 10, -5)
 end
 
 local function MinimizeUI()
-	if IsTransitioning or IsMinimized then return end
-	IsTransitioning = true
-	IsMinimized = true
+        if IsTransitioning or IsMinimized then return end
+        IsTransitioning = true
+        IsMinimized = true
 
-	MinimizeButton.Active = false
-	FlyBetaButton.Active = false
-	AntiHitButton.Active = false
+        MinimizeButton.Active = false
+        FlyBetaButton.Active = false
+        AntiHitButton.Active = false
 
-	local centerPosition = GetCenterPosition()
+        local centerPosition = GetCenterPosition()
 
-	Tween(MainFrame, 0.45, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-	task.wait(0.47)
-	task.wait(0.30)
+        Tween(MainFrame, 0.45, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+        task.wait(0.47)
+        task.wait(0.30)
 
-	Tween(MainFrame, 0.40, { Size = UDim2.fromOffset(245, 50) }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-	task.wait(0.42)
+        Tween(MainFrame, 0.40, { Size = UDim2.fromOffset(245, 50) }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+        task.wait(0.42)
 
-	MainFrame.Visible = false
-	ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-	ToggleButton.Position = centerPosition
-	ToggleButton.Size = UDim2.fromOffset(245, 50)
-	ToggleButton.Visible = true
+        MainFrame.Visible = false
+        ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+        ToggleButton.Position = centerPosition
+        ToggleButton.Size = UDim2.fromOffset(245, 50)
+        ToggleButton.Visible = true
 
-	task.wait(0.05)
-	local topPosition = GetTopTogglePosition()
+        task.wait(0.05)
+        local topPosition = GetTopTogglePosition()
 
-	Tween(ToggleButton, 0.55, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-	task.wait(0.58)
+        Tween(ToggleButton, 0.55, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        task.wait(0.58)
 
-	ToggleButton.AnchorPoint = Vector2.new(1, 0.5)
-	local topRightPosition = GetTopRightTogglePosition()
-	Tween(ToggleButton, 0.45, { Position = topRightPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-	task.wait(0.48)
+        ToggleButton.AnchorPoint = Vector2.new(1, 0.5)
+        local topRightPosition = GetTopRightTogglePosition()
+        Tween(ToggleButton, 0.45, { Position = topRightPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        task.wait(0.48)
 
-	ToggleButton.Active = true
-	IsTransitioning = false
+        ToggleButton.Active = true
+        IsTransitioning = false
 end
 
 local function RestoreUI()
-	if IsTransitioning or not IsMinimized then return end
-	IsTransitioning = true
-	ToggleButton.Active = false
+        if IsTransitioning or not IsMinimized then return end
+        IsTransitioning = true
+        ToggleButton.Active = false
 
-	local topPosition = GetTopTogglePosition()
-	local centerPosition = GetCenterPosition()
+        local topPosition = GetTopTogglePosition()
+        local centerPosition = GetCenterPosition()
 
-	ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-	Tween(ToggleButton, 0.40, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-	task.wait(0.42)
+        ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+        Tween(ToggleButton, 0.40, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+        task.wait(0.42)
 
-	Tween(ToggleButton, 0.50, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-	task.wait(0.53)
-	task.wait(0.20)
+        Tween(ToggleButton, 0.50, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+        task.wait(0.53)
+        task.wait(0.20)
 
-	ToggleButton.Visible = false
-	MainFrame.Visible = true
-	MainFrame.Position = centerPosition
-	MainFrame.Size = UDim2.fromOffset(245, 50)
+        ToggleButton.Visible = false
+        MainFrame.Visible = true
+        MainFrame.Position = centerPosition
+        MainFrame.Size = UDim2.fromOffset(245, 50)
 
-	Tween(MainFrame, 0.45, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	task.wait(0.48)
+        Tween(MainFrame, 0.45, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        task.wait(0.48)
 
-	Tween(MainFrame, 0.55, { Position = MAIN_HOME_POSITION }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-	task.wait(0.58)
+        Tween(MainFrame, 0.55, { Position = MAIN_HOME_POSITION }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        task.wait(0.58)
 
-	IsMinimized = false
-	IsTransitioning = false
+        IsMinimized = false
+        IsTransitioning = false
 
-	MinimizeButton.Active = true
-	FlyBetaButton.Active = true
-	AntiHitButton.Active = true
+        MinimizeButton.Active = true
+        FlyBetaButton.Active = true
+        AntiHitButton.Active = true
 end
 
 MinimizeButton.MouseEnter:Connect(function()
-	if IsTransitioning then return end
-	Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.CardHover })
-	Tween(MinStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
+        if IsTransitioning then return end
+        Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.CardHover })
+        Tween(MinStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
 end)
 
 MinimizeButton.MouseLeave:Connect(function()
-	Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.Card })
-	Tween(MinStroke, 0.15, { Color = Theme.Border, Transparency = 0.25 })
+        Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.Card })
+        Tween(MinStroke, 0.15, { Color = Theme.Border, Transparency = 0.25 })
 end)
 
 MinimizeButton.MouseButton1Click:Connect(function() MinimizeUI() end)
 ToggleButton.MouseButton1Click:Connect(function()
-	if ToggleMoved then
-		ToggleMoved = false
-		return
-	end
-	RestoreUI()
+        if ToggleMoved then
+                ToggleMoved = false
+                return
+        end
+        RestoreUI()
 end)
 
 local function UpdateFlyBetaUI()
-	if isFlyActive then
-		FlyStatusText.Text = "ON"
-		FlyStatusText.TextColor3 = Theme.OnAccent
-		FlyBetaSub.Text = "Fly mode active"
-		FlyStatusDot.BackgroundColor3 = Theme.OnAccent
-		Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-		Tween(FlyBetaStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
-	else
-		FlyStatusText.Text = "OFF"
-		FlyStatusText.TextColor3 = Theme.TextMuted
-		FlyBetaSub.Text = "Toggle fly mode"
-		FlyStatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-		Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-		Tween(FlyBetaStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+        if isFlyActive then
+                FlyStatusText.Text = "ON"
+                FlyStatusText.TextColor3 = Theme.OnAccent
+                FlyBetaSub.Text = "Fly mode active"
+                FlyStatusDot.BackgroundColor3 = Theme.OnAccent
+                Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
+                Tween(FlyBetaStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
+        else
+                FlyStatusText.Text = "OFF"
+                FlyStatusText.TextColor3 = Theme.TextMuted
+                FlyBetaSub.Text = "Toggle fly mode"
+                FlyStatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+                Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
+                Tween(FlyBetaStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
 
-		local char = LocalPlayer.Character
-		if char then
-			local hum = char:FindFirstChildOfClass("Humanoid")
-			if hum then
-				hum.PlatformStand = false
-			end
-		end
-		RemoveBlock()
-	end
+                local char = LocalPlayer.Character
+                if char then
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                                hum.PlatformStand = false
+                        end
+                end
+                RemoveBlock()
+        end
 end
 
 local function UpdateAntiHitUI()
-	if isAntiHitActive then
-		StatusText.Text = "ON"
-		StatusText.TextColor3 = Theme.OnAccent
-		AntiHitSub.Text = "Protection enabled"
-		StatusDot.BackgroundColor3 = Theme.OnAccent
-		Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-		Tween(AntiHitStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
-	else
-		StatusText.Text = "OFF"
-		StatusText.TextColor3 = Theme.TextMuted
-		AntiHitSub.Text = "Protection disabled"
-		StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-		Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-		Tween(AntiHitStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
-	end
+        if isAntiHitActive then
+                StatusText.Text = "ON"
+                StatusText.TextColor3 = Theme.OnAccent
+                AntiHitSub.Text = "Protection enabled"
+                StatusDot.BackgroundColor3 = Theme.OnAccent
+                Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
+                Tween(AntiHitStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
+        else
+                StatusText.Text = "OFF"
+                StatusText.TextColor3 = Theme.TextMuted
+                AntiHitSub.Text = "Protection disabled"
+                StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+                Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
+                Tween(AntiHitStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+        end
 end
 
 FlyBetaButton.MouseButton1Click:Connect(function()
-	if IsTransitioning then return end
-	isFlyActive = not isFlyActive
-	UpdateFlyBetaUI()
+        if IsTransitioning then return end
+        isFlyActive = not isFlyActive
+        UpdateFlyBetaUI()
 
-	Tween(FlyBetaButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 53) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	task.delay(0.08, function()
-		if FlyBetaButton.Parent then
-			Tween(FlyBetaButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 52) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		end
-	end)
+        Tween(FlyBetaButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 53) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        task.delay(0.08, function()
+                if FlyBetaButton.Parent then
+                        Tween(FlyBetaButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 52) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                end
+        end)
 end)
 
 AntiHitButton.MouseButton1Click:Connect(function()
-	if IsTransitioning then return end
-	isAntiHitActive = not isAntiHitActive
-	UpdateAntiHitUI()
+        if IsTransitioning then return end
+        isAntiHitActive = not isAntiHitActive
+        UpdateAntiHitUI()
 
-	Tween(AntiHitButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 1) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	task.delay(0.08, function()
-		if AntiHitButton.Parent then
-			Tween(AntiHitButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		end
-	end)
+        Tween(AntiHitButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 1) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        task.delay(0.08, function()
+                if AntiHitButton.Parent then
+                        Tween(AntiHitButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                end
+        end)
 end)
 
 UpdateFlyBetaUI()
@@ -1572,10 +1328,6 @@ Subtitle.TextTransparency = 1
 MinimizeButton.BackgroundTransparency = 1
 MinimizeButton.TextTransparency = 1
 MinStroke.Transparency = 1
-TabBar.BackgroundTransparency = 1
-TabMainBtn.BackgroundTransparency = 1
-TabMainBtn.TextTransparency = 1
-TabSettingsBtn.TextTransparency = 1
 
 FlyBetaButton.BackgroundTransparency = 1
 FlyBetaStroke.Transparency = 1
@@ -1602,94 +1354,46 @@ SliderKnob.BackgroundTransparency = 1
 KnobStroke.Transparency = 1
 SliderDot.BackgroundTransparency = 1
 
-HoldCard.BackgroundTransparency = 1
-HoldStroke.Transparency = 1
-HoldTitle.TextTransparency = 1
-HoldValueLabel.TextTransparency = 1
-HoldTrack.BackgroundTransparency = 1
-HoldFill.BackgroundTransparency = 1
-HoldKnob.BackgroundTransparency = 1
-
-TeleModeBtn.BackgroundTransparency = 1
-TeleModeStroke.Transparency = 1
-TeleModeTitle.TextTransparency = 1
-TeleModeSub.TextTransparency = 1
-TeleModeStatus.TextTransparency = 1
-
-DelayCard.BackgroundTransparency = 1
-DelayStroke.Transparency = 1
-DelayTitle.TextTransparency = 1
-DelayValueLabel.TextTransparency = 1
-DelayTrack.BackgroundTransparency = 1
-DelayFill.BackgroundTransparency = 1
-DelayKnob.BackgroundTransparency = 1
-
 Tween(MainFrame, 0.55, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT), BackgroundTransparency = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
 task.delay(0.05, function()
-	Tween(MainStroke, 0.4, { Transparency = 0.08 })
-	Tween(TopAccent, 0.4, { BackgroundTransparency = 0 })
-	Tween(LogoHolder, 0.35, { BackgroundTransparency = 0 })
-	Tween(LogoStroke, 0.35, { Transparency = 0.35 })
+        Tween(MainStroke, 0.4, { Transparency = 0.08 })
+        Tween(TopAccent, 0.4, { BackgroundTransparency = 0 })
+        Tween(LogoHolder, 0.35, { BackgroundTransparency = 0 })
+        Tween(LogoStroke, 0.35, { Transparency = 0.35 })
 end)
 
 task.delay(0.12, function()
-	Tween(Title, 0.35, { TextTransparency = 0 })
-	Tween(Subtitle, 0.35, { TextTransparency = 0 })
-	Tween(MinimizeButton, 0.35, { BackgroundTransparency = 0, TextTransparency = 0 })
-	Tween(MinStroke, 0.35, { Transparency = 0.25 })
-	Tween(TabBar, 0.35, { BackgroundTransparency = 0 })
-	Tween(TabMainBtn, 0.35, { BackgroundTransparency = 0, TextTransparency = 0 })
-	Tween(TabSettingsBtn, 0.35, { TextTransparency = 0 })
+        Tween(Title, 0.35, { TextTransparency = 0 })
+        Tween(Subtitle, 0.35, { TextTransparency = 0 })
+        Tween(MinimizeButton, 0.35, { BackgroundTransparency = 0, TextTransparency = 0 })
+        Tween(MinStroke, 0.35, { Transparency = 0.25 })
 end)
 
 task.delay(0.22, function()
-	-- Main Tab Elements Fade-in
-	Tween(FlyBetaButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-	Tween(FlyBetaStroke, 0.35, { Transparency = 0.2 })
-	Tween(FlyBetaTitle, 0.3, { TextTransparency = 0 })
-	Tween(FlyBetaSub, 0.3, { TextTransparency = 0 })
-	Tween(FlyStatusText, 0.3, { TextTransparency = 0 })
-	Tween(FlyStatusDot, 0.3, { BackgroundTransparency = 0 })
+        Tween(FlyBetaButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        Tween(FlyBetaStroke, 0.35, { Transparency = 0.2 })
+        Tween(FlyBetaTitle, 0.3, { TextTransparency = 0 })
+        Tween(FlyBetaSub, 0.3, { TextTransparency = 0 })
+        Tween(FlyStatusText, 0.3, { TextTransparency = 0 })
+        Tween(FlyStatusDot, 0.3, { BackgroundTransparency = 0 })
 
-	Tween(AntiHitButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-	Tween(AntiHitStroke, 0.35, { Transparency = 0.2 })
-	Tween(AntiHitTitle, 0.3, { TextTransparency = 0 })
-	Tween(AntiHitSub, 0.3, { TextTransparency = 0 })
-	Tween(StatusText, 0.3, { TextTransparency = 0 })
-	Tween(StatusDot, 0.3, { BackgroundTransparency = 0 })
+        Tween(AntiHitButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        Tween(AntiHitStroke, 0.35, { Transparency = 0.2 })
+        Tween(AntiHitTitle, 0.3, { TextTransparency = 0 })
+        Tween(AntiHitSub, 0.3, { TextTransparency = 0 })
+        Tween(StatusText, 0.3, { TextTransparency = 0 })
+        Tween(StatusDot, 0.3, { BackgroundTransparency = 0 })
 
-	Tween(SliderCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-	Tween(SliderStroke, 0.35, { Transparency = 0.2 })
-	Tween(SliderTitle, 0.3, { TextTransparency = 0 })
-	Tween(SliderValueLabel, 0.3, { TextTransparency = 0 })
-	Tween(SliderTrack, 0.3, { BackgroundTransparency = 0 })
-	Tween(TrackStroke, 0.3, { Transparency = 0.5 })
-	Tween(SliderFill, 0.3, { BackgroundTransparency = 0 })
-	Tween(SliderKnob, 0.3, { BackgroundTransparency = 0 })
-	Tween(KnobStroke, 0.3, { Transparency = 0 })
-	Tween(SliderDot, 0.3, { BackgroundTransparency = 0 })
-
-	-- Settings Tab Elements Fade-in
-	Tween(HoldCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-	Tween(HoldStroke, 0.35, { Transparency = 0.2 })
-	Tween(HoldTitle, 0.3, { TextTransparency = 0 })
-	Tween(HoldValueLabel, 0.3, { TextTransparency = 0 })
-	Tween(HoldTrack, 0.3, { BackgroundTransparency = 0 })
-	Tween(HoldFill, 0.3, { BackgroundTransparency = 0 })
-	Tween(HoldKnob, 0.3, { BackgroundTransparency = 0 })
-
-	Tween(TeleModeBtn, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-	Tween(TeleModeStroke, 0.35, { Transparency = 0.2 })
-	Tween(TeleModeTitle, 0.3, { TextTransparency = 0 })
-	Tween(TeleModeSub, 0.3, { TextTransparency = 0 })
-	Tween(TeleModeStatus, 0.3, { TextTransparency = 0 })
-
-	Tween(DelayCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-	Tween(DelayStroke, 0.35, { Transparency = 0.2 })
-	Tween(DelayTitle, 0.3, { TextTransparency = 0 })
-	Tween(DelayValueLabel, 0.3, { TextTransparency = 0 })
-	Tween(DelayTrack, 0.3, { BackgroundTransparency = 0 })
-	Tween(DelayFill, 0.3, { BackgroundTransparency = 0 })
-	Tween(DelayKnob, 0.3, { BackgroundTransparency = 0 })
+        Tween(SliderCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+        Tween(SliderStroke, 0.35, { Transparency = 0.2 })
+        Tween(SliderTitle, 0.3, { TextTransparency = 0 })
+        Tween(SliderValueLabel, 0.3, { TextTransparency = 0 })
+        Tween(SliderTrack, 0.3, { BackgroundTransparency = 0 })
+        TrackStroke.Transparency = 1
+        Tween(TrackStroke, 0.3, { Transparency = 0.5 })
+        Tween(SliderFill, 0.3, { BackgroundTransparency = 0 })
+        Tween(SliderKnob, 0.3, { BackgroundTransparency = 0 })
+        Tween(KnobStroke, 0.3, { Transparency = 0 })
+        Tween(SliderDot, 0.3, { BackgroundTransparency = 0 })
 end)
