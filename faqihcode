@@ -9,10 +9,10 @@ local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
--- KOORDINAT TARGET
-local WAYPOINT_POS = Vector3.new(514.30, 71.69, -369.40) -- Titik Transit
-local TARGET_POS = Vector3.new(565.74, 71.69, -368.14)   -- Safe Zone Awal
-local FINAL_POS = Vector3.new(518.55, 71.69, -365.52)    -- Titik Akhir
+-- KOORDINAT TARGET (SISTEM FLOW BARU)
+local WAYPOINT_POS = Vector3.new(618.43, 71.69, -394.05) -- Waypoint (Tahap 2)
+local TARGET_POS   = Vector3.new(618.43, 71.69, -394.05) -- Target Egg (Tahap 3)
+local FINAL_POS    = Vector3.new(518.55, 71.69, -365.52) -- Final Position (Tahap 8)
 
 local GUI_NAME = "LeonHubGui"
 
@@ -43,30 +43,57 @@ end)
 
 local isAutoEggGrabActive = false
 local ignoredEggs = {}
+local TeleportBusy = false
 
--- Helper Teleportasi Posisi (Dipakai untuk titik akhir / kunci posisi)
-local function TeleportToTarget(char, targetPos)
-        if not char then return end
-        local root = char:WaitForChild("HumanoidRootPart", 5)
-        if root then
-                local targetCFrame = CFrame.new(targetPos)
-                for _ = 1, 6 do
-                        root.AssemblyLinearVelocity = Vector3.zero
-                        root.AssemblyAngularVelocity = Vector3.zero
-                        root.CFrame = targetCFrame
-                        char:PivotTo(targetCFrame)
-                        RunService.Stepped:Wait()
-                end
+-- STATE ENUM LOGIC
+local State = {
+        IDLE = "IDLE",
+        WAIT_CHARACTER = "WAIT_CHARACTER",
+        MOVING_WAYPOINT = "MOVING_WAYPOINT",
+        MOVING_TARGET = "MOVING_TARGET",
+        TAKING_EGG = "TAKING_EGG",
+        WAITING_FOR_EGG_CONFIRMATION = "WAITING_FOR_EGG_CONFIRMATION",
+        EGG_CONFIRMED = "EGG_CONFIRMED",
+        MOVING_FINAL = "MOVING_FINAL",
+        FINAL_CONFIRMED = "FINAL_CONFIRMED",
+        COMPLETED = "COMPLETED"
+}
+
+local CurrentState = State.IDLE
+
+-- Helper Wait Character & RootPart
+local function WaitForCharacterRoot(char)
+        if not char then return nil end
+        local root = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
+        if root and root.Parent and char.Parent then
+                return root
         end
+        return nil
+end
+
+-- Helper Teleportasi Posisi
+local function TeleportToTarget(char, targetPos)
+        local root = WaitForCharacterRoot(char)
+        if not root then return false end
+
+        local targetCFrame = CFrame.new(targetPos)
+        for _ = 1, 6 do
+                if not root or not root.Parent or not char.Parent then return false end
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = targetCFrame
+                char:PivotTo(targetCFrame)
+                RunService.Stepped:Wait()
+        end
+        return true
 end
 
 -- LOGIC: FAST GLIDE MOVEMENT
 local function FastGlideTo(char, targetPos, speed)
-        if not char then return end
-        local root = char:WaitForChild("HumanoidRootPart", 5)
-        if not root then return end
+        local root = WaitForCharacterRoot(char)
+        if not root then return false end
 
-        speed = speed or 250 -- Kecepatan glide (semakin besar semakin cepat)
+        speed = speed or 250
 
         local attachment = Instance.new("Attachment")
         attachment.Parent = root
@@ -78,16 +105,27 @@ local function FastGlideTo(char, targetPos, speed)
         lv.Attachment0 = attachment
         lv.Parent = root
 
-        while (root.Position - targetPos).Magnitude > 4 and char.Parent do
+        local isSuccess = true
+        while (root.Position - targetPos).Magnitude > 4 and char.Parent and root.Parent do
                 local dir = (targetPos - root.Position).Unit
                 lv.VectorVelocity = dir * speed
                 RunService.Stepped:Wait()
+                if not char.Parent or not root.Parent then
+                        isSuccess = false
+                        break
+                end
         end
 
-        lv:Destroy()
-        attachment:Destroy()
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.CFrame = CFrame.new(targetPos)
+        if lv and lv.Parent then lv:Destroy() end
+        if attachment and attachment.Parent then attachment:Destroy() end
+
+        if isSuccess and root and root.Parent then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.CFrame = CFrame.new(targetPos)
+                return true
+        end
+
+        return false
 end
 
 -- LOGIC: GET FIELD EGGS
@@ -97,7 +135,7 @@ local function GetNearestFieldEgg()
         if not ok or not snapshot or not snapshot.Records then return nil end
 
         local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local root = WaitForCharacterRoot(char)
         if not root then return nil end
 
         local closestEgg = nil
@@ -118,13 +156,13 @@ local function GetNearestFieldEgg()
         return closestEgg
 end
 
--- LOGIC: INSTANT GRAB
+-- LOGIC: INSTANT GRAB REQUEST
 local function InstantGrabEgg(record)
-        if not record or not record.Uid then return false end
+        if not record or not record.Uid then return end
 
         local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then return false end
+        local root = WaitForCharacterRoot(char)
+        if not root then return end
 
         local slotKey = nil
         if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
@@ -156,24 +194,114 @@ local function InstantGrabEgg(record)
         end
 
         ignoredEggs[record.Uid] = os.clock()
-        return true
 end
 
--- LOGIC: AUTO AMBIL EGG THREAD & TELEPORT KE KOORDINAT AKHIR
-local function TriggerAutoGrabEggProcess()
-        if not isAutoEggGrabActive then return end
+-- FUNGSI VERIFIKASI KEBERADAAN EGG PADA HAND/CHARACTER PEMAIN
+local function VerifyEggInHand(char)
+        if not char or not char.Parent then return false end
+
+        -- 1. Pengecekan via Module Resmi (EggState)
+        if EggState then
+                if EggState.GetCarriedEgg then
+                        local carried = pcall(function() return EggState.GetCarriedEgg() end)
+                        if carried and carried ~= nil then return true end
+                end
+                if EggState.IsCarryingEgg then
+                        local ok, isCarrying = pcall(function() return EggState.IsCarryingEgg() end)
+                        if ok and isCarrying == true then return true end
+                end
+        end
+
+        -- 2. Pengecekan via Instance/Tool/Child pada Character
+        for _, child in ipairs(char:GetChildren()) do
+                if child:IsA("Tool") or child:IsA("Model") or child:IsA("BasePart") then
+                        local lowerName = string.lower(child.Name)
+                        if string.find(lowerName, "egg") or string.find(lowerName, "telur") or child:FindFirstChild("EggVisual") then
+                                return true
+                        end
+                end
+        end
+
+        return false
+end
+
+-- STRICT STATE FLOW TELEPORTATION
+local function RunStrictEggFlow(char)
+        if TeleportBusy then return end
+        TeleportBusy = true
 
         task.spawn(function()
-                task.wait(0.1)
+                -- 1. WAIT_CHARACTER
+                CurrentState = State.WAIT_CHARACTER
+                local root = WaitForCharacterRoot(char)
+                if not root then
+                        CurrentState = State.IDLE
+                        TeleportBusy = false
+                        return
+                end
+
+                -- 2. MOVING_WAYPOINT
+                CurrentState = State.MOVING_WAYPOINT
+                local wpSuccess = FastGlideTo(char, WAYPOINT_POS, 250)
+                if not wpSuccess then
+                        CurrentState = State.IDLE
+                        TeleportBusy = false
+                        return
+                end
+
+                -- 3. MOVING_TARGET
+                CurrentState = State.MOVING_TARGET
+                local targetSuccess = FastGlideTo(char, TARGET_POS, 250)
+                if not targetSuccess then
+                        CurrentState = State.IDLE
+                        TeleportBusy = false
+                        return
+                end
+
+                -- 4. TAKING_EGG
+                CurrentState = State.TAKING_EGG
                 local targetEgg = GetNearestFieldEgg()
                 if targetEgg then
                         InstantGrabEgg(targetEgg)
                 end
 
-                task.wait(0.1)
-                if LocalPlayer.Character then
-                        TeleportToTarget(LocalPlayer.Character, FINAL_POS)
+                -- 5. WAITING_FOR_EGG_CONFIRMATION
+                CurrentState = State.WAITING_FOR_EGG_CONFIRMATION
+                local isEggConfirmed = false
+                local timeout = os.clock() + 3.0 -- Maksimum polling 3 detik
+
+                while os.clock() < timeout do
+                        if VerifyEggInHand(char) then
+                                isEggConfirmed = true
+                                break
+                        end
+                        RunService.Stepped:Wait()
                 end
+
+                -- 6 & 7. VERIFIKASI KEBERHASILAN
+                if not isEggConfirmed then
+                        -- EGG BELUM TERDETEKSI DI TANGAN -> DILARANG TELEPORT TO FINAL_POS
+                        CurrentState = State.IDLE
+                        TeleportBusy = false
+                        return
+                end
+
+                CurrentState = State.EGG_CONFIRMED
+
+                -- 8. MOVING_FINAL
+                CurrentState = State.MOVING_FINAL
+                local finalMoveSuccess = TeleportToTarget(char, FINAL_POS)
+                if not finalMoveSuccess then
+                        CurrentState = State.IDLE
+                        TeleportBusy = false
+                        return
+                end
+
+                -- 9. FINAL_CONFIRMED & 10. COMPLETED
+                CurrentState = State.FINAL_CONFIRMED
+                CurrentState = State.COMPLETED
+
+                TeleportBusy = false
         end)
 end
 
@@ -342,22 +470,12 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
         ApplyInstantBypassState(newChar)
 
         if isAntiHitActive then
-                task.spawn(function()
-                        -- Step 1: Meluncur (Glide) cepat ke Waypoint Baru
-                        FastGlideTo(newChar, WAYPOINT_POS, 250)
-
-                        -- Step 2: Meluncur (Glide) cepat ke Safe Zone
-                        FastGlideTo(newChar, TARGET_POS, 250)
-
-                        -- Step 3: Jalankan Auto Grab Egg & Teleport ke Titik Akhir
-                        isAutoEggGrabActive = true
-                        TriggerAutoGrabEggProcess()
-                end)
+                RunStrictEggFlow(newChar)
         end
 end)
 
 --------------------------------------------------------------------------------
--- MAIN UI SETUP 
+-- MAIN UI SETUP
 --------------------------------------------------------------------------------
 local IsMinimized = false
 local IsTransitioning = false
@@ -907,7 +1025,7 @@ local function ExecuteDropAndFastRespawn()
 
         local char = LocalPlayer.Character
         if char then
-                local root = char:FindFirstChild("HumanoidRootPart")
+                local root = WaitForCharacterRoot(char)
                 if root then
                         for _, item in ipairs(char:GetChildren()) do
                                 if item:IsA("Tool") then
@@ -915,7 +1033,7 @@ local function ExecuteDropAndFastRespawn()
                                 end
                         end
 
-                        local targetSafeZoneCFrame = CFrame.new(TARGET_POS)
+                        local targetWaypointCFrame = CFrame.new(WAYPOINT_POS)
                         local startTime = os.clock()
                         local holdConnection
 
@@ -927,8 +1045,8 @@ local function ExecuteDropAndFastRespawn()
 
                                 root.AssemblyLinearVelocity = Vector3.zero
                                 root.AssemblyAngularVelocity = Vector3.zero
-                                root.CFrame = targetSafeZoneCFrame
-                                char:PivotTo(targetSafeZoneCFrame)
+                                root.CFrame = targetWaypointCFrame
+                                char:PivotTo(targetWaypointCFrame)
 
                                 if os.clock() - startTime >= safeZoneHoldDuration then
                                         holdConnection:Disconnect()
