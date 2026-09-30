@@ -9,300 +9,377 @@ local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
--- KOORDINAT TARGET (SISTEM FLOW BARU)
-local WAYPOINT_POS = Vector3.new(618.43, 71.69, -394.05) -- Waypoint (Tahap 2)
-local TARGET_POS   = Vector3.new(618.43, 71.69, -394.05) -- Target Egg (Tahap 3)
-local FINAL_POS    = Vector3.new(518.55, 71.69, -365.52) -- Final Position (Tahap 8)
+-- KOORDINAT TARGET
+local WAYPOINT_POS = Vector3.new(618.43, 71.69, -394.05)
+local TARGET_POS   = Vector3.new(491, 70, -371)
+local FINAL_POS    = Vector3.new(518.55, 71.69, -365.52)
 
 local GUI_NAME = "LeonHubGui"
 
 pcall(function()
-        local oldCore = CoreGui:FindFirstChild(GUI_NAME)
-        if oldCore then oldCore:Destroy() end
+    local oldCore = CoreGui:FindFirstChild(GUI_NAME)
+    if oldCore then oldCore:Destroy() end
 end)
 
 pcall(function()
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-                local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
-                if oldPlayer then oldPlayer:Destroy() end
-        end
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
+        if oldPlayer then oldPlayer:Destroy() end
+    end
 end)
 
 --------------------------------------------------------------------------------
--- MODULE INTEGRATION & INSTANT EGG GRAB LOGIC
+-- STATE UTAMA FITUR
+--------------------------------------------------------------------------------
+local isAntiHitV1Active = false
+local isAntiHitActive = false
+local isProcessingAntiHitV1 = false
+local isProcessing = false
+
+--------------------------------------------------------------------------------
+-- LOGIC FITUR: ANTI HIT V1 (Fake Visual & Real Teleport)
+--------------------------------------------------------------------------------
+local function CreateFakeAndTeleportReal()
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local realHumanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not realHumanoid then return end
+
+    local originalCFrame = root.CFrame
+    char.Archivable = true
+
+    local fakeChar = char:Clone()
+    char.Archivable = false
+    fakeChar.Name = "FakeVisualPlayer"
+
+    for _, part in ipairs(fakeChar:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.Anchored = true
+        elseif part:IsA("Script") or part:IsA("LocalScript") then
+            part:Destroy()
+        end
+    end
+
+    fakeChar.Parent = workspace
+    fakeChar:PivotTo(originalCFrame)
+
+    local camera = workspace.CurrentCamera
+    local fakeHumanoid = fakeChar:FindFirstChildOfClass("Humanoid")
+
+    if fakeHumanoid and camera then
+        camera.CameraSubject = fakeHumanoid
+    end
+
+    local targetCFrame = CFrame.new(TARGET_POS + Vector3.new(0, 3, 0))
+    local startTime = os.clock()
+    local holdConnection
+
+    holdConnection = RunService.Heartbeat:Connect(function()
+        if not char or not root or not root.Parent then
+            if holdConnection then holdConnection:Disconnect() end
+            return
+        end
+
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.CFrame = targetCFrame
+        char:PivotTo(targetCFrame)
+
+        if os.clock() - startTime >= 0.6 then
+            holdConnection:Disconnect()
+        end
+    end)
+
+    task.delay(0.6, function()
+        if fakeChar then fakeChar:Destroy() end
+        if realHumanoid and camera then
+            camera.CameraSubject = realHumanoid
+        end
+    end)
+end
+
+local function ExecuteDropAndTeleportAntiHitV1()
+    if isProcessingAntiHitV1 or not isAntiHitV1Active then return end
+    isProcessingAntiHitV1 = true
+
+    task.wait(0.1)
+
+    local char = LocalPlayer.Character
+    if char then
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") then
+                item.Parent = workspace
+            end
+        end
+        CreateFakeAndTeleportReal()
+    end
+
+    task.delay(0.8, function()
+        isProcessingAntiHitV1 = false
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- MODULE INTEGRATION
 --------------------------------------------------------------------------------
 local EggState, PlotState, AreaEggSlotIdentity
 pcall(function() EggState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("EggState")) end)
 pcall(function() PlotState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("PlotState")) end)
 pcall(function()
-        AreaEggSlotIdentity = (ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Util") and require(ReplicatedStorage.Shared.Util.AreaEggSlotIdentity))
-                or (ReplicatedStorage:FindFirstChild("Util") and require(ReplicatedStorage.Util.AreaEggSlotIdentity))
-                or (ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Utils") and require(ReplicatedStorage.Shared.Utils.AreaEggSlotIdentity))
+    if ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Util") then
+        AreaEggSlotIdentity = require(ReplicatedStorage.Shared.Util.AreaEggSlotIdentity)
+    elseif ReplicatedStorage:FindFirstChild("Util") then
+        AreaEggSlotIdentity = require(ReplicatedStorage.Util.AreaEggSlotIdentity)
+    end
 end)
 
 local isAutoEggGrabActive = false
 local ignoredEggs = {}
 local TeleportBusy = false
 
--- STATE ENUM LOGIC
 local State = {
-        IDLE = "IDLE",
-        WAIT_CHARACTER = "WAIT_CHARACTER",
-        MOVING_WAYPOINT = "MOVING_WAYPOINT",
-        MOVING_TARGET = "MOVING_TARGET",
-        TAKING_EGG = "TAKING_EGG",
-        WAITING_FOR_EGG_CONFIRMATION = "WAITING_FOR_EGG_CONFIRMATION",
-        EGG_CONFIRMED = "EGG_CONFIRMED",
-        MOVING_FINAL = "MOVING_FINAL",
-        FINAL_CONFIRMED = "FINAL_CONFIRMED",
-        COMPLETED = "COMPLETED"
+    IDLE = "IDLE",
+    WAIT_CHARACTER = "WAIT_CHARACTER",
+    MOVING_WAYPOINT = "MOVING_WAYPOINT",
+    MOVING_TARGET = "MOVING_TARGET",
+    TAKING_EGG = "TAKING_EGG",
+    WAITING_FOR_EGG_CONFIRMATION = "WAITING_FOR_EGG_CONFIRMATION",
+    EGG_CONFIRMED = "EGG_CONFIRMED",
+    MOVING_FINAL = "MOVING_FINAL",
+    FINAL_CONFIRMED = "FINAL_CONFIRMED",
+    COMPLETED = "COMPLETED"
 }
 
 local CurrentState = State.IDLE
 
--- Helper Wait Character & RootPart
 local function WaitForCharacterRoot(char)
-        if not char then return nil end
-        local root = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
-        if root and root.Parent and char.Parent then
-                return root
-        end
-        return nil
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
+    if root and root.Parent and char.Parent then
+        return root
+    end
+    return nil
 end
 
--- Helper Teleportasi Posisi
 local function TeleportToTarget(char, targetPos)
-        local root = WaitForCharacterRoot(char)
-        if not root then return false end
+    local root = WaitForCharacterRoot(char)
+    if not root then return false end
 
-        local targetCFrame = CFrame.new(targetPos)
-        for _ = 1, 6 do
-                if not root or not root.Parent or not char.Parent then return false end
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-                root.CFrame = targetCFrame
-                char:PivotTo(targetCFrame)
-                RunService.Stepped:Wait()
-        end
-        return true
+    local targetCFrame = CFrame.new(targetPos)
+    for _ = 1, 6 do
+        if not root or not root.Parent or not char.Parent then return false end
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        root.CFrame = targetCFrame
+        char:PivotTo(targetCFrame)
+        RunService.Stepped:Wait()
+    end
+    return true
 end
 
--- LOGIC: FAST GLIDE MOVEMENT
 local function FastGlideTo(char, targetPos, speed)
-        local root = WaitForCharacterRoot(char)
-        if not root then return false end
+    local root = WaitForCharacterRoot(char)
+    if not root then return false end
 
-        speed = speed or 250
+    speed = speed or 250
 
-        local attachment = Instance.new("Attachment")
-        attachment.Parent = root
+    local attachment = Instance.new("Attachment")
+    attachment.Parent = root
 
-        local lv = Instance.new("LinearVelocity")
-        lv.MaxForce = 9999999
-        lv.VectorVelocity = Vector3.zero
-        lv.RelativeTo = Enum.ActuatorRelativeTo.World
-        lv.Attachment0 = attachment
-        lv.Parent = root
+    local lv = Instance.new("LinearVelocity")
+    lv.MaxForce = 9999999
+    lv.VectorVelocity = Vector3.zero
+    lv.RelativeTo = Enum.ActuatorRelativeTo.World
+    lv.Attachment0 = attachment
+    lv.Parent = root
 
-        local isSuccess = true
-        while (root.Position - targetPos).Magnitude > 4 and char.Parent and root.Parent do
-                local dir = (targetPos - root.Position).Unit
-                lv.VectorVelocity = dir * speed
-                RunService.Stepped:Wait()
-                if not char.Parent or not root.Parent then
-                        isSuccess = false
-                        break
-                end
+    local isSuccess = true
+    while (root.Position - targetPos).Magnitude > 4 and char.Parent and root.Parent do
+        local dir = (targetPos - root.Position).Unit
+        lv.VectorVelocity = dir * speed
+        RunService.Stepped:Wait()
+        if not char.Parent or not root.Parent then
+            isSuccess = false
+            break
         end
+    end
 
-        if lv and lv.Parent then lv:Destroy() end
-        if attachment and attachment.Parent then attachment:Destroy() end
+    if lv and lv.Parent then lv:Destroy() end
+    if attachment and attachment.Parent then attachment:Destroy() end
 
-        if isSuccess and root and root.Parent then
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.CFrame = CFrame.new(targetPos)
-                return true
-        end
+    if isSuccess and root and root.Parent then
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.CFrame = CFrame.new(targetPos)
+        return true
+    end
 
-        return false
+    return false
 end
 
--- LOGIC: GET FIELD EGGS
 local function GetNearestFieldEgg()
-        if not EggState or not EggState.ReadFieldEggs then return nil end
-        local ok, snapshot = pcall(EggState.ReadFieldEggs)
-        if not ok or not snapshot or not snapshot.Records then return nil end
+    if not EggState or not EggState.ReadFieldEggs then return nil end
+    local ok, snapshot = pcall(EggState.ReadFieldEggs)
+    if not ok or not snapshot or not snapshot.Records then return nil end
 
-        local char = LocalPlayer.Character
-        local root = WaitForCharacterRoot(char)
-        if not root then return nil end
+    local char = LocalPlayer.Character
+    local root = WaitForCharacterRoot(char)
+    if not root then return nil end
 
-        local closestEgg = nil
-        local shortestDist = math.huge
+    local closestEgg = nil
+    local shortestDist = math.huge
 
-        for _, record in ipairs(snapshot.Records) do
-                if record.State == "Slot" and record.BoundsCFrame then
-                        local isIgnored = ignoredEggs[record.Uid] and (os.clock() - ignoredEggs[record.Uid] < 2.5)
-                        if not isIgnored then
-                                local dist = (record.BoundsCFrame.Position - root.Position).Magnitude
-                                if dist < shortestDist then
-                                        shortestDist = dist
-                                        closestEgg = record
-                                end
-                        end
+    for _, record in ipairs(snapshot.Records) do
+        if record.State == "Slot" and record.BoundsCFrame then
+            local isIgnored = ignoredEggs[record.Uid] and (os.clock() - ignoredEggs[record.Uid] < 2.5)
+            if not isIgnored then
+                local dist = (record.BoundsCFrame.Position - root.Position).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closestEgg = record
                 end
+            end
         end
-        return closestEgg
+    end
+    return closestEgg
 end
 
--- LOGIC: INSTANT GRAB REQUEST
 local function InstantGrabEgg(record)
-        if not record or not record.Uid then return end
+    if not record or not record.Uid then return end
 
-        local char = LocalPlayer.Character
-        local root = WaitForCharacterRoot(char)
-        if not root then return end
+    local char = LocalPlayer.Character
+    local root = WaitForCharacterRoot(char)
+    if not root then return end
 
-        local slotKey = nil
-        if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
-                slotKey = AreaEggSlotIdentity.SlotKey(record.AreaId, record.NestId)
+    local slotKey = nil
+    if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
+        slotKey = AreaEggSlotIdentity.SlotKey(record.AreaId, record.NestId)
+    end
+
+    local net = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking")
+    local carryRemote = net and net:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
+    if carryRemote then 
+        pcall(function() carryRemote:InvokeServer({ Uid = record.Uid, FirstAreaSlotKey = slotKey }) end) 
+    end
+
+    pcall(function()
+        if EggState and EggState.CarryFieldEgg then 
+            EggState.CarryFieldEgg(record.Uid, slotKey) 
         end
+    end)
 
-        local net = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking")
-        local carryRemote = net and net:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
-        if carryRemote then 
-                pcall(function() carryRemote:InvokeServer({ Uid = record.Uid, FirstAreaSlotKey = slotKey }) end) 
+    for _, d in ipairs(Workspace:GetDescendants()) do
+        if d:IsA("ProximityPrompt") and d.Name == "CarryAreaEgg" and d.Enabled then
+            local p = d.Parent
+            if p:IsA("Attachment") then p = p.Parent end
+            if p and (p.Position - root.Position).Magnitude < 15 then
+                d.HoldDuration = 0
+                pcall(function() fireproximityprompt(d) end)
+                break
+            end
         end
+    end
 
-        pcall(function()
-                if EggState and EggState.CarryFieldEgg then 
-                        EggState.CarryFieldEgg(record.Uid, slotKey) 
-                end
-        end)
-
-        for _, d in ipairs(Workspace:GetDescendants()) do
-                if d:IsA("ProximityPrompt") and d.Name == "CarryAreaEgg" and d.Enabled then
-                        local p = d.Parent
-                        if p:IsA("Attachment") then p = p.Parent end
-                        if p and (p.Position - root.Position).Magnitude < 15 then
-                                d.HoldDuration = 0
-                                pcall(function() fireproximityprompt(d) end)
-                                break
-                        end
-                end
-        end
-
-        ignoredEggs[record.Uid] = os.clock()
+    ignoredEggs[record.Uid] = os.clock()
 end
 
--- FUNGSI VERIFIKASI KEBERADAAN EGG PADA HAND/CHARACTER PEMAIN
 local function VerifyEggInHand(char)
-        if not char or not char.Parent then return false end
+    if not char or not char.Parent then return false end
 
-        -- 1. Pengecekan via Module Resmi (EggState)
-        if EggState then
-                if EggState.GetCarriedEgg then
-                        local carried = pcall(function() return EggState.GetCarriedEgg() end)
-                        if carried and carried ~= nil then return true end
-                end
-                if EggState.IsCarryingEgg then
-                        local ok, isCarrying = pcall(function() return EggState.IsCarryingEgg() end)
-                        if ok and isCarrying == true then return true end
-                end
+    if EggState then
+        if EggState.GetCarriedEgg then
+            local ok, carried = pcall(function() return EggState.GetCarriedEgg() end)
+            if ok and carried ~= nil then return true end
         end
-
-        -- 2. Pengecekan via Instance/Tool/Child pada Character
-        for _, child in ipairs(char:GetChildren()) do
-                if child:IsA("Tool") or child:IsA("Model") or child:IsA("BasePart") then
-                        local lowerName = string.lower(child.Name)
-                        if string.find(lowerName, "egg") or string.find(lowerName, "telur") or child:FindFirstChild("EggVisual") then
-                                return true
-                        end
-                end
+        if EggState.IsCarryingEgg then
+            local ok, isCarrying = pcall(function() return EggState.IsCarryingEgg() end)
+            if ok and isCarrying == true then return true end
         end
+    end
 
-        return false
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") or child:IsA("Model") or child:IsA("BasePart") then
+            local lowerName = string.lower(child.Name)
+            if string.find(lowerName, "egg") or string.find(lowerName, "telur") or child:FindFirstChild("EggVisual") then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
--- STRICT STATE FLOW TELEPORTATION
 local function RunStrictEggFlow(char)
-        if TeleportBusy then return end
-        TeleportBusy = true
+    if TeleportBusy then return end
+    TeleportBusy = true
 
-        task.spawn(function()
-                -- 1. WAIT_CHARACTER
-                CurrentState = State.WAIT_CHARACTER
-                local root = WaitForCharacterRoot(char)
-                if not root then
-                        CurrentState = State.IDLE
-                        TeleportBusy = false
-                        return
-                end
+    task.spawn(function()
+        CurrentState = State.WAIT_CHARACTER
+        local root = WaitForCharacterRoot(char)
+        if not root then
+            CurrentState = State.IDLE
+            TeleportBusy = false
+            return
+        end
 
-                -- 2. MOVING_WAYPOINT
-                CurrentState = State.MOVING_WAYPOINT
-                local wpSuccess = FastGlideTo(char, WAYPOINT_POS, 250)
-                if not wpSuccess then
-                        CurrentState = State.IDLE
-                        TeleportBusy = false
-                        return
-                end
+        CurrentState = State.MOVING_WAYPOINT
+        local wpSuccess = FastGlideTo(char, WAYPOINT_POS, 250)
+        if not wpSuccess then
+            CurrentState = State.IDLE
+            TeleportBusy = false
+            return
+        end
 
-                -- 3. MOVING_TARGET
-                CurrentState = State.MOVING_TARGET
-                local targetSuccess = FastGlideTo(char, TARGET_POS, 250)
-                if not targetSuccess then
-                        CurrentState = State.IDLE
-                        TeleportBusy = false
-                        return
-                end
+        CurrentState = State.MOVING_TARGET
+        local targetSuccess = FastGlideTo(char, TARGET_POS, 250)
+        if not targetSuccess then
+            CurrentState = State.IDLE
+            TeleportBusy = false
+            return
+        end
 
-                -- 4. TAKING_EGG
-                CurrentState = State.TAKING_EGG
-                local targetEgg = GetNearestFieldEgg()
-                if targetEgg then
-                        InstantGrabEgg(targetEgg)
-                end
+        CurrentState = State.TAKING_EGG
+        local targetEgg = GetNearestFieldEgg()
+        if targetEgg then
+            InstantGrabEgg(targetEgg)
+        end
 
-                -- 5. WAITING_FOR_EGG_CONFIRMATION
-                CurrentState = State.WAITING_FOR_EGG_CONFIRMATION
-                local isEggConfirmed = false
-                local timeout = os.clock() + 3.0 -- Maksimum polling 3 detik
+        CurrentState = State.WAITING_FOR_EGG_CONFIRMATION
+        local isEggConfirmed = false
+        local timeout = os.clock() + 3.0
 
-                while os.clock() < timeout do
-                        if VerifyEggInHand(char) then
-                                isEggConfirmed = true
-                                break
-                        end
-                        RunService.Stepped:Wait()
-                end
+        while os.clock() < timeout do
+            if VerifyEggInHand(char) then
+                isEggConfirmed = true
+                break
+            end
+            RunService.Stepped:Wait()
+        end
 
-                -- 6 & 7. VERIFIKASI KEBERHASILAN
-                if not isEggConfirmed then
-                        -- EGG BELUM TERDETEKSI DI TANGAN -> DILARANG TELEPORT TO FINAL_POS
-                        CurrentState = State.IDLE
-                        TeleportBusy = false
-                        return
-                end
+        if not isEggConfirmed then
+            CurrentState = State.IDLE
+            TeleportBusy = false
+            return
+        end
 
-                CurrentState = State.EGG_CONFIRMED
+        CurrentState = State.EGG_CONFIRMED
 
-                -- 8. MOVING_FINAL
-                CurrentState = State.MOVING_FINAL
-                local finalMoveSuccess = TeleportToTarget(char, FINAL_POS)
-                if not finalMoveSuccess then
-                        CurrentState = State.IDLE
-                        TeleportBusy = false
-                        return
-                end
+        CurrentState = State.MOVING_FINAL
+        local finalMoveSuccess = TeleportToTarget(char, FINAL_POS)
+        if not finalMoveSuccess then
+            CurrentState = State.IDLE
+            TeleportBusy = false
+            return
+        end
 
-                -- 9. FINAL_CONFIRMED & 10. COMPLETED
-                CurrentState = State.FINAL_CONFIRMED
-                CurrentState = State.COMPLETED
+        CurrentState = State.FINAL_CONFIRMED
+        CurrentState = State.COMPLETED
 
-                TeleportBusy = false
-        end)
+        TeleportBusy = false
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -312,166 +389,202 @@ local isFlyActive = false
 local MOVE_SPEED = 60
 local BLOCK_OFFSET_Y = 3.5
 local activeBlock = nil
-
-local safeZoneHoldDuration = 1.2
+local safeZoneHoldDuration = 1.5
 
 local function UpdateOrCreateBlock(position)
-        if not activeBlock or not activeBlock.Parent then
-                local block = Instance.new("Part")
-                block.Name = "MovingDynamicBlock"
-                block.Size = Vector3.new(6, 1, 6)
-                block.Transparency = 1
-                block.CanCollide = true
-                block.Anchored = true
-                block.Material = Enum.Material.SmoothPlastic
-                block.Parent = workspace
-                activeBlock = block
-        end
+    if not activeBlock or not activeBlock.Parent then
+        local block = Instance.new("Part")
+        block.Name = "MovingDynamicBlock"
+        block.Size = Vector3.new(6, 1, 6)
+        block.Transparency = 1
+        block.CanCollide = true
+        block.Anchored = true
+        block.Material = Enum.Material.SmoothPlastic
+        block.Parent = workspace
+        activeBlock = block
+    end
 
-        activeBlock.CFrame = CFrame.new(position)
-        return activeBlock
+    activeBlock.CFrame = CFrame.new(position)
+    return activeBlock
 end
 
 local function RemoveBlock()
-        if activeBlock and activeBlock.Parent then
-                activeBlock:Destroy()
-                activeBlock = nil
-        end
+    if activeBlock and activeBlock.Parent then
+        activeBlock:Destroy()
+        activeBlock = nil
+    end
 end
 
 --------------------------------------------------------------------------------
--- BYPASS STATE & METATABLE
+-- BYPASS STATE
 --------------------------------------------------------------------------------
 local function ApplyInstantBypassState(character)
-        if not character then return end
+    if not character then return end
 
-        local humanoid = character:WaitForChild("Humanoid", 5)
-        local root = character:WaitForChild("HumanoidRootPart", 5)
-        if not humanoid or not root then return end
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    local root = character:WaitForChild("HumanoidRootPart", 5)
+    if not humanoid or not root then return end
 
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
 
-        workspace.CurrentCamera.CameraSubject = humanoid
-
-        for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                        part.CanTouch = true
-                        part.Touched:Connect(function(hit)
-                                if hit and hit.Parent then
-                                        local lowerName = string.lower(hit.Name)
-                                        local lowerParent = string.lower(hit.Parent.Name)
-
-                                        if string.find(lowerName, "kill") or string.find(lowerName, "lava") or string.find(lowerName, "void") or string.find(lowerName, "anticheat") or string.find(lowerParent, "anticheat") then
-                                                hit.CanTouch = false
-                                        end
-                                end
-                        end)
-                end
-        end
+    workspace.CurrentCamera.CameraSubject = humanoid
 end
 
--- METATABLE BYPASS
-if getrawmetatable and setreadonly then
-        local gmt = getrawmetatable(game)
-        local oldNamecall = gmt.__namecall
-        setreadonly(gmt, false)
-
-        gmt.__namecall = newcclosure(function(self, ...)
-                local method = getnamecallmethod()
-
-                if method == "Kick" or method == "kick" then
-                        return nil
-                end
-
-                if method == "FireServer" or method == "InvokeServer" then
-                        local name = string.lower(tostring(self.Name))
-                        if string.find(name, "anticheat") or string.find(name, "ban") or string.find(name, "detect") or string.find(name, "check") or string.find(name, "flag") or string.find(name, "died") or string.find(name, "kill") then
-                                return nil
-                        end
-                end
-
-                return oldNamecall(self, ...)
-        end)
-
-        setreadonly(gmt, true)
-end
-
--- RUNSERVICE FLY
 RunService.Heartbeat:Connect(function(deltaTime)
-        if not isFlyActive then 
-                RemoveBlock()
-                return 
+    if not isFlyActive then 
+        RemoveBlock()
+        return 
+    end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local camera = workspace.CurrentCamera
+
+    if root and hum and camera then
+        hum.PlatformStand = true
+
+        local moveDir = Vector3.zero
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
+
+        if moveDir.Magnitude == 0 and hum.MoveDirection.Magnitude > 0 then
+            local localMove = camera.CFrame:VectorToObjectSpace(hum.MoveDirection)
+            moveDir = Vector3.new(localMove.X, 0, localMove.Z)
         end
 
-        local char = LocalPlayer.Character
-        if not char then return end
+        local verticalMove = 0
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalMove = verticalMove + 1 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalMove = verticalMove - 1 end
 
-        local root = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        local camera = workspace.CurrentCamera
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
 
-        if root and hum and camera then
-                hum.PlatformStand = true
+        if moveDir.Magnitude > 0 or verticalMove ~= 0 then
+            if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
 
-                local moveDir = Vector3.zero
+            local camCFrame = camera.CFrame
+            local worldDirection = (camCFrame.RightVector * moveDir.X) 
+                + (camCFrame.LookVector * -moveDir.Z) 
+                + (Vector3.new(0, 1, 0) * verticalMove)
 
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
+            if worldDirection.Magnitude > 0 then worldDirection = worldDirection.Unit end
 
-                if moveDir.Magnitude == 0 and hum.MoveDirection.Magnitude > 0 then
-                        local localMove = camera.CFrame:VectorToObjectSpace(hum.MoveDirection)
-                        moveDir = Vector3.new(localMove.X, 0, localMove.Z)
-                end
+            local targetPos = root.Position + (worldDirection * (MOVE_SPEED * deltaTime))
+            local lookAtPos = targetPos + Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z)
 
-                local verticalMove = 0
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalMove = verticalMove + 1 end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalMove = verticalMove - 1 end
-
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-
-                if moveDir.Magnitude > 0 or verticalMove ~= 0 then
-                        if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
-
-                        local camCFrame = camera.CFrame
-                        local worldDirection = (camCFrame.RightVector * moveDir.X) 
-                                + (camCFrame.LookVector * -moveDir.Z) 
-                                + (Vector3.new(0, 1, 0) * verticalMove)
-
-                        if worldDirection.Magnitude > 0 then worldDirection = worldDirection.Unit end
-
-                        local targetPos = root.Position + (worldDirection * (MOVE_SPEED * deltaTime))
-                        local lookAtPos = targetPos + Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z)
-
-                        root.CFrame = CFrame.new(targetPos, lookAtPos)
-                        UpdateOrCreateBlock(targetPos - Vector3.new(0, BLOCK_OFFSET_Y, 0))
-                else
-                        UpdateOrCreateBlock(root.Position - Vector3.new(0, BLOCK_OFFSET_Y, 0))
-                end
+            root.CFrame = CFrame.new(targetPos, lookAtPos)
+            UpdateOrCreateBlock(targetPos - Vector3.new(0, BLOCK_OFFSET_Y, 0))
+        else
+            UpdateOrCreateBlock(root.Position - Vector3.new(0, BLOCK_OFFSET_Y, 0))
         end
+    end
 end)
 
 if LocalPlayer.Character then
-        task.spawn(function() ApplyInstantBypassState(LocalPlayer.Character) end)
+    task.spawn(function() ApplyInstantBypassState(LocalPlayer.Character) end)
 end
 
 --------------------------------------------------------------------------------
--- FAST RESPAWN & FAST GLIDE MOVEMENT TO SAFE ZONE
+-- RESPAWN & DETEKSI
 --------------------------------------------------------------------------------
-local isAntiHitActive = false
-local isProcessing = false
-
 LocalPlayer.CharacterAdded:Connect(function(newChar)
-        ApplyInstantBypassState(newChar)
+    ApplyInstantBypassState(newChar)
+    if isAntiHitActive then
+        RunStrictEggFlow(newChar)
+    end
+end)
 
-        if isAntiHitActive then
-                RunStrictEggFlow(newChar)
+local function FastBypassRespawn()
+    pcall(function()
+        LocalPlayer:LoadCharacter()
+    end)
+end
+
+local function ExecuteDropAndFastRespawn()
+    if isProcessing or not isAntiHitActive then return end
+    isProcessing = true
+    isAutoEggGrabActive = false
+
+    local char = LocalPlayer.Character
+    if char then
+        local root = WaitForCharacterRoot(char)
+        if root then
+            for _, item in ipairs(char:GetChildren()) do
+                if item:IsA("Tool") then
+                    item.Parent = workspace
+                end
+            end
+
+            local targetWaypointCFrame = CFrame.new(WAYPOINT_POS)
+            local startTime = os.clock()
+            local holdConnection
+
+            holdConnection = RunService.Heartbeat:Connect(function()
+                if not char or not root or not root.Parent then
+                    if holdConnection then holdConnection:Disconnect() end
+                    return
+                end
+
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = targetWaypointCFrame
+                char:PivotTo(targetWaypointCFrame)
+
+                if os.clock() - startTime >= safeZoneHoldDuration then
+                    holdConnection:Disconnect()
+                end
+            end)
+
+            task.wait(safeZoneHoldDuration)
+            FastBypassRespawn()
         end
+    end
+
+    task.delay(0.05, function()
+        isProcessing = false
+    end)
+end
+
+ProximityPromptService.PromptTriggered:Connect(function(prompt, playerWhoTriggered)
+    if playerWhoTriggered == LocalPlayer then
+        if isAntiHitV1Active then
+            task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
+        end
+        if isAntiHitActive then
+            task.spawn(function() ExecuteDropAndFastRespawn() end)
+        end
+    end
+end)
+
+local function SetupCharacterDetection(char)
+    char.ChildAdded:Connect(function(child)
+        if not child:IsA("Tool") then
+            local name = string.lower(child.Name)
+            if string.find(name, "egg") or string.find(name, "telur") then
+                if isAntiHitV1Active then
+                    task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
+                end
+                if isAntiHitActive then
+                    task.spawn(function() ExecuteDropAndFastRespawn() end)
+                end
+            end
+        end
+    end)
+end
+
+if LocalPlayer.Character then SetupCharacterDetection(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    task.wait(0.05)
+    SetupCharacterDetection(newChar)
 end)
 
 --------------------------------------------------------------------------------
@@ -481,28 +594,28 @@ local IsMinimized = false
 local IsTransitioning = false
 
 local Theme = {
-        Background = Color3.fromRGB(7, 10, 17),
-        Card = Color3.fromRGB(14, 20, 32),
-        CardHover = Color3.fromRGB(20, 29, 46),
-        Accent = Color3.fromRGB(37, 120, 255),
-        AccentLight = Color3.fromRGB(82, 151, 255),
-        Text = Color3.fromRGB(245, 247, 255),
-        TextSecondary = Color3.fromRGB(151, 163, 186),
-        TextMuted = Color3.fromRGB(88, 100, 123),
-        Border = Color3.fromRGB(34, 48, 73),
-        Off = Color3.fromRGB(20, 27, 40),
-        OffStroke = Color3.fromRGB(50, 64, 88),
-        On = Color3.fromRGB(18, 48, 43),
-        OnStroke = Color3.fromRGB(46, 146, 116),
-        OnAccent = Color3.fromRGB(76, 220, 163),
+    Background = Color3.fromRGB(7, 10, 17),
+    Card = Color3.fromRGB(14, 20, 32),
+    CardHover = Color3.fromRGB(20, 29, 46),
+    Accent = Color3.fromRGB(37, 120, 255),
+    AccentLight = Color3.fromRGB(82, 151, 255),
+    Text = Color3.fromRGB(245, 247, 255),
+    TextSecondary = Color3.fromRGB(151, 163, 186),
+    TextMuted = Color3.fromRGB(88, 100, 123),
+    Border = Color3.fromRGB(34, 48, 73),
+    Off = Color3.fromRGB(20, 27, 40),
+    OffStroke = Color3.fromRGB(50, 64, 88),
+    On = Color3.fromRGB(18, 48, 43),
+    OnStroke = Color3.fromRGB(46, 146, 116),
+    OnAccent = Color3.fromRGB(76, 220, 163),
 }
 
 local function Tween(object, duration, properties, style, direction)
-        if not object or not object.Parent then return end
-        local info = TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quart, direction or Enum.EasingDirection.Out)
-        local tween = TweenService:Create(object, info, properties)
-        tween:Play()
-        return tween
+    if not object or not object.Parent then return end
+    local info = TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quart, direction or Enum.EasingDirection.Out)
+    local tween = TweenService:Create(object, info, properties)
+    tween:Play()
+    return tween
 end
 
 local ScreenGui = Instance.new("ScreenGui")
@@ -514,12 +627,12 @@ ScreenGui.DisplayOrder = 999
 local guiParented = false
 pcall(function() ScreenGui.Parent = CoreGui guiParented = ScreenGui.Parent ~= nil end)
 if not guiParented then
-        pcall(function() ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") guiParented = ScreenGui.Parent ~= nil end)
+    pcall(function() ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") guiParented = ScreenGui.Parent ~= nil end)
 end
 if not guiParented then return end
 
 local MAIN_WIDTH = 350
-local MAIN_HEIGHT = 215
+local MAIN_HEIGHT = 265
 local MAIN_HOME_POSITION = UDim2.fromScale(0.20, 0.43)
 
 local MainFrame = Instance.new("Frame")
@@ -547,9 +660,9 @@ MainStroke.Parent = MainFrame
 local BackgroundGradient = Instance.new("UIGradient")
 BackgroundGradient.Rotation = 135
 BackgroundGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 13, 22)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 12, 20)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 20, 34))
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 13, 22)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 12, 20)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 20, 34))
 })
 BackgroundGradient.Parent = MainFrame
 
@@ -674,7 +787,7 @@ MinStroke.Parent = MinimizeButton
 
 local TabMainContent = Instance.new("Frame")
 TabMainContent.Name = "TabMainContent"
-TabMainContent.Size = UDim2.new(1, -30, 0, 150)
+TabMainContent.Size = UDim2.new(1, -30, 0, 205)
 TabMainContent.Position = UDim2.fromOffset(15, 50)
 TabMainContent.BackgroundTransparency = 1
 TabMainContent.Visible = true
@@ -682,12 +795,86 @@ TabMainContent.ZIndex = 5
 TabMainContent.Parent = MainFrame
 
 --------------------------------------------------------------------------------
--- MAIN CONTENT
+-- MAIN CONTENT (UI FITUR)
 --------------------------------------------------------------------------------
+
+-- 1. ANTI HIT V1 (PALING ATAS)
+local AntiHitV1Button = Instance.new("TextButton")
+AntiHitV1Button.Name = "AntiHitV1Button"
+AntiHitV1Button.Size = UDim2.new(1, 0, 0, 46)
+AntiHitV1Button.Position = UDim2.fromOffset(0, 0)
+AntiHitV1Button.BackgroundColor3 = Theme.Off
+AntiHitV1Button.BorderSizePixel = 0
+AntiHitV1Button.AutoButtonColor = false
+AntiHitV1Button.Text = ""
+AntiHitV1Button.ZIndex = 7
+AntiHitV1Button.Parent = TabMainContent
+
+local AntiHitV1Corner = Instance.new("UICorner")
+AntiHitV1Corner.CornerRadius = UDim.new(0, 10)
+AntiHitV1Corner.Parent = AntiHitV1Button
+
+local AntiHitV1Stroke = Instance.new("UIStroke")
+AntiHitV1Stroke.Name = "AntiHitV1Stroke"
+AntiHitV1Stroke.Color = Theme.OffStroke
+AntiHitV1Stroke.Thickness = 1
+AntiHitV1Stroke.Transparency = 0.2
+AntiHitV1Stroke.Parent = AntiHitV1Button
+
+local AntiHitV1StatusDot = Instance.new("Frame")
+AntiHitV1StatusDot.Name = "AntiHitV1StatusDot"
+AntiHitV1StatusDot.Size = UDim2.fromOffset(7, 7)
+AntiHitV1StatusDot.Position = UDim2.fromOffset(15, 19)
+AntiHitV1StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+AntiHitV1StatusDot.BorderSizePixel = 0
+AntiHitV1StatusDot.ZIndex = 9
+AntiHitV1StatusDot.Parent = AntiHitV1Button
+
+local AntiHitV1StatusDotCorner = Instance.new("UICorner")
+AntiHitV1StatusDotCorner.CornerRadius = UDim.new(1, 0)
+AntiHitV1StatusDotCorner.Parent = AntiHitV1StatusDot
+
+local AntiHitV1Title = Instance.new("TextLabel")
+AntiHitV1Title.Size = UDim2.new(1, -100, 0, 18)
+AntiHitV1Title.Position = UDim2.fromOffset(32, 6)
+AntiHitV1Title.BackgroundTransparency = 1
+AntiHitV1Title.Text = "Anti hit v1"
+AntiHitV1Title.TextColor3 = Theme.Text
+AntiHitV1Title.Font = Enum.Font.GothamBold
+AntiHitV1Title.TextSize = 11
+AntiHitV1Title.TextXAlignment = Enum.TextXAlignment.Left
+AntiHitV1Title.ZIndex = 9
+AntiHitV1Title.Parent = AntiHitV1Button
+
+local AntiHitV1Sub = Instance.new("TextLabel")
+AntiHitV1Sub.Size = UDim2.new(1, -100, 0, 14)
+AntiHitV1Sub.Position = UDim2.fromOffset(32, 23)
+AntiHitV1Sub.BackgroundTransparency = 1
+AntiHitV1Sub.Text = "Fake visual protection disabled"
+AntiHitV1Sub.TextColor3 = Theme.TextMuted
+AntiHitV1Sub.Font = Enum.Font.GothamMedium
+AntiHitV1Sub.TextSize = 8
+AntiHitV1Sub.TextXAlignment = Enum.TextXAlignment.Left
+AntiHitV1Sub.ZIndex = 9
+AntiHitV1Sub.Parent = AntiHitV1Button
+
+local AntiHitV1StatusText = Instance.new("TextLabel")
+AntiHitV1StatusText.Size = UDim2.fromOffset(55, 20)
+AntiHitV1StatusText.Position = UDim2.new(1, -72, 0, 13)
+AntiHitV1StatusText.BackgroundTransparency = 1
+AntiHitV1StatusText.Text = "OFF"
+AntiHitV1StatusText.TextColor3 = Theme.TextMuted
+AntiHitV1StatusText.Font = Enum.Font.GothamBold
+AntiHitV1StatusText.TextSize = 9
+AntiHitV1StatusText.TextXAlignment = Enum.TextXAlignment.Right
+AntiHitV1StatusText.ZIndex = 9
+AntiHitV1StatusText.Parent = AntiHitV1Button
+
+-- 2. INSTANT TELEPORT V1
 local AntiHitButton = Instance.new("TextButton")
 AntiHitButton.Name = "AntiHitButton"
 AntiHitButton.Size = UDim2.new(1, 0, 0, 46)
-AntiHitButton.Position = UDim2.fromOffset(0, 0)
+AntiHitButton.Position = UDim2.fromOffset(0, 52)
 AntiHitButton.BackgroundColor3 = Theme.Off
 AntiHitButton.BorderSizePixel = 0
 AntiHitButton.AutoButtonColor = false
@@ -755,10 +942,11 @@ StatusText.TextXAlignment = Enum.TextXAlignment.Right
 StatusText.ZIndex = 9
 StatusText.Parent = AntiHitButton
 
+-- 3. FLY FOR AA
 local FlyBetaButton = Instance.new("TextButton")
 FlyBetaButton.Name = "FlyBetaButton"
 FlyBetaButton.Size = UDim2.new(1, 0, 0, 46)
-FlyBetaButton.Position = UDim2.fromOffset(0, 52)
+FlyBetaButton.Position = UDim2.fromOffset(0, 104)
 FlyBetaButton.BackgroundColor3 = Theme.Off
 FlyBetaButton.BorderSizePixel = 0
 FlyBetaButton.AutoButtonColor = false
@@ -826,10 +1014,11 @@ FlyStatusText.TextXAlignment = Enum.TextXAlignment.Right
 FlyStatusText.ZIndex = 9
 FlyStatusText.Parent = FlyBetaButton
 
+-- 4. FLY SPEED SLIDER
 local SliderCard = Instance.new("Frame")
 SliderCard.Name = "SliderCard"
 SliderCard.Size = UDim2.new(1, 0, 0, 46)
-SliderCard.Position = UDim2.fromOffset(0, 104)
+SliderCard.Position = UDim2.fromOffset(0, 156)
 SliderCard.BackgroundColor3 = Theme.Off
 SliderCard.BorderSizePixel = 0
 SliderCard.ZIndex = 7
@@ -940,154 +1129,96 @@ local MAX_SPEED = 450
 local isDraggingSlider = false
 
 local function UpdateSliderInput(input)
-        local trackAbsoluteSize = SliderTrack.AbsoluteSize.X
-        local trackAbsolutePosition = SliderTrack.AbsolutePosition.X
-        local mouseX = input.Position.X
+    local trackAbsoluteSize = SliderTrack.AbsoluteSize.X
+    local trackAbsolutePosition = SliderTrack.AbsolutePosition.X
+    local mouseX = input.Position.X
 
-        local relativeX = math.clamp(mouseX - trackAbsolutePosition, 0, trackAbsoluteSize)
-        local alpha = relativeX / trackAbsoluteSize
+    local relativeX = math.clamp(mouseX - trackAbsolutePosition, 0, trackAbsoluteSize)
+    local alpha = relativeX / trackAbsoluteSize
 
-        local calculatedSpeed = math.floor(MIN_SPEED + (alpha * (MAX_SPEED - MIN_SPEED)))
-        MOVE_SPEED = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
+    local calculatedSpeed = math.floor(MIN_SPEED + (alpha * (MAX_SPEED - MIN_SPEED)))
+    MOVE_SPEED = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
 
-        SliderFill.Size = UDim2.new((MOVE_SPEED - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1, 0)
-        SliderValueLabel.Text = tostring(MOVE_SPEED)
+    SliderFill.Size = UDim2.new((MOVE_SPEED - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1, 0)
+    SliderValueLabel.Text = tostring(MOVE_SPEED)
 end
 
 SliderTrack.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                isDraggingSlider = true
-                Tween(SliderStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
-                UpdateSliderInput(input)
-        end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingSlider = true
+        Tween(SliderStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
+        UpdateSliderInput(input)
+    end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-        if isDraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                UpdateSliderInput(input)
-        end
+    if isDraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        UpdateSliderInput(input)
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                if isDraggingSlider then
-                        isDraggingSlider = false
-                        Tween(SliderStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-                end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if isDraggingSlider then
+            isDraggingSlider = false
+            Tween(SliderStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
         end
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- EVENT HOVER & BUTTON CLICKS
+--------------------------------------------------------------------------------
+AntiHitV1Button.MouseEnter:Connect(function()
+    if IsTransitioning then return end
+    Tween(AntiHitV1Button, 0.16, { BackgroundColor3 = isAntiHitV1Active and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
+    Tween(AntiHitV1Stroke, 0.16, { Transparency = 0, Color = isAntiHitV1Active and Theme.OnStroke or Theme.Accent })
+end)
+
+AntiHitV1Button.MouseLeave:Connect(function()
+    if isAntiHitV1Active then
+        Tween(AntiHitV1Button, 0.18, { BackgroundColor3 = Theme.On })
+        Tween(AntiHitV1Stroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
+    else
+        Tween(AntiHitV1Button, 0.18, { BackgroundColor3 = Theme.Off })
+        Tween(AntiHitV1Stroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
+    end
 end)
 
 FlyBetaButton.MouseEnter:Connect(function()
-        if IsTransitioning then return end
-        Tween(FlyBetaButton, 0.16, { BackgroundColor3 = isFlyActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-        Tween(FlyBetaStroke, 0.16, { Transparency = 0, Color = isFlyActive and Theme.OnStroke or Theme.Accent })
+    if IsTransitioning then return end
+    Tween(FlyBetaButton, 0.16, { BackgroundColor3 = isFlyActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
+    Tween(FlyBetaStroke, 0.16, { Transparency = 0, Color = isFlyActive and Theme.OnStroke or Theme.Accent })
 end)
 
 FlyBetaButton.MouseLeave:Connect(function()
-        if isFlyActive then
-                Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.On })
-                Tween(FlyBetaStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-        else
-                Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.Off })
-                Tween(FlyBetaStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-        end
+    if isFlyActive then
+        Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.On })
+        Tween(FlyBetaStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
+    else
+        Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.Off })
+        Tween(FlyBetaStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
+    end
 end)
 
 AntiHitButton.MouseEnter:Connect(function()
-        if IsTransitioning then return end
-        Tween(AntiHitButton, 0.16, { BackgroundColor3 = isAntiHitActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-        Tween(AntiHitStroke, 0.16, { Transparency = 0, Color = isAntiHitActive and Theme.OnStroke or Theme.Accent })
+    if IsTransitioning then return end
+    Tween(AntiHitButton, 0.16, { BackgroundColor3 = isAntiHitActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
+    Tween(AntiHitStroke, 0.16, { Transparency = 0, Color = isAntiHitActive and Theme.OnStroke or Theme.Accent })
 end)
 
 AntiHitButton.MouseLeave:Connect(function()
-        if isAntiHitActive then
-                Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.On })
-                Tween(AntiHitStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-        else
-                Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.Off })
-                Tween(AntiHitStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-        end
+    if isAntiHitActive then
+        Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.On })
+        Tween(AntiHitStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
+    else
+        Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.Off })
+        Tween(AntiHitStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
+    end
 end)
 
 --------------------------------------------------------------------------------
--- LOGIKA INSTANT HOLD 1.2 DETIK & BYPASS FAST RESPAWN
---------------------------------------------------------------------------------
-local function FastBypassRespawn()
-        pcall(function()
-                LocalPlayer:LoadCharacter()
-        end)
-end
-
-local function ExecuteDropAndFastRespawn()
-        if isProcessing or not isAntiHitActive then return end
-        isProcessing = true
-        isAutoEggGrabActive = false
-
-        local char = LocalPlayer.Character
-        if char then
-                local root = WaitForCharacterRoot(char)
-                if root then
-                        for _, item in ipairs(char:GetChildren()) do
-                                if item:IsA("Tool") then
-                                        item.Parent = workspace
-                                end
-                        end
-
-                        local targetWaypointCFrame = CFrame.new(WAYPOINT_POS)
-                        local startTime = os.clock()
-                        local holdConnection
-
-                        holdConnection = RunService.Heartbeat:Connect(function()
-                                if not char or not root or not root.Parent then
-                                        if holdConnection then holdConnection:Disconnect() end
-                                        return
-                                end
-
-                                root.AssemblyLinearVelocity = Vector3.zero
-                                root.AssemblyAngularVelocity = Vector3.zero
-                                root.CFrame = targetWaypointCFrame
-                                char:PivotTo(targetWaypointCFrame)
-
-                                if os.clock() - startTime >= safeZoneHoldDuration then
-                                        holdConnection:Disconnect()
-                                end
-                        end)
-
-                        task.wait(safeZoneHoldDuration)
-                        FastBypassRespawn()
-                end
-        end
-
-        task.delay(0.05, function()
-                isProcessing = false
-        end)
-end
-
-ProximityPromptService.PromptTriggered:Connect(function(prompt, playerWhoTriggered)
-        if isAntiHitActive and playerWhoTriggered == LocalPlayer then
-                task.spawn(function() ExecuteDropAndFastRespawn() end)
-        end
-end)
-
-local function SetupCharacterDetection(char)
-        char.ChildAdded:Connect(function(child)
-                if isAntiHitActive and not child:IsA("Tool") then
-                        local name = string.lower(child.Name)
-                        if string.find(name, "egg") or string.find(name, "telur") then
-                                task.spawn(function() ExecuteDropAndFastRespawn() end)
-                        end
-                end
-        end)
-end
-
-if LocalPlayer.Character then SetupCharacterDetection(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-        task.wait(0.05)
-        SetupCharacterDetection(newChar)
-end)
-
---------------------------------------------------------------------------------
--- MINIMIZED TOGGLE BUTTON & DRAG LOGIC UI
+-- TOGGLE BUTTON & DRAG LOGIC UI
 --------------------------------------------------------------------------------
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Name = "MinimizedToggle"
@@ -1116,8 +1247,8 @@ ToggleStroke.Parent = ToggleButton
 local ToggleGradient = Instance.new("UIGradient")
 ToggleGradient.Rotation = 90
 ToggleGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 16, 26)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 15))
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 16, 26)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 15))
 })
 ToggleGradient.Parent = ToggleButton
 
@@ -1195,259 +1326,296 @@ ToggleSubtitle.Parent = ToggleButton
 local MainDragging, MainDragStart, MainStartPosition, MainDragInput = false, nil, nil, nil
 
 Header.InputBegan:Connect(function(input)
-        if IsTransitioning then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                MainDragging = true
-                MainDragStart = input.Position
-                MainStartPosition = MainFrame.Position
-                MainDragInput = input
-        end
+    if IsTransitioning then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        MainDragging = true
+        MainDragStart = input.Position
+        MainStartPosition = MainFrame.Position
+        MainDragInput = input
+    end
 end)
 
 Header.InputEnded:Connect(function(input)
-        if input == MainDragInput then
-                MainDragging = false
-                MainDragInput = nil
-        end
+    if input == MainDragInput then
+        MainDragging = false
+        MainDragInput = nil
+    end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-        if not MainDragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                if not MainDragStart or not MainStartPosition then return end
-                local delta = input.Position - MainDragStart
-                MainFrame.Position = UDim2.new(MainStartPosition.X.Scale, MainStartPosition.X.Offset + delta.X, MainStartPosition.Y.Scale, MainStartPosition.Y.Offset + delta.Y)
-        end
+    if not MainDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if not MainDragStart or not MainStartPosition then return end
+        local delta = input.Position - MainDragStart
+        MainFrame.Position = UDim2.new(MainStartPosition.X.Scale, MainStartPosition.X.Offset + delta.X, MainStartPosition.Y.Scale, MainStartPosition.Y.Offset + delta.Y)
+    end
 end)
 
 local ToggleDragging, ToggleDragStart, ToggleStartPosition, ToggleMoved = false, nil, nil, false
 
 ToggleButton.InputBegan:Connect(function(input)
-        if IsTransitioning then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                ToggleDragging = true
-                ToggleMoved = false
-                ToggleDragStart = input.Position
-                ToggleStartPosition = ToggleButton.Position
-        end
+    if IsTransitioning then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        ToggleDragging = true
+        ToggleMoved = false
+        ToggleDragStart = input.Position
+        ToggleStartPosition = ToggleButton.Position
+    end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-        if not ToggleDragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                if not ToggleDragStart or not ToggleStartPosition then return end
-                local delta = input.Position - ToggleDragStart
-                if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then ToggleMoved = true end
-                ToggleButton.Position = UDim2.new(ToggleStartPosition.X.Scale, ToggleStartPosition.X.Offset + delta.X, ToggleStartPosition.Y.Scale, ToggleStartPosition.Y.Offset + delta.Y)
-        end
+    if not ToggleDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if not ToggleDragStart or not ToggleStartPosition then return end
+        local delta = input.Position - ToggleDragStart
+        if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then ToggleMoved = true end
+        ToggleButton.Position = UDim2.new(ToggleStartPosition.X.Scale, ToggleStartPosition.X.Offset + delta.X, ToggleStartPosition.Y.Scale, ToggleStartPosition.Y.Offset + delta.Y)
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                ToggleDragging = false
-        end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        ToggleDragging = false
+    end
 end)
 
 ToggleButton.MouseEnter:Connect(function()
-        if ToggleDragging or IsTransitioning then return end
-        Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(252, 52) })
-        Tween(ToggleStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
+    if ToggleDragging or IsTransitioning then return end
+    Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(252, 52) })
+    Tween(ToggleStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
 end)
 
 ToggleButton.MouseLeave:Connect(function()
-        if ToggleDragging then return end
-        Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(245, 50) })
-        Tween(ToggleStroke, 0.15, { Color = Theme.Border, Transparency = 0.05 })
+    if ToggleDragging then return end
+    Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(245, 50) })
+    Tween(ToggleStroke, 0.15, { Color = Theme.Border, Transparency = 0.05 })
 end)
 
 --------------------------------------------------------------------------------
 -- ANIMATED TRANSITION MINIMIZE & RESTORE
 --------------------------------------------------------------------------------
 local function GetViewport()
-        local camera = workspace.CurrentCamera
-        return camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    local camera = workspace.CurrentCamera
+    return camera and camera.ViewportSize or Vector2.new(1920, 1080)
 end
 
 local function GetCenterPosition()
-        local viewport = GetViewport()
-        return UDim2.fromOffset(viewport.X * 0.5, viewport.Y * 0.5)
+    local viewport = GetViewport()
+    return UDim2.fromOffset(viewport.X * 0.5, viewport.Y * 0.5)
 end
 
 local function GetTopTogglePosition()
-        local viewport = GetViewport()
-        return UDim2.fromOffset(viewport.X * 0.5, -5)
+    local viewport = GetViewport()
+    return UDim2.fromOffset(viewport.X * 0.5, -5)
 end
 
 local function GetTopRightTogglePosition()
-        local viewport = GetViewport()
-        return UDim2.fromOffset(viewport.X - 10, -5)
+    local viewport = GetViewport()
+    return UDim2.fromOffset(viewport.X - 10, -5)
 end
 
 local function MinimizeUI()
-        if IsTransitioning or IsMinimized then return end
-        IsTransitioning = true
-        IsMinimized = true
+    if IsTransitioning or IsMinimized then return end
+    IsTransitioning = true
+    IsMinimized = true
 
-        MinimizeButton.Active = false
-        FlyBetaButton.Active = false
-        AntiHitButton.Active = false
+    MinimizeButton.Active = false
+    FlyBetaButton.Active = false
+    AntiHitButton.Active = false
+    AntiHitV1Button.Active = false
 
-        local centerPosition = GetCenterPosition()
+    local centerPosition = GetCenterPosition()
 
-        Tween(MainFrame, 0.45, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-        task.wait(0.47)
-        task.wait(0.30)
+    Tween(MainFrame, 0.45, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+    task.wait(0.47)
+    task.wait(0.30)
 
-        Tween(MainFrame, 0.40, { Size = UDim2.fromOffset(245, 50) }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-        task.wait(0.42)
+    Tween(MainFrame, 0.40, { Size = UDim2.fromOffset(245, 50) }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+    task.wait(0.42)
 
-        MainFrame.Visible = false
-        ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-        ToggleButton.Position = centerPosition
-        ToggleButton.Size = UDim2.fromOffset(245, 50)
-        ToggleButton.Visible = true
+    MainFrame.Visible = false
+    ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+    ToggleButton.Position = centerPosition
+    ToggleButton.Size = UDim2.fromOffset(245, 50)
+    ToggleButton.Visible = true
 
-        task.wait(0.05)
-        local topPosition = GetTopTogglePosition()
+    task.wait(0.05)
+    local topPosition = GetTopTogglePosition()
 
-        Tween(ToggleButton, 0.55, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-        task.wait(0.58)
+    Tween(ToggleButton, 0.55, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    task.wait(0.58)
 
-        ToggleButton.AnchorPoint = Vector2.new(1, 0.5)
-        local topRightPosition = GetTopRightTogglePosition()
-        Tween(ToggleButton, 0.45, { Position = topRightPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-        task.wait(0.48)
+    ToggleButton.AnchorPoint = Vector2.new(1, 0.5)
+    local topRightPosition = GetTopRightTogglePosition()
+    Tween(ToggleButton, 0.45, { Position = topRightPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    task.wait(0.48)
 
-        ToggleButton.Active = true
-        IsTransitioning = false
+    ToggleButton.Active = true
+    IsTransitioning = false
 end
 
 local function RestoreUI()
-        if IsTransitioning or not IsMinimized then return end
-        IsTransitioning = true
-        ToggleButton.Active = false
+    if IsTransitioning or not IsMinimized then return end
+    IsTransitioning = true
+    ToggleButton.Active = false
 
-        local topPosition = GetTopTogglePosition()
-        local centerPosition = GetCenterPosition()
+    local topPosition = GetTopTogglePosition()
+    local centerPosition = GetCenterPosition()
 
-        ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-        Tween(ToggleButton, 0.40, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-        task.wait(0.42)
+    ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+    Tween(ToggleButton, 0.40, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+    task.wait(0.42)
 
-        Tween(ToggleButton, 0.50, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-        task.wait(0.53)
-        task.wait(0.20)
+    Tween(ToggleButton, 0.50, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+    task.wait(0.53)
+    task.wait(0.20)
 
-        ToggleButton.Visible = false
-        MainFrame.Visible = true
-        MainFrame.Position = centerPosition
-        MainFrame.Size = UDim2.fromOffset(245, 50)
+    ToggleButton.Visible = false
+    MainFrame.Visible = true
+    MainFrame.Position = centerPosition
+    MainFrame.Size = UDim2.fromOffset(245, 50)
 
-        Tween(MainFrame, 0.45, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        task.wait(0.48)
+    Tween(MainFrame, 0.45, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    task.wait(0.48)
 
-        Tween(MainFrame, 0.55, { Position = MAIN_HOME_POSITION }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-        task.wait(0.58)
+    Tween(MainFrame, 0.55, { Position = MAIN_HOME_POSITION }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    task.wait(0.58)
 
-        IsMinimized = false
-        IsTransitioning = false
+    IsMinimized = false
+    IsTransitioning = false
 
-        MinimizeButton.Active = true
-        FlyBetaButton.Active = true
-        AntiHitButton.Active = true
+    MinimizeButton.Active = true
+    FlyBetaButton.Active = true
+    AntiHitButton.Active = true
+    AntiHitV1Button.Active = true
 end
 
 MinimizeButton.MouseEnter:Connect(function()
-        if IsTransitioning then return end
-        Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.CardHover })
-        Tween(MinStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
+    if IsTransitioning then return end
+    Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.CardHover })
+    Tween(MinStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
 end)
 
 MinimizeButton.MouseLeave:Connect(function()
-        Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.Card })
-        Tween(MinStroke, 0.15, { Color = Theme.Border, Transparency = 0.25 })
+    Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.Card })
+    Tween(MinStroke, 0.15, { Color = Theme.Border, Transparency = 0.25 })
 end)
 
 MinimizeButton.MouseButton1Click:Connect(function() MinimizeUI() end)
 ToggleButton.MouseButton1Click:Connect(function()
-        if ToggleMoved then
-                ToggleMoved = false
-                return
-        end
-        RestoreUI()
+    if ToggleMoved then
+        ToggleMoved = false
+        return
+    end
+    RestoreUI()
 end)
 
-local function UpdateFlyBetaUI()
-        if isFlyActive then
-                FlyStatusText.Text = "ON"
-                FlyStatusText.TextColor3 = Theme.OnAccent
-                FlyBetaSub.Text = "Fly mode active"
-                FlyStatusDot.BackgroundColor3 = Theme.OnAccent
-                Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-                Tween(FlyBetaStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
-        else
-                FlyStatusText.Text = "OFF"
-                FlyStatusText.TextColor3 = Theme.TextMuted
-                FlyBetaSub.Text = "Toggle fly mode"
-                FlyStatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-                Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-                Tween(FlyBetaStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+--------------------------------------------------------------------------------
+-- UPDATE STATUS STATE DISPLAY
+--------------------------------------------------------------------------------
+local function UpdateAntiHitV1UI()
+    if isAntiHitV1Active then
+        AntiHitV1StatusText.Text = "ON"
+        AntiHitV1StatusText.TextColor3 = Theme.OnAccent
+        AntiHitV1Sub.Text = "Fake visual protection enabled"
+        AntiHitV1StatusDot.BackgroundColor3 = Theme.OnAccent
+        Tween(AntiHitV1Button, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
+        Tween(AntiHitV1Stroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
+    else
+        AntiHitV1StatusText.Text = "OFF"
+        AntiHitV1StatusText.TextColor3 = Theme.TextMuted
+        AntiHitV1Sub.Text = "Fake visual protection disabled"
+        AntiHitV1StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+        Tween(AntiHitV1Button, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
+        Tween(AntiHitV1Stroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+    end
+end
 
-                local char = LocalPlayer.Character
-                if char then
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        if hum then
-                                hum.PlatformStand = false
-                        end
-                end
-                RemoveBlock()
+local function UpdateFlyBetaUI()
+    if isFlyActive then
+        FlyStatusText.Text = "ON"
+        FlyStatusText.TextColor3 = Theme.OnAccent
+        FlyBetaSub.Text = "Fly mode active"
+        FlyStatusDot.BackgroundColor3 = Theme.OnAccent
+        Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
+        Tween(FlyBetaStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
+    else
+        FlyStatusText.Text = "OFF"
+        FlyStatusText.TextColor3 = Theme.TextMuted
+        FlyBetaSub.Text = "Toggle fly mode"
+        FlyStatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+        Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
+        Tween(FlyBetaStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.PlatformStand = false
+            end
         end
+        RemoveBlock()
+    end
 end
 
 local function UpdateAntiHitUI()
-        if isAntiHitActive then
-                StatusText.Text = "ON"
-                StatusText.TextColor3 = Theme.OnAccent
-                AntiHitSub.Text = "Protection enabled"
-                StatusDot.BackgroundColor3 = Theme.OnAccent
-                Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-                Tween(AntiHitStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
-        else
-                StatusText.Text = "OFF"
-                StatusText.TextColor3 = Theme.TextMuted
-                AntiHitSub.Text = "Protection disabled"
-                StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-                Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-                Tween(AntiHitStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
-        end
+    if isAntiHitActive then
+        StatusText.Text = "ON"
+        StatusText.TextColor3 = Theme.OnAccent
+        AntiHitSub.Text = "Protection enabled"
+        StatusDot.BackgroundColor3 = Theme.OnAccent
+        Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
+        Tween(AntiHitStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
+    else
+        StatusText.Text = "OFF"
+        StatusText.TextColor3 = Theme.TextMuted
+        AntiHitSub.Text = "Protection disabled"
+        StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+        Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
+        Tween(AntiHitStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+    end
 end
 
-FlyBetaButton.MouseButton1Click:Connect(function()
-        if IsTransitioning then return end
-        isFlyActive = not isFlyActive
-        UpdateFlyBetaUI()
+AntiHitV1Button.MouseButton1Click:Connect(function()
+    if IsTransitioning then return end
+    isAntiHitV1Active = not isAntiHitV1Active
+    UpdateAntiHitV1UI()
 
-        Tween(FlyBetaButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 53) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        task.delay(0.08, function()
-                if FlyBetaButton.Parent then
-                        Tween(FlyBetaButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 52) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-                end
-        end)
+    Tween(AntiHitV1Button, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 1) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    task.delay(0.08, function()
+        if AntiHitV1Button.Parent then
+            Tween(AntiHitV1Button, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        end
+    end)
+end)
+
+FlyBetaButton.MouseButton1Click:Connect(function()
+    if IsTransitioning then return end
+    isFlyActive = not isFlyActive
+    UpdateFlyBetaUI()
+
+    Tween(FlyBetaButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 105) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    task.delay(0.08, function()
+        if FlyBetaButton.Parent then
+            Tween(FlyBetaButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 104) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        end
+    end)
 end)
 
 AntiHitButton.MouseButton1Click:Connect(function()
-        if IsTransitioning then return end
-        isAntiHitActive = not isAntiHitActive
-        UpdateAntiHitUI()
+    if IsTransitioning then return end
+    isAntiHitActive = not isAntiHitActive
+    UpdateAntiHitUI()
 
-        Tween(AntiHitButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 1) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        task.delay(0.08, function()
-                if AntiHitButton.Parent then
-                        Tween(AntiHitButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-                end
-        end)
+    Tween(AntiHitButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 53) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    task.delay(0.08, function()
+        if AntiHitButton.Parent then
+            Tween(AntiHitButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 52) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        end
+    end)
 end)
 
+UpdateAntiHitV1UI()
 UpdateFlyBetaUI()
 UpdateAntiHitUI()
 
@@ -1466,6 +1634,13 @@ Subtitle.TextTransparency = 1
 MinimizeButton.BackgroundTransparency = 1
 MinimizeButton.TextTransparency = 1
 MinStroke.Transparency = 1
+
+AntiHitV1Button.BackgroundTransparency = 1
+AntiHitV1Stroke.Transparency = 1
+AntiHitV1Title.TextTransparency = 1
+AntiHitV1Sub.TextTransparency = 1
+AntiHitV1StatusText.TextTransparency = 1
+AntiHitV1StatusDot.BackgroundTransparency = 1
 
 FlyBetaButton.BackgroundTransparency = 1
 FlyBetaStroke.Transparency = 1
@@ -1495,43 +1670,50 @@ SliderDot.BackgroundTransparency = 1
 Tween(MainFrame, 0.55, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT), BackgroundTransparency = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
 task.delay(0.05, function()
-        Tween(MainStroke, 0.4, { Transparency = 0.08 })
-        Tween(TopAccent, 0.4, { BackgroundTransparency = 0 })
-        Tween(LogoHolder, 0.35, { BackgroundTransparency = 0 })
-        Tween(LogoStroke, 0.35, { Transparency = 0.35 })
+    Tween(MainStroke, 0.4, { Transparency = 0.08 })
+    Tween(TopAccent, 0.4, { BackgroundTransparency = 0 })
+    Tween(LogoHolder, 0.35, { BackgroundTransparency = 0 })
+    Tween(LogoStroke, 0.35, { Transparency = 0.35 })
 end)
 
 task.delay(0.12, function()
-        Tween(Title, 0.35, { TextTransparency = 0 })
-        Tween(Subtitle, 0.35, { TextTransparency = 0 })
-        Tween(MinimizeButton, 0.35, { BackgroundTransparency = 0, TextTransparency = 0 })
-        Tween(MinStroke, 0.35, { Transparency = 0.25 })
+    Tween(Title, 0.35, { TextTransparency = 0 })
+    Tween(Subtitle, 0.35, { TextTransparency = 0 })
+    Tween(MinimizeButton, 0.35, { BackgroundTransparency = 0, TextTransparency = 0 })
+    Tween(MinStroke, 0.35, { Transparency = 0.25 })
 end)
 
 task.delay(0.22, function()
-        Tween(FlyBetaButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-        Tween(FlyBetaStroke, 0.35, { Transparency = 0.2 })
-        Tween(FlyBetaTitle, 0.3, { TextTransparency = 0 })
-        Tween(FlyBetaSub, 0.3, { TextTransparency = 0 })
-        Tween(FlyStatusText, 0.3, { TextTransparency = 0 })
-        Tween(FlyStatusDot, 0.3, { BackgroundTransparency = 0 })
+    Tween(AntiHitV1Button, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+    Tween(AntiHitV1Stroke, 0.35, { Transparency = 0.2 })
+    Tween(AntiHitV1Title, 0.3, { TextTransparency = 0 })
+    Tween(AntiHitV1Sub, 0.3, { TextTransparency = 0 })
+    Tween(AntiHitV1StatusText, 0.3, { TextTransparency = 0 })
+    Tween(AntiHitV1StatusDot, 0.3, { BackgroundTransparency = 0 })
 
-        Tween(AntiHitButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-        Tween(AntiHitStroke, 0.35, { Transparency = 0.2 })
-        Tween(AntiHitTitle, 0.3, { TextTransparency = 0 })
-        Tween(AntiHitSub, 0.3, { TextTransparency = 0 })
-        Tween(StatusText, 0.3, { TextTransparency = 0 })
-        Tween(StatusDot, 0.3, { BackgroundTransparency = 0 })
+    Tween(FlyBetaButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+    Tween(FlyBetaStroke, 0.35, { Transparency = 0.2 })
+    Tween(FlyBetaTitle, 0.3, { TextTransparency = 0 })
+    Tween(FlyBetaSub, 0.3, { TextTransparency = 0 })
+    Tween(FlyStatusText, 0.3, { TextTransparency = 0 })
+    Tween(FlyStatusDot, 0.3, { BackgroundTransparency = 0 })
 
-        Tween(SliderCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-        Tween(SliderStroke, 0.35, { Transparency = 0.2 })
-        Tween(SliderTitle, 0.3, { TextTransparency = 0 })
-        Tween(SliderValueLabel, 0.3, { TextTransparency = 0 })
-        Tween(SliderTrack, 0.3, { BackgroundTransparency = 0 })
-        TrackStroke.Transparency = 1
-        Tween(TrackStroke, 0.3, { Transparency = 0.5 })
-        Tween(SliderFill, 0.3, { BackgroundTransparency = 0 })
-        Tween(SliderKnob, 0.3, { BackgroundTransparency = 0 })
-        Tween(KnobStroke, 0.3, { Transparency = 0 })
-        Tween(SliderDot, 0.3, { BackgroundTransparency = 0 })
+    Tween(AntiHitButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+    Tween(AntiHitStroke, 0.35, { Transparency = 0.2 })
+    Tween(AntiHitTitle, 0.3, { TextTransparency = 0 })
+    Tween(AntiHitSub, 0.3, { TextTransparency = 0 })
+    Tween(StatusText, 0.3, { TextTransparency = 0 })
+    Tween(StatusDot, 0.3, { BackgroundTransparency = 0 })
+
+    Tween(SliderCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
+    Tween(SliderStroke, 0.35, { Transparency = 0.2 })
+    Tween(SliderTitle, 0.3, { TextTransparency = 0 })
+    Tween(SliderValueLabel, 0.3, { TextTransparency = 0 })
+    Tween(SliderTrack, 0.3, { BackgroundTransparency = 0 })
+    TrackStroke.Transparency = 1
+    Tween(TrackStroke, 0.3, { Transparency = 0.5 })
+    Tween(SliderFill, 0.3, { BackgroundTransparency = 0 })
+    Tween(SliderKnob, 0.3, { BackgroundTransparency = 0 })
+    Tween(KnobStroke, 0.3, { Transparency = 0 })
+    Tween(SliderDot, 0.3, { BackgroundTransparency = 0 })
 end)
