@@ -1,3 +1,7 @@
+-- AUTO EXECUTE PAS TELEPORT / HOP SERVER
+local queue = syn and syn.queue_on_teleport or queue_on_teleport or fluxus and fluxus.queue_on_teleport
+if queue then queue('loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/main/leon4951.lua"))()') end
+
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
@@ -37,11 +41,10 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = GUI_NAME
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 1 -- Ketutupan GUI Executor
+ScreenGui.DisplayOrder = 1
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 
--- UKURAN UTAMA TETAP KECIL (180 x 80)
 local MAIN_WIDTH = 180
 local MAIN_HEIGHT = 80
 
@@ -49,7 +52,7 @@ local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT)
 MainFrame.AnchorPoint = Vector2.new(1, 0)
-MainFrame.Position = UDim2.new(1, 0, 0, 0) -- Mentok kanan atas
+MainFrame.Position = UDim2.new(1, 0, 0, 0)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -84,7 +87,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.BackgroundTransparency = 1
 Header.Parent = MainFrame
 
--- LOGO ICON (TETAP DIPERBESAR)
+-- LOGO ICON
 local LogoHolder = Instance.new("Frame")
 LogoHolder.Size = UDim2.fromOffset(18, 18)
 LogoHolder.Position = UDim2.fromOffset(8, 6)
@@ -127,7 +130,7 @@ FMiddle.BorderSizePixel = 0
 FMiddle.Rotation = -6
 FMiddle.Parent = LogoHolder
 
--- TITLE (TETAP DIPERBESAR)
+-- TITLE
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -34, 0, 15)
 Title.Position = UDim2.fromOffset(32, 2)
@@ -140,7 +143,7 @@ Title.TextSize = 12
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
--- SUBTITLE (DIPERKECIL KEMBALI)
+-- SUBTITLE
 local Subtitle = Instance.new("TextLabel")
 Subtitle.Size = UDim2.new(1, -34, 0, 10)
 Subtitle.Position = UDim2.fromOffset(32, 16)
@@ -148,7 +151,7 @@ Subtitle.BackgroundTransparency = 1
 Subtitle.Text = "SERVER HOPPER"
 Subtitle.TextColor3 = Theme.TextMuted
 Subtitle.Font = Enum.Font.GothamMedium
-Subtitle.TextSize = 6.5 -- Diperkecil seperti semula
+Subtitle.TextSize = 6.5
 Subtitle.TextXAlignment = Enum.TextXAlignment.Left
 Subtitle.Parent = Header
 
@@ -184,7 +187,6 @@ local StatusDotCorner = Instance.new("UICorner")
 StatusDotCorner.CornerRadius = UDim.new(1, 0)
 StatusDotCorner.Parent = StatusDot
 
--- TOMBOL TEKS UTAMA (TETAP DIPERBESAR)
 local BtnTitle = Instance.new("TextLabel")
 BtnTitle.Size = UDim2.new(1, -20, 0, 15)
 BtnTitle.Position = UDim2.fromOffset(18, 4)
@@ -196,7 +198,6 @@ BtnTitle.TextSize = 10
 BtnTitle.TextXAlignment = Enum.TextXAlignment.Left
 BtnTitle.Parent = AutoHopBtn
 
--- STATUS TEKS (DIPERKECIL KEMBALI)
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 11)
 StatusLabel.Position = UDim2.fromOffset(18, 18)
@@ -204,12 +205,12 @@ StatusLabel.BackgroundTransparency = 1
 StatusLabel.Text = "Status: Idle (1-2 Players)"
 StatusLabel.TextColor3 = Theme.TextMuted
 StatusLabel.Font = Enum.Font.GothamMedium
-StatusLabel.TextSize = 7 -- Diperkecil seperti semula
+StatusLabel.TextSize = 7
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = AutoHopBtn
 
 --------------------------------------------------------------------------------
--- LOGIKA TELEPORTATION (TETAP SAMA)
+-- LOGIKA TELEPORTATION
 --------------------------------------------------------------------------------
 local function RequestAPI(options)
     local req = request or http_request or (syn and syn.request) or (http and http.request)
