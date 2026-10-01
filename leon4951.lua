@@ -202,7 +202,7 @@ local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 11)
 StatusLabel.Position = UDim2.fromOffset(18, 18)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Status: Idle (1-2 Players)"
+StatusLabel.Text = "Status: Idle (2P > 1P)"
 StatusLabel.TextColor3 = Theme.TextMuted
 StatusLabel.Font = Enum.Font.GothamMedium
 StatusLabel.TextSize = 7
@@ -210,7 +210,7 @@ StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = AutoHopBtn
 
 --------------------------------------------------------------------------------
--- LOGIKA TELEPORTATION
+-- LOGIKA TELEPORTATION (PRIORITAS 2 PLAYER)
 --------------------------------------------------------------------------------
 local function RequestAPI(options)
     local req = request or http_request or (syn and syn.request) or (http and http.request)
@@ -237,6 +237,7 @@ local function FindLowestTailServer()
         else break end
     end
 
+    -- PASS 1: Prioritaskan cari server dengan persis 2 pemain terlebih dahulu
     for p = #pages, 1, -1 do
         local currentList = pages[p]
         for b = #currentList, 1, -1 do
@@ -246,7 +247,25 @@ local function FindLowestTailServer()
 
             if server.id 
                and not _G.LeonBlacklist[server.id] 
-               and (playing == 1 or playing == 2) 
+               and playing == 2 
+               and (maxPlayers - playing) >= 2 then
+                
+                return server.id, playing
+            end
+        end
+    end
+
+    -- PASS 2: Jika server 2P tidak ditemukan, opsi kedua cari server dengan 1 pemain
+    for p = #pages, 1, -1 do
+        local currentList = pages[p]
+        for b = #currentList, 1, -1 do
+            local server = currentList[b]
+            local playing = server.playing or 0
+            local maxPlayers = server.maxPlayers or 0
+
+            if server.id 
+               and not _G.LeonBlacklist[server.id] 
+               and playing == 1 
                and (maxPlayers - playing) >= 2 then
                 
                 return server.id, playing
@@ -262,7 +281,7 @@ local function StartAutoHop()
         IsSearching = false
         BtnTitle.Text = "AUTO HOP SERVER"
         BtnTitle.TextColor3 = Theme.Text
-        StatusLabel.Text = "Status: Idle (1-2 Players)"
+        StatusLabel.Text = "Status: Idle (2P > 1P)"
         StatusDot.BackgroundColor3 = Theme.Accent
         BtnStroke.Color = Theme.OffStroke
         return
