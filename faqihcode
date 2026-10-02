@@ -1,45 +1,169 @@
+-- AUTO EXECUTE PAS TELEPORT / HOP SERVER
+local queue = syn and syn.queue_on_teleport or queue_on_teleport or fluxus and fluxus.queue_on_teleport
+if queue then queue('loadstring(game:HttpGet("https://raw.githubusercontent.com/n01771542-cmd/faqihlualua/main/main.lua"))()') end
+
 local CoreGui = game:GetService("CoreGui")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
+local PlaceId = game.PlaceId
 local LocalPlayer = Players.LocalPlayer
 
--- KOORDINAT TARGET
+--------------------------------------------------------------------------------
+-- KOORDINAT TARGET & STATE FITUR
+--------------------------------------------------------------------------------
+local TARGET_POS = Vector3.new(491, 70, -371)
 local WAYPOINT_POS = Vector3.new(618.43, 71.69, -394.05)
-local TARGET_POS   = Vector3.new(491, 70, -371)
-local FINAL_POS    = Vector3.new(518.55, 71.69, -365.52)
+local safeZoneHoldDuration = 1.0
 
-local GUI_NAME = "LeonHubGui"
-
-pcall(function()
-    local oldCore = CoreGui:FindFirstChild(GUI_NAME)
-    if oldCore then oldCore:Destroy() end
-end)
-
-pcall(function()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        local oldPlayer = playerGui:FindFirstChild(GUI_NAME)
-        if oldPlayer then oldPlayer:Destroy() end
-    end
-end)
-
---------------------------------------------------------------------------------
--- STATE UTAMA FITUR
---------------------------------------------------------------------------------
-local isAntiHitV1Active = false
-local isAntiHitActive = false
+local isAntiHitGuardsActive = false
 local isProcessingAntiHitV1 = false
-local isProcessing = false
+
+local isInstantTpActive = false
+local isProcessingInstantTp = false
+
+-- AUTOMATIC ANTI-SLOW STATE
+local lockedWalkSpeed = 16
+local autoAntiSlowConnection = nil
+
+if not _G.LeonBlacklist then
+    _G.LeonBlacklist = {}
+end
+_G.LeonBlacklist[game.JobId] = true
+
+local IsSearching = false
 
 --------------------------------------------------------------------------------
--- LOGIC FITUR: ANTI HIT V1 (Fake Visual & Real Teleport)
+-- THEME COLOR PALETTE
 --------------------------------------------------------------------------------
+local Theme = {
+    Background = Color3.fromRGB(7, 10, 17),
+    Card = Color3.fromRGB(14, 20, 32),
+    Accent = Color3.fromRGB(37, 120, 255),
+    AccentLight = Color3.fromRGB(82, 151, 255),
+    Text = Color3.fromRGB(245, 247, 255),
+    TextMuted = Color3.fromRGB(130, 145, 175),
+    Border = Color3.fromRGB(34, 48, 73),
+    Off = Color3.fromRGB(20, 27, 40),
+    OffStroke = Color3.fromRGB(50, 64, 88),
+    On = Color3.fromRGB(18, 48, 43),
+    OnStroke = Color3.fromRGB(46, 146, 116),
+}
+
+--------------------------------------------------------------------------------
+-- UI SETUP & NOTIFICATION BANNER
+--------------------------------------------------------------------------------
+local GUI_NAME = "LEON4951_HUB_ELEGANT"
+pcall(function()
+    local old = CoreGui:FindFirstChild(GUI_NAME) or (LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(GUI_NAME))
+    if old then old:Destroy() end
+end)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = GUI_NAME
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 1
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+
+-- NOTIFIKASI DI ATAS LAYAR
+local TopNotifFrame = Instance.new("Frame")
+TopNotifFrame.Name = "TopNotifFrame"
+TopNotifFrame.Size = UDim2.fromOffset(320, 52)
+TopNotifFrame.AnchorPoint = Vector2.new(0.5, 0)
+TopNotifFrame.Position = UDim2.new(0.5, 0, 0, -70)
+TopNotifFrame.BackgroundColor3 = Theme.Background
+TopNotifFrame.BorderSizePixel = 0
+TopNotifFrame.Parent = ScreenGui
+
+local NotifCorner = Instance.new("UICorner")
+NotifCorner.CornerRadius = UDim.new(0, 8)
+NotifCorner.Parent = TopNotifFrame
+
+local NotifStroke = Instance.new("UIStroke")
+NotifStroke.Color = Theme.Accent
+NotifStroke.Thickness = 1.5
+NotifStroke.Transparency = 0.1
+NotifStroke.Parent = TopNotifFrame
+
+local SmallNoticeLabel = Instance.new("TextLabel")
+SmallNoticeLabel.Size = UDim2.new(1, -16, 0, 16)
+SmallNoticeLabel.Position = UDim2.fromOffset(8, 6)
+SmallNoticeLabel.BackgroundTransparency = 1
+SmallNoticeLabel.Text = "Pakai fitur ini jika anti hit guards delivery failed."
+SmallNoticeLabel.TextColor3 = Theme.AccentLight
+SmallNoticeLabel.Font = Enum.Font.GothamBold
+SmallNoticeLabel.TextSize = 9
+SmallNoticeLabel.TextScaled = true
+SmallNoticeLabel.Parent = TopNotifFrame
+
+local BigNoticeLabel = Instance.new("TextLabel")
+BigNoticeLabel.Size = UDim2.new(1, -16, 0, 20)
+BigNoticeLabel.Position = UDim2.fromOffset(8, 24)
+BigNoticeLabel.BackgroundTransparency = 1
+BigNoticeLabel.Text = "Drop egg, ambil egg kembali baru ke safe zone"
+BigNoticeLabel.TextColor3 = Theme.Text
+BigNoticeLabel.Font = Enum.Font.GothamBold
+BigNoticeLabel.TextSize = 9.5
+BigNoticeLabel.TextScaled = true
+BigNoticeLabel.Parent = TopNotifFrame
+
+local function ShowTopNotification()
+    TopNotifFrame:TweenPosition(UDim2.new(0.5, 0, 0, 15), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.4, true)
+    task.delay(8, function()
+        TopNotifFrame:TweenPosition(UDim2.new(0.5, 0, 0, -70), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- HELPER FUNCTIONS & AUTOMATIC ANTI-SLOW LOGIC
+--------------------------------------------------------------------------------
+local function WaitForCharacterRoot(char)
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
+    if root and root.Parent and char.Parent then
+        return root
+    end
+    return nil
+end
+
+local function StartAutoAntiSlow(char)
+    if autoAntiSlowConnection then autoAntiSlowConnection:Disconnect() end
+
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    if not humanoid then return end
+
+    task.wait(0.2)
+    if humanoid.WalkSpeed > 0 then
+        lockedWalkSpeed = humanoid.WalkSpeed
+    end
+
+    autoAntiSlowConnection = RunService.PreRender:Connect(function()
+        if humanoid and humanoid.Parent then
+            if humanoid.WalkSpeed ~= lockedWalkSpeed and humanoid.WalkSpeed > 0 then
+                humanoid.WalkSpeed = lockedWalkSpeed
+            end
+        else
+            if autoAntiSlowConnection then autoAntiSlowConnection:Disconnect() end
+        end
+    end)
+end
+
+if LocalPlayer.Character then task.spawn(function() StartAutoAntiSlow(LocalPlayer.Character) end) end
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    task.spawn(function() StartAutoAntiSlow(newChar) end)
+end)
+
+-- ============================================================================
+-- LOGIC FITUR 1: ANTI HIT GUARDS (Fake Visual & Real Teleport + Return)
+-- ============================================================================
 local function CreateFakeAndTeleportReal()
     local char = LocalPlayer.Character
     if not char then return end
@@ -95,6 +219,15 @@ local function CreateFakeAndTeleportReal()
     end)
 
     task.delay(0.6, function()
+        if holdConnection then holdConnection:Disconnect() end
+
+        if char and root and root.Parent then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = originalCFrame
+            char:PivotTo(originalCFrame)
+        end
+
         if fakeChar then fakeChar:Destroy() end
         if realHumanoid and camera then
             camera.CameraSubject = realHumanoid
@@ -103,7 +236,7 @@ local function CreateFakeAndTeleportReal()
 end
 
 local function ExecuteDropAndTeleportAntiHitV1()
-    if isProcessingAntiHitV1 or not isAntiHitV1Active then return end
+    if isProcessingAntiHitV1 or not isAntiHitGuardsActive then return end
     isProcessingAntiHitV1 = true
 
     task.wait(0.1)
@@ -123,410 +256,25 @@ local function ExecuteDropAndTeleportAntiHitV1()
     end)
 end
 
---------------------------------------------------------------------------------
--- MODULE INTEGRATION
---------------------------------------------------------------------------------
-local EggState, PlotState, AreaEggSlotIdentity
-pcall(function() EggState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("EggState")) end)
-pcall(function() PlotState = require(ReplicatedStorage:WaitForChild("Client"):WaitForChild("PlotState")) end)
-pcall(function()
-    if ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Util") then
-        AreaEggSlotIdentity = require(ReplicatedStorage.Shared.Util.AreaEggSlotIdentity)
-    elseif ReplicatedStorage:FindFirstChild("Util") then
-        AreaEggSlotIdentity = require(ReplicatedStorage.Util.AreaEggSlotIdentity)
-    end
-end)
-
-local isAutoEggGrabActive = false
-local ignoredEggs = {}
-local TeleportBusy = false
-
-local State = {
-    IDLE = "IDLE",
-    WAIT_CHARACTER = "WAIT_CHARACTER",
-    MOVING_WAYPOINT = "MOVING_WAYPOINT",
-    MOVING_TARGET = "MOVING_TARGET",
-    TAKING_EGG = "TAKING_EGG",
-    WAITING_FOR_EGG_CONFIRMATION = "WAITING_FOR_EGG_CONFIRMATION",
-    EGG_CONFIRMED = "EGG_CONFIRMED",
-    MOVING_FINAL = "MOVING_FINAL",
-    FINAL_CONFIRMED = "FINAL_CONFIRMED",
-    COMPLETED = "COMPLETED"
-}
-
-local CurrentState = State.IDLE
-
-local function WaitForCharacterRoot(char)
-    if not char then return nil end
-    local root = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
-    if root and root.Parent and char.Parent then
-        return root
-    end
-    return nil
-end
-
-local function TeleportToTarget(char, targetPos)
-    local root = WaitForCharacterRoot(char)
-    if not root then return false end
-
-    local targetCFrame = CFrame.new(targetPos)
-    for _ = 1, 6 do
-        if not root or not root.Parent or not char.Parent then return false end
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.CFrame = targetCFrame
-        char:PivotTo(targetCFrame)
-        RunService.Stepped:Wait()
-    end
-    return true
-end
-
-local function FastGlideTo(char, targetPos, speed)
-    local root = WaitForCharacterRoot(char)
-    if not root then return false end
-
-    speed = speed or 250
-
-    local attachment = Instance.new("Attachment")
-    attachment.Parent = root
-
-    local lv = Instance.new("LinearVelocity")
-    lv.MaxForce = 9999999
-    lv.VectorVelocity = Vector3.zero
-    lv.RelativeTo = Enum.ActuatorRelativeTo.World
-    lv.Attachment0 = attachment
-    lv.Parent = root
-
-    local isSuccess = true
-    while (root.Position - targetPos).Magnitude > 4 and char.Parent and root.Parent do
-        local dir = (targetPos - root.Position).Unit
-        lv.VectorVelocity = dir * speed
-        RunService.Stepped:Wait()
-        if not char.Parent or not root.Parent then
-            isSuccess = false
-            break
-        end
-    end
-
-    if lv and lv.Parent then lv:Destroy() end
-    if attachment and attachment.Parent then attachment:Destroy() end
-
-    if isSuccess and root and root.Parent then
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.CFrame = CFrame.new(targetPos)
-        return true
-    end
-
-    return false
-end
-
-local function GetNearestFieldEgg()
-    if not EggState or not EggState.ReadFieldEggs then return nil end
-    local ok, snapshot = pcall(EggState.ReadFieldEggs)
-    if not ok or not snapshot or not snapshot.Records then return nil end
-
-    local char = LocalPlayer.Character
-    local root = WaitForCharacterRoot(char)
-    if not root then return nil end
-
-    local closestEgg = nil
-    local shortestDist = math.huge
-
-    for _, record in ipairs(snapshot.Records) do
-        if record.State == "Slot" and record.BoundsCFrame then
-            local isIgnored = ignoredEggs[record.Uid] and (os.clock() - ignoredEggs[record.Uid] < 2.5)
-            if not isIgnored then
-                local dist = (record.BoundsCFrame.Position - root.Position).Magnitude
-                if dist < shortestDist then
-                    shortestDist = dist
-                    closestEgg = record
-                end
-            end
-        end
-    end
-    return closestEgg
-end
-
-local function InstantGrabEgg(record)
-    if not record or not record.Uid then return end
-
-    local char = LocalPlayer.Character
-    local root = WaitForCharacterRoot(char)
-    if not root then return end
-
-    local slotKey = nil
-    if AreaEggSlotIdentity and AreaEggSlotIdentity.LooksLikeFirstAreaUid and AreaEggSlotIdentity.LooksLikeFirstAreaUid(record.Uid) then
-        slotKey = AreaEggSlotIdentity.SlotKey(record.AreaId, record.NestId)
-    end
-
-    local net = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking")
-    local carryRemote = net and net:FindFirstChild("RF/EggWorld/AskFieldEggCarry")
-    if carryRemote then 
-        pcall(function() carryRemote:InvokeServer({ Uid = record.Uid, FirstAreaSlotKey = slotKey }) end) 
-    end
-
-    pcall(function()
-        if EggState and EggState.CarryFieldEgg then 
-            EggState.CarryFieldEgg(record.Uid, slotKey) 
-        end
-    end)
-
-    for _, d in ipairs(Workspace:GetDescendants()) do
-        if d:IsA("ProximityPrompt") and d.Name == "CarryAreaEgg" and d.Enabled then
-            local p = d.Parent
-            if p:IsA("Attachment") then p = p.Parent end
-            if p and (p.Position - root.Position).Magnitude < 15 then
-                d.HoldDuration = 0
-                pcall(function() fireproximityprompt(d) end)
-                break
-            end
-        end
-    end
-
-    ignoredEggs[record.Uid] = os.clock()
-end
-
-local function VerifyEggInHand(char)
-    if not char or not char.Parent then return false end
-
-    if EggState then
-        if EggState.GetCarriedEgg then
-            local ok, carried = pcall(function() return EggState.GetCarriedEgg() end)
-            if ok and carried ~= nil then return true end
-        end
-        if EggState.IsCarryingEgg then
-            local ok, isCarrying = pcall(function() return EggState.IsCarryingEgg() end)
-            if ok and isCarrying == true then return true end
-        end
-    end
-
-    for _, child in ipairs(char:GetChildren()) do
-        if child:IsA("Tool") or child:IsA("Model") or child:IsA("BasePart") then
-            local lowerName = string.lower(child.Name)
-            if string.find(lowerName, "egg") or string.find(lowerName, "telur") or child:FindFirstChild("EggVisual") then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function RunStrictEggFlow(char)
-    if TeleportBusy then return end
-    TeleportBusy = true
-
-    task.spawn(function()
-        CurrentState = State.WAIT_CHARACTER
-        local root = WaitForCharacterRoot(char)
-        if not root then
-            CurrentState = State.IDLE
-            TeleportBusy = false
-            return
-        end
-
-        CurrentState = State.MOVING_WAYPOINT
-        local wpSuccess = FastGlideTo(char, WAYPOINT_POS, 250)
-        if not wpSuccess then
-            CurrentState = State.IDLE
-            TeleportBusy = false
-            return
-        end
-
-        CurrentState = State.MOVING_TARGET
-        local targetSuccess = FastGlideTo(char, TARGET_POS, 250)
-        if not targetSuccess then
-            CurrentState = State.IDLE
-            TeleportBusy = false
-            return
-        end
-
-        CurrentState = State.TAKING_EGG
-        local targetEgg = GetNearestFieldEgg()
-        if targetEgg then
-            InstantGrabEgg(targetEgg)
-        end
-
-        CurrentState = State.WAITING_FOR_EGG_CONFIRMATION
-        local isEggConfirmed = false
-        local timeout = os.clock() + 3.0
-
-        while os.clock() < timeout do
-            if VerifyEggInHand(char) then
-                isEggConfirmed = true
-                break
-            end
-            RunService.Stepped:Wait()
-        end
-
-        if not isEggConfirmed then
-            CurrentState = State.IDLE
-            TeleportBusy = false
-            return
-        end
-
-        CurrentState = State.EGG_CONFIRMED
-
-        CurrentState = State.MOVING_FINAL
-        local finalMoveSuccess = TeleportToTarget(char, FINAL_POS)
-        if not finalMoveSuccess then
-            CurrentState = State.IDLE
-            TeleportBusy = false
-            return
-        end
-
-        CurrentState = State.FINAL_CONFIRMED
-        CurrentState = State.COMPLETED
-
-        TeleportBusy = false
-    end)
-end
-
---------------------------------------------------------------------------------
--- INFINITE BLOCK GENERATOR & FLY SYSTEM
---------------------------------------------------------------------------------
-local isFlyActive = false
-local MOVE_SPEED = 60
-local BLOCK_OFFSET_Y = 3.5
-local activeBlock = nil
-local safeZoneHoldDuration = 1.5
-
-local function UpdateOrCreateBlock(position)
-    if not activeBlock or not activeBlock.Parent then
-        local block = Instance.new("Part")
-        block.Name = "MovingDynamicBlock"
-        block.Size = Vector3.new(6, 1, 6)
-        block.Transparency = 1
-        block.CanCollide = true
-        block.Anchored = true
-        block.Material = Enum.Material.SmoothPlastic
-        block.Parent = workspace
-        activeBlock = block
-    end
-
-    activeBlock.CFrame = CFrame.new(position)
-    return activeBlock
-end
-
-local function RemoveBlock()
-    if activeBlock and activeBlock.Parent then
-        activeBlock:Destroy()
-        activeBlock = nil
-    end
-end
-
---------------------------------------------------------------------------------
--- BYPASS STATE
---------------------------------------------------------------------------------
-local function ApplyInstantBypassState(character)
-    if not character then return end
-
-    local humanoid = character:WaitForChild("Humanoid", 5)
-    local root = character:WaitForChild("HumanoidRootPart", 5)
-    if not humanoid or not root then return end
-
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
-
-    workspace.CurrentCamera.CameraSubject = humanoid
-end
-
-RunService.Heartbeat:Connect(function(deltaTime)
-    if not isFlyActive then 
-        RemoveBlock()
-        return 
-    end
-
-    local char = LocalPlayer.Character
-    if not char then return end
-
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local camera = workspace.CurrentCamera
-
-    if root and hum and camera then
-        hum.PlatformStand = true
-
-        local moveDir = Vector3.zero
-
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
-
-        if moveDir.Magnitude == 0 and hum.MoveDirection.Magnitude > 0 then
-            local localMove = camera.CFrame:VectorToObjectSpace(hum.MoveDirection)
-            moveDir = Vector3.new(localMove.X, 0, localMove.Z)
-        end
-
-        local verticalMove = 0
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalMove = verticalMove + 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalMove = verticalMove - 1 end
-
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-
-        if moveDir.Magnitude > 0 or verticalMove ~= 0 then
-            if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
-
-            local camCFrame = camera.CFrame
-            local worldDirection = (camCFrame.RightVector * moveDir.X) 
-                + (camCFrame.LookVector * -moveDir.Z) 
-                + (Vector3.new(0, 1, 0) * verticalMove)
-
-            if worldDirection.Magnitude > 0 then worldDirection = worldDirection.Unit end
-
-            local targetPos = root.Position + (worldDirection * (MOVE_SPEED * deltaTime))
-            local lookAtPos = targetPos + Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z)
-
-            root.CFrame = CFrame.new(targetPos, lookAtPos)
-            UpdateOrCreateBlock(targetPos - Vector3.new(0, BLOCK_OFFSET_Y, 0))
-        else
-            UpdateOrCreateBlock(root.Position - Vector3.new(0, BLOCK_OFFSET_Y, 0))
-        end
-    end
-end)
-
-if LocalPlayer.Character then
-    task.spawn(function() ApplyInstantBypassState(LocalPlayer.Character) end)
-end
-
---------------------------------------------------------------------------------
--- RESPAWN & DETEKSI
---------------------------------------------------------------------------------
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    ApplyInstantBypassState(newChar)
-    if isAntiHitActive then
-        RunStrictEggFlow(newChar)
-    end
-end)
-
-local function FastBypassRespawn()
-    pcall(function()
-        LocalPlayer:LoadCharacter()
-    end)
-end
-
-local function ExecuteDropAndFastRespawn()
-    if isProcessing or not isAntiHitActive then return end
-    isProcessing = true
-    isAutoEggGrabActive = false
+-- ============================================================================
+-- LOGIC FITUR 2: INSTANT TELEPORT TO WAYPOINT (TOGGLE)
+-- ============================================================================
+local function ExecuteTeleportToWaypoint()
+    if isProcessingInstantTp or not isInstantTpActive then return end
+    isProcessingInstantTp = true
 
     local char = LocalPlayer.Character
     if char then
         local root = WaitForCharacterRoot(char)
         if root then
-            for _, item in ipairs(char:GetChildren()) do
-                if item:IsA("Tool") then
-                    item.Parent = workspace
-                end
-            end
-
             local targetWaypointCFrame = CFrame.new(WAYPOINT_POS)
             local startTime = os.clock()
             local holdConnection
+
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = targetWaypointCFrame
+            char:PivotTo(targetWaypointCFrame)
 
             holdConnection = RunService.Heartbeat:Connect(function()
                 if not char or not root or not root.Parent then
@@ -545,38 +293,43 @@ local function ExecuteDropAndFastRespawn()
             end)
 
             task.wait(safeZoneHoldDuration)
-            FastBypassRespawn()
+
+            ShowTopNotification()
         end
     end
 
     task.delay(0.05, function()
-        isProcessing = false
+        isProcessingInstantTp = false
     end)
 end
 
+--------------------------------------------------------------------------------
+-- EVENT TRIGGERS (PROXIMITY & CHARACTER DETECTION)
+--------------------------------------------------------------------------------
 ProximityPromptService.PromptTriggered:Connect(function(prompt, playerWhoTriggered)
     if playerWhoTriggered == LocalPlayer then
-        if isAntiHitV1Active then
+        if isAntiHitGuardsActive then
             task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
         end
-        if isAntiHitActive then
-            task.spawn(function() ExecuteDropAndFastRespawn() end)
+        if isInstantTpActive then
+            task.spawn(function() ExecuteTeleportToWaypoint() end)
         end
     end
 end)
 
 local function SetupCharacterDetection(char)
     char.ChildAdded:Connect(function(child)
-        if not child:IsA("Tool") then
-            local name = string.lower(child.Name)
+        local name = string.lower(child.Name)
+        local isEggOrTool = string.find(name, "egg") or string.find(name, "telur") or child:IsA("Tool")
+
+        if isAntiHitGuardsActive and not child:IsA("Tool") then
             if string.find(name, "egg") or string.find(name, "telur") then
-                if isAntiHitV1Active then
-                    task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
-                end
-                if isAntiHitActive then
-                    task.spawn(function() ExecuteDropAndFastRespawn() end)
-                end
+                task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
             end
+        end
+
+        if isInstantTpActive and isEggOrTool then
+            task.spawn(function() ExecuteTeleportToWaypoint() end)
         end
     end)
 end
@@ -588,116 +341,82 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
 end)
 
 --------------------------------------------------------------------------------
--- MAIN UI SETUP
+-- MAIN HUB UI STRUCTURE
 --------------------------------------------------------------------------------
-local IsMinimized = false
-local IsTransitioning = false
-
-local Theme = {
-    Background = Color3.fromRGB(7, 10, 17),
-    Card = Color3.fromRGB(14, 20, 32),
-    CardHover = Color3.fromRGB(20, 29, 46),
-    Accent = Color3.fromRGB(37, 120, 255),
-    AccentLight = Color3.fromRGB(82, 151, 255),
-    Text = Color3.fromRGB(245, 247, 255),
-    TextSecondary = Color3.fromRGB(151, 163, 186),
-    TextMuted = Color3.fromRGB(88, 100, 123),
-    Border = Color3.fromRGB(34, 48, 73),
-    Off = Color3.fromRGB(20, 27, 40),
-    OffStroke = Color3.fromRGB(50, 64, 88),
-    On = Color3.fromRGB(18, 48, 43),
-    OnStroke = Color3.fromRGB(46, 146, 116),
-    OnAccent = Color3.fromRGB(76, 220, 163),
-}
-
-local function Tween(object, duration, properties, style, direction)
-    if not object or not object.Parent then return end
-    local info = TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quart, direction or Enum.EasingDirection.Out)
-    local tween = TweenService:Create(object, info, properties)
-    tween:Play()
-    return tween
-end
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = GUI_NAME
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 999
-
-local guiParented = false
-pcall(function() ScreenGui.Parent = CoreGui guiParented = ScreenGui.Parent ~= nil end)
-if not guiParented then
-    pcall(function() ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") guiParented = ScreenGui.Parent ~= nil end)
-end
-if not guiParented then return end
-
-local MAIN_WIDTH = 350
-local MAIN_HEIGHT = 265
-local MAIN_HOME_POSITION = UDim2.fromScale(0.20, 0.43)
+local FULL_HEIGHT = 168
+local CLOSED_HEIGHT = 78
+local MAIN_WIDTH = 180
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT)
-MainFrame.Position = MAIN_HOME_POSITION
-MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Size = UDim2.fromOffset(MAIN_WIDTH, FULL_HEIGHT)
+MainFrame.AnchorPoint = Vector2.new(1, 0)
+MainFrame.Position = UDim2.new(1, 0, 0, 0)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
+MainFrame.Draggable = true
 MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 20)
+MainCorner.CornerRadius = UDim.new(0, 10)
 MainCorner.Parent = MainFrame
 
 local MainStroke = Instance.new("UIStroke")
-MainStroke.Name = "MainStroke"
 MainStroke.Color = Theme.Border
-MainStroke.Thickness = 1.5
+MainStroke.Thickness = 1.2
 MainStroke.Transparency = 0.08
 MainStroke.Parent = MainFrame
 
-local BackgroundGradient = Instance.new("UIGradient")
-BackgroundGradient.Rotation = 135
-BackgroundGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(9, 13, 22)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 12, 20)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 20, 34))
-})
-BackgroundGradient.Parent = MainFrame
-
 local TopAccent = Instance.new("Frame")
-TopAccent.Name = "TopAccent"
-TopAccent.Size = UDim2.new(0, 90, 0, 3)
-TopAccent.Position = UDim2.new(0.5, -45, 0, 0)
+TopAccent.Size = UDim2.new(0, 45, 0, 2)
+TopAccent.Position = UDim2.new(0.5, -22, 0, 0)
 TopAccent.BackgroundColor3 = Theme.Accent
 TopAccent.BorderSizePixel = 0
-TopAccent.ZIndex = 5
 TopAccent.Parent = MainFrame
 
 local TopAccentCorner = Instance.new("UICorner")
 TopAccentCorner.CornerRadius = UDim.new(1, 0)
 TopAccentCorner.Parent = TopAccent
 
+-- HEADER / TITLE AREA
 local Header = Instance.new("Frame")
-Header.Name = "Header"
-Header.Size = UDim2.new(1, 0, 0, 50)
+Header.Size = UDim2.new(1, 0, 0, 30)
 Header.BackgroundTransparency = 1
-Header.Active = true
-Header.ZIndex = 10
 Header.Parent = MainFrame
 
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Size = UDim2.fromOffset(18, 18)
+ToggleBtn.Position = UDim2.fromOffset(6, 6)
+ToggleBtn.BackgroundColor3 = Theme.Card
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Text = "<"
+ToggleBtn.TextColor3 = Theme.Text
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 12
+ToggleBtn.Parent = Header
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 5)
+ToggleCorner.Parent = ToggleBtn
+
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Color = Theme.Border
+ToggleStroke.Thickness = 1
+ToggleStroke.Parent = ToggleBtn
+
 local LogoHolder = Instance.new("Frame")
-LogoHolder.Name = "LogoHolder"
-LogoHolder.Size = UDim2.fromOffset(34, 34)
-LogoHolder.Position = UDim2.fromOffset(15, 8)
+LogoHolder.Size = UDim2.fromOffset(18, 18)
+LogoHolder.Position = UDim2.fromOffset(28, 6)
 LogoHolder.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
 LogoHolder.BorderSizePixel = 0
-LogoHolder.ZIndex = 11
+LogoHolder.ClipsDescendants = true
 LogoHolder.Parent = Header
 
 local LogoCorner = Instance.new("UICorner")
-LogoCorner.CornerRadius = UDim.new(0, 10)
+LogoCorner.CornerRadius = UDim.new(0, 5)
 LogoCorner.Parent = LogoHolder
 
 local LogoStroke = Instance.new("UIStroke")
@@ -707,1013 +426,412 @@ LogoStroke.Transparency = 0.35
 LogoStroke.Parent = LogoHolder
 
 local FVertical = Instance.new("Frame")
-FVertical.Size = UDim2.fromOffset(6, 22)
-FVertical.Position = UDim2.fromOffset(9, 6)
+FVertical.Size = UDim2.fromOffset(2.5, 9)
+FVertical.Position = UDim2.fromOffset(5.5, 4.5)
 FVertical.BackgroundColor3 = Theme.Accent
 FVertical.BorderSizePixel = 0
-FVertical.Rotation = -7
-FVertical.ZIndex = 12
+FVertical.Rotation = -6
 FVertical.Parent = LogoHolder
 
 local FTop = Instance.new("Frame")
-FTop.Size = UDim2.fromOffset(16, 6)
-FTop.Position = UDim2.fromOffset(13, 5)
+FTop.Size = UDim2.fromOffset(6.5, 2.5)
+FTop.Position = UDim2.fromOffset(7, 4.5)
 FTop.BackgroundColor3 = Theme.Accent
 FTop.BorderSizePixel = 0
-FTop.Rotation = -7
-FTop.ZIndex = 12
+FTop.Rotation = -6
 FTop.Parent = LogoHolder
 
 local FMiddle = Instance.new("Frame")
-FMiddle.Size = UDim2.fromOffset(12, 5)
-FMiddle.Position = UDim2.fromOffset(12, 14)
+FMiddle.Size = UDim2.fromOffset(5, 2)
+FMiddle.Position = UDim2.fromOffset(6.5, 8)
 FMiddle.BackgroundColor3 = Theme.AccentLight
 FMiddle.BorderSizePixel = 0
-FMiddle.Rotation = -7
-FMiddle.ZIndex = 12
+FMiddle.Rotation = -6
 FMiddle.Parent = LogoHolder
 
 local Title = Instance.new("TextLabel")
-Title.Name = "Title"
-Title.Size = UDim2.new(1, -125, 0, 20)
-Title.Position = UDim2.fromOffset(58, 8)
+Title.Size = UDim2.new(1, -52, 0, 15)
+Title.Position = UDim2.fromOffset(50, 2)
 Title.BackgroundTransparency = 1
 Title.RichText = true
 Title.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
 Title.TextColor3 = Theme.Text
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 15
+Title.TextSize = 12
 Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.TextYAlignment = Enum.TextYAlignment.Center
-Title.ZIndex = 11
 Title.Parent = Header
 
 local Subtitle = Instance.new("TextLabel")
-Subtitle.Name = "Subtitle"
-Subtitle.Size = UDim2.new(1, -125, 0, 14)
-Subtitle.Position = UDim2.fromOffset(59, 27)
+Subtitle.Size = UDim2.new(1, -52, 0, 10)
+Subtitle.Position = UDim2.fromOffset(50, 16)
 Subtitle.BackgroundTransparency = 1
 Subtitle.Text = "MAIN UTILITIES"
 Subtitle.TextColor3 = Theme.TextMuted
 Subtitle.Font = Enum.Font.GothamMedium
-Subtitle.TextSize = 8
+Subtitle.TextSize = 6.5
 Subtitle.TextXAlignment = Enum.TextXAlignment.Left
-Subtitle.ZIndex = 11
 Subtitle.Parent = Header
 
-local MinimizeButton = Instance.new("TextButton")
-MinimizeButton.Name = "MinimizeButton"
-MinimizeButton.Size = UDim2.fromOffset(32, 32)
-MinimizeButton.Position = UDim2.new(1, -45, 0, 9)
-MinimizeButton.BackgroundColor3 = Theme.Card
-MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Text = "−"
-MinimizeButton.TextColor3 = Theme.TextSecondary
-MinimizeButton.Font = Enum.Font.GothamMedium
-MinimizeButton.TextSize = 18
-MinimizeButton.AutoButtonColor = false
-MinimizeButton.ZIndex = 12
-MinimizeButton.Parent = Header
+local ExtraFeatures = Instance.new("CanvasGroup")
+ExtraFeatures.Name = "ExtraFeatures"
+ExtraFeatures.Size = UDim2.new(1, 0, 0, 90)
+ExtraFeatures.Position = UDim2.fromOffset(0, 78)
+ExtraFeatures.BackgroundTransparency = 1
+ExtraFeatures.BorderSizePixel = 0
+ExtraFeatures.GroupTransparency = 0
+ExtraFeatures.Parent = MainFrame
 
-local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(0, 10)
-MinCorner.Parent = MinimizeButton
+-- ============================================================================
+-- 1. TOMBOL ATAS: HOP SERVER
+-- ============================================================================
+local AutoHopBtn = Instance.new("TextButton")
+AutoHopBtn.Name = "AutoHopButton"
+AutoHopBtn.Size = UDim2.new(1, -12, 0, 38)
+AutoHopBtn.Position = UDim2.fromOffset(6, 35)
+AutoHopBtn.BackgroundColor3 = Theme.Off
+AutoHopBtn.BorderSizePixel = 0
+AutoHopBtn.AutoButtonColor = false
+AutoHopBtn.Text = ""
+AutoHopBtn.Parent = MainFrame
 
-local MinStroke = Instance.new("UIStroke")
-MinStroke.Color = Theme.Border
-MinStroke.Thickness = 1
-MinStroke.Transparency = 0.25
-MinStroke.Parent = MinimizeButton
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 8)
+BtnCorner.Parent = AutoHopBtn
 
-local TabMainContent = Instance.new("Frame")
-TabMainContent.Name = "TabMainContent"
-TabMainContent.Size = UDim2.new(1, -30, 0, 205)
-TabMainContent.Position = UDim2.fromOffset(15, 50)
-TabMainContent.BackgroundTransparency = 1
-TabMainContent.Visible = true
-TabMainContent.ZIndex = 5
-TabMainContent.Parent = MainFrame
-
---------------------------------------------------------------------------------
--- MAIN CONTENT (UI FITUR)
---------------------------------------------------------------------------------
-
--- 1. ANTI HIT V1 (PALING ATAS)
-local AntiHitV1Button = Instance.new("TextButton")
-AntiHitV1Button.Name = "AntiHitV1Button"
-AntiHitV1Button.Size = UDim2.new(1, 0, 0, 46)
-AntiHitV1Button.Position = UDim2.fromOffset(0, 0)
-AntiHitV1Button.BackgroundColor3 = Theme.Off
-AntiHitV1Button.BorderSizePixel = 0
-AntiHitV1Button.AutoButtonColor = false
-AntiHitV1Button.Text = ""
-AntiHitV1Button.ZIndex = 7
-AntiHitV1Button.Parent = TabMainContent
-
-local AntiHitV1Corner = Instance.new("UICorner")
-AntiHitV1Corner.CornerRadius = UDim.new(0, 10)
-AntiHitV1Corner.Parent = AntiHitV1Button
-
-local AntiHitV1Stroke = Instance.new("UIStroke")
-AntiHitV1Stroke.Name = "AntiHitV1Stroke"
-AntiHitV1Stroke.Color = Theme.OffStroke
-AntiHitV1Stroke.Thickness = 1
-AntiHitV1Stroke.Transparency = 0.2
-AntiHitV1Stroke.Parent = AntiHitV1Button
-
-local AntiHitV1StatusDot = Instance.new("Frame")
-AntiHitV1StatusDot.Name = "AntiHitV1StatusDot"
-AntiHitV1StatusDot.Size = UDim2.fromOffset(7, 7)
-AntiHitV1StatusDot.Position = UDim2.fromOffset(15, 19)
-AntiHitV1StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-AntiHitV1StatusDot.BorderSizePixel = 0
-AntiHitV1StatusDot.ZIndex = 9
-AntiHitV1StatusDot.Parent = AntiHitV1Button
-
-local AntiHitV1StatusDotCorner = Instance.new("UICorner")
-AntiHitV1StatusDotCorner.CornerRadius = UDim.new(1, 0)
-AntiHitV1StatusDotCorner.Parent = AntiHitV1StatusDot
-
-local AntiHitV1Title = Instance.new("TextLabel")
-AntiHitV1Title.Size = UDim2.new(1, -100, 0, 18)
-AntiHitV1Title.Position = UDim2.fromOffset(32, 6)
-AntiHitV1Title.BackgroundTransparency = 1
-AntiHitV1Title.Text = "Anti hit v1"
-AntiHitV1Title.TextColor3 = Theme.Text
-AntiHitV1Title.Font = Enum.Font.GothamBold
-AntiHitV1Title.TextSize = 11
-AntiHitV1Title.TextXAlignment = Enum.TextXAlignment.Left
-AntiHitV1Title.ZIndex = 9
-AntiHitV1Title.Parent = AntiHitV1Button
-
-local AntiHitV1Sub = Instance.new("TextLabel")
-AntiHitV1Sub.Size = UDim2.new(1, -100, 0, 14)
-AntiHitV1Sub.Position = UDim2.fromOffset(32, 23)
-AntiHitV1Sub.BackgroundTransparency = 1
-AntiHitV1Sub.Text = "Fake visual protection disabled"
-AntiHitV1Sub.TextColor3 = Theme.TextMuted
-AntiHitV1Sub.Font = Enum.Font.GothamMedium
-AntiHitV1Sub.TextSize = 8
-AntiHitV1Sub.TextXAlignment = Enum.TextXAlignment.Left
-AntiHitV1Sub.ZIndex = 9
-AntiHitV1Sub.Parent = AntiHitV1Button
-
-local AntiHitV1StatusText = Instance.new("TextLabel")
-AntiHitV1StatusText.Size = UDim2.fromOffset(55, 20)
-AntiHitV1StatusText.Position = UDim2.new(1, -72, 0, 13)
-AntiHitV1StatusText.BackgroundTransparency = 1
-AntiHitV1StatusText.Text = "OFF"
-AntiHitV1StatusText.TextColor3 = Theme.TextMuted
-AntiHitV1StatusText.Font = Enum.Font.GothamBold
-AntiHitV1StatusText.TextSize = 9
-AntiHitV1StatusText.TextXAlignment = Enum.TextXAlignment.Right
-AntiHitV1StatusText.ZIndex = 9
-AntiHitV1StatusText.Parent = AntiHitV1Button
-
--- 2. INSTANT TELEPORT V1
-local AntiHitButton = Instance.new("TextButton")
-AntiHitButton.Name = "AntiHitButton"
-AntiHitButton.Size = UDim2.new(1, 0, 0, 46)
-AntiHitButton.Position = UDim2.fromOffset(0, 52)
-AntiHitButton.BackgroundColor3 = Theme.Off
-AntiHitButton.BorderSizePixel = 0
-AntiHitButton.AutoButtonColor = false
-AntiHitButton.Text = ""
-AntiHitButton.ZIndex = 7
-AntiHitButton.Parent = TabMainContent
-
-local AntiHitCorner = Instance.new("UICorner")
-AntiHitCorner.CornerRadius = UDim.new(0, 10)
-AntiHitCorner.Parent = AntiHitButton
-
-local AntiHitStroke = Instance.new("UIStroke")
-AntiHitStroke.Name = "AntiHitStroke"
-AntiHitStroke.Color = Theme.OffStroke
-AntiHitStroke.Thickness = 1
-AntiHitStroke.Transparency = 0.2
-AntiHitStroke.Parent = AntiHitButton
+local BtnStroke = Instance.new("UIStroke")
+BtnStroke.Color = Theme.OffStroke
+BtnStroke.Thickness = 1
+BtnStroke.Transparency = 0.2
+BtnStroke.Parent = AutoHopBtn
 
 local StatusDot = Instance.new("Frame")
-StatusDot.Name = "StatusDot"
-StatusDot.Size = UDim2.fromOffset(7, 7)
-StatusDot.Position = UDim2.fromOffset(15, 19)
-StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
+StatusDot.Size = UDim2.fromOffset(6, 6)
+StatusDot.Position = UDim2.fromOffset(8, 16)
+StatusDot.BackgroundColor3 = Theme.Accent
 StatusDot.BorderSizePixel = 0
-StatusDot.ZIndex = 9
-StatusDot.Parent = AntiHitButton
+StatusDot.Parent = AutoHopBtn
 
 local StatusDotCorner = Instance.new("UICorner")
 StatusDotCorner.CornerRadius = UDim.new(1, 0)
 StatusDotCorner.Parent = StatusDot
 
-local AntiHitTitle = Instance.new("TextLabel")
-AntiHitTitle.Size = UDim2.new(1, -100, 0, 18)
-AntiHitTitle.Position = UDim2.fromOffset(32, 6)
-AntiHitTitle.BackgroundTransparency = 1
-AntiHitTitle.Text = "Instant teleport v1"
-AntiHitTitle.TextColor3 = Theme.Text
-AntiHitTitle.Font = Enum.Font.GothamBold
-AntiHitTitle.TextSize = 11
-AntiHitTitle.TextXAlignment = Enum.TextXAlignment.Left
-AntiHitTitle.ZIndex = 9
-AntiHitTitle.Parent = AntiHitButton
+local BtnTitle = Instance.new("TextLabel")
+BtnTitle.Size = UDim2.new(1, -20, 0, 15)
+BtnTitle.Position = UDim2.fromOffset(18, 4)
+BtnTitle.BackgroundTransparency = 1
+BtnTitle.Text = "AUTO HOP SERVER"
+BtnTitle.TextColor3 = Theme.Text
+BtnTitle.Font = Enum.Font.GothamBold
+BtnTitle.TextSize = 10
+BtnTitle.TextXAlignment = Enum.TextXAlignment.Left
+BtnTitle.Parent = AutoHopBtn
 
-local AntiHitSub = Instance.new("TextLabel")
-AntiHitSub.Size = UDim2.new(1, -100, 0, 14)
-AntiHitSub.Position = UDim2.fromOffset(32, 23)
-AntiHitSub.BackgroundTransparency = 1
-AntiHitSub.Text = "Protection disabled"
-AntiHitSub.TextColor3 = Theme.TextMuted
-AntiHitSub.Font = Enum.Font.GothamMedium
-AntiHitSub.TextSize = 8
-AntiHitSub.TextXAlignment = Enum.TextXAlignment.Left
-AntiHitSub.ZIndex = 9
-AntiHitSub.Parent = AntiHitButton
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -20, 0, 11)
+StatusLabel.Position = UDim2.fromOffset(18, 18)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Status: Idle (2P > 1P)"
+StatusLabel.TextColor3 = Theme.TextMuted
+StatusLabel.Font = Enum.Font.GothamMedium
+StatusLabel.TextSize = 7
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.Parent = AutoHopBtn
 
-local StatusText = Instance.new("TextLabel")
-StatusText.Size = UDim2.fromOffset(55, 20)
-StatusText.Position = UDim2.new(1, -72, 0, 13)
-StatusText.BackgroundTransparency = 1
-StatusText.Text = "OFF"
-StatusText.TextColor3 = Theme.TextMuted
-StatusText.Font = Enum.Font.GothamBold
-StatusText.TextSize = 9
-StatusText.TextXAlignment = Enum.TextXAlignment.Right
-StatusText.ZIndex = 9
-StatusText.Parent = AntiHitButton
+-- ============================================================================
+-- 2. TOMBOL TENGAH: ANTI HIT GUARDS
+-- ============================================================================
+local AntiHitGuardsBtn = Instance.new("TextButton")
+AntiHitGuardsBtn.Name = "AntiHitGuardsBtn"
+AntiHitGuardsBtn.Size = UDim2.new(1, -12, 0, 38)
+AntiHitGuardsBtn.Position = UDim2.fromOffset(6, 0)
+AntiHitGuardsBtn.BackgroundColor3 = Theme.Off
+AntiHitGuardsBtn.BorderSizePixel = 0
+AntiHitGuardsBtn.AutoButtonColor = false
+AntiHitGuardsBtn.Text = ""
+AntiHitGuardsBtn.Parent = ExtraFeatures
 
--- 3. FLY FOR AA
-local FlyBetaButton = Instance.new("TextButton")
-FlyBetaButton.Name = "FlyBetaButton"
-FlyBetaButton.Size = UDim2.new(1, 0, 0, 46)
-FlyBetaButton.Position = UDim2.fromOffset(0, 104)
-FlyBetaButton.BackgroundColor3 = Theme.Off
-FlyBetaButton.BorderSizePixel = 0
-FlyBetaButton.AutoButtonColor = false
-FlyBetaButton.Text = ""
-FlyBetaButton.ZIndex = 7
-FlyBetaButton.Parent = TabMainContent
+local AntiHitCorner = Instance.new("UICorner")
+AntiHitCorner.CornerRadius = UDim.new(0, 8)
+AntiHitCorner.Parent = AntiHitGuardsBtn
 
-local FlyBetaCorner = Instance.new("UICorner")
-FlyBetaCorner.CornerRadius = UDim.new(0, 10)
-FlyBetaCorner.Parent = FlyBetaButton
+local AntiHitStroke = Instance.new("UIStroke")
+AntiHitStroke.Color = Theme.OffStroke
+AntiHitStroke.Thickness = 1
+AntiHitStroke.Transparency = 0.2
+AntiHitStroke.Parent = AntiHitGuardsBtn
 
-local FlyBetaStroke = Instance.new("UIStroke")
-FlyBetaStroke.Name = "FlyBetaStroke"
-FlyBetaStroke.Color = Theme.OffStroke
-FlyBetaStroke.Thickness = 1
-FlyBetaStroke.Transparency = 0.2
-FlyBetaStroke.Parent = FlyBetaButton
+local AntiHitDot = Instance.new("Frame")
+AntiHitDot.Size = UDim2.fromOffset(6, 6)
+AntiHitDot.Position = UDim2.fromOffset(8, 16)
+AntiHitDot.BackgroundColor3 = Theme.TextMuted
+AntiHitDot.BorderSizePixel = 0
+AntiHitDot.Parent = AntiHitGuardsBtn
 
-local FlyStatusDot = Instance.new("Frame")
-FlyStatusDot.Name = "FlyStatusDot"
-FlyStatusDot.Size = UDim2.fromOffset(7, 7)
-FlyStatusDot.Position = UDim2.fromOffset(15, 19)
-FlyStatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-FlyStatusDot.BorderSizePixel = 0
-FlyStatusDot.ZIndex = 9
-FlyStatusDot.Parent = FlyBetaButton
+local AntiHitDotCorner = Instance.new("UICorner")
+AntiHitDotCorner.CornerRadius = UDim.new(1, 0)
+AntiHitDotCorner.Parent = AntiHitDot
 
-local FlyStatusDotCorner = Instance.new("UICorner")
-FlyStatusDotCorner.CornerRadius = UDim.new(1, 0)
-FlyStatusDotCorner.Parent = FlyStatusDot
+local AntiHitTitleLabel = Instance.new("TextLabel")
+AntiHitTitleLabel.Size = UDim2.new(1, -20, 0, 15)
+AntiHitTitleLabel.Position = UDim2.fromOffset(18, 4)
+AntiHitTitleLabel.BackgroundTransparency = 1
+AntiHitTitleLabel.Text = "ANTI HIT GUARDS"
+AntiHitTitleLabel.TextColor3 = Theme.Text
+AntiHitTitleLabel.Font = Enum.Font.GothamBold
+AntiHitTitleLabel.TextSize = 10
+AntiHitTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+AntiHitTitleLabel.Parent = AntiHitGuardsBtn
 
-local FlyBetaTitle = Instance.new("TextLabel")
-FlyBetaTitle.Size = UDim2.new(1, -100, 0, 18)
-FlyBetaTitle.Position = UDim2.fromOffset(32, 6)
-FlyBetaTitle.BackgroundTransparency = 1
-FlyBetaTitle.Text = "FLY FOR AA"
-FlyBetaTitle.TextColor3 = Theme.Text
-FlyBetaTitle.Font = Enum.Font.GothamBold
-FlyBetaTitle.TextSize = 11
-FlyBetaTitle.TextXAlignment = Enum.TextXAlignment.Left
-FlyBetaTitle.ZIndex = 9
-FlyBetaTitle.Parent = FlyBetaButton
+local AntiHitStatusLabel = Instance.new("TextLabel")
+AntiHitStatusLabel.Size = UDim2.new(1, -20, 0, 11)
+AntiHitStatusLabel.Position = UDim2.fromOffset(18, 18)
+AntiHitStatusLabel.BackgroundTransparency = 1
+AntiHitStatusLabel.Text = "Status: OFF"
+AntiHitStatusLabel.TextColor3 = Theme.TextMuted
+AntiHitStatusLabel.Font = Enum.Font.GothamMedium
+AntiHitStatusLabel.TextSize = 7
+AntiHitStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+AntiHitStatusLabel.Parent = AntiHitGuardsBtn
 
-local FlyBetaSub = Instance.new("TextLabel")
-FlyBetaSub.Size = UDim2.new(1, -100, 0, 14)
-FlyBetaSub.Position = UDim2.fromOffset(32, 23)
-FlyBetaSub.BackgroundTransparency = 1
-FlyBetaSub.Text = "Toggle fly mode"
-FlyBetaSub.TextColor3 = Theme.TextMuted
-FlyBetaSub.Font = Enum.Font.GothamMedium
-FlyBetaSub.TextSize = 8
-FlyBetaSub.TextXAlignment = Enum.TextXAlignment.Left
-FlyBetaSub.ZIndex = 9
-FlyBetaSub.Parent = FlyBetaButton
+-- ============================================================================
+-- 3. TOMBOL BAWAH: INSTANT TELEPORT
+-- ============================================================================
+local InstantTpBtn = Instance.new("TextButton")
+InstantTpBtn.Name = "InstantTpBtn"
+InstantTpBtn.Size = UDim2.new(1, -12, 0, 42)
+InstantTpBtn.Position = UDim2.fromOffset(6, 43)
+InstantTpBtn.BackgroundColor3 = Theme.Off
+InstantTpBtn.BorderSizePixel = 0
+InstantTpBtn.AutoButtonColor = false
+InstantTpBtn.Text = ""
+InstantTpBtn.Parent = ExtraFeatures
 
-local FlyStatusText = Instance.new("TextLabel")
-FlyStatusText.Size = UDim2.fromOffset(55, 20)
-FlyStatusText.Position = UDim2.new(1, -72, 0, 13)
-FlyStatusText.BackgroundTransparency = 1
-FlyStatusText.Text = "OFF"
-FlyStatusText.TextColor3 = Theme.TextMuted
-FlyStatusText.Font = Enum.Font.GothamBold
-FlyStatusText.TextSize = 9
-FlyStatusText.TextXAlignment = Enum.TextXAlignment.Right
-FlyStatusText.ZIndex = 9
-FlyStatusText.Parent = FlyBetaButton
+local InstantTpCorner = Instance.new("UICorner")
+InstantTpCorner.CornerRadius = UDim.new(0, 8)
+InstantTpCorner.Parent = InstantTpBtn
 
--- 4. FLY SPEED SLIDER
-local SliderCard = Instance.new("Frame")
-SliderCard.Name = "SliderCard"
-SliderCard.Size = UDim2.new(1, 0, 0, 46)
-SliderCard.Position = UDim2.fromOffset(0, 156)
-SliderCard.BackgroundColor3 = Theme.Off
-SliderCard.BorderSizePixel = 0
-SliderCard.ZIndex = 7
-SliderCard.Parent = TabMainContent
+local InstantTpStroke = Instance.new("UIStroke")
+InstantTpStroke.Color = Theme.OffStroke
+InstantTpStroke.Thickness = 1
+InstantTpStroke.Transparency = 0.2
+InstantTpStroke.Parent = InstantTpBtn
 
-local SliderCorner = Instance.new("UICorner")
-SliderCorner.CornerRadius = UDim.new(0, 10)
-SliderCorner.Parent = SliderCard
+local InstantTpDot = Instance.new("Frame")
+InstantTpDot.Size = UDim2.fromOffset(6, 6)
+InstantTpDot.Position = UDim2.fromOffset(8, 18)
+InstantTpDot.BackgroundColor3 = Theme.TextMuted
+InstantTpDot.BorderSizePixel = 0
+InstantTpDot.Parent = InstantTpBtn
 
-local SliderStroke = Instance.new("UIStroke")
-SliderStroke.Name = "SliderStroke"
-SliderStroke.Color = Theme.OffStroke
-SliderStroke.Thickness = 1
-SliderStroke.Transparency = 0.2
-SliderStroke.Parent = SliderCard
+local InstantTpDotCorner = Instance.new("UICorner")
+InstantTpDotCorner.CornerRadius = UDim.new(1, 0)
+InstantTpDotCorner.Parent = InstantTpDot
 
-local SliderDot = Instance.new("Frame")
-SliderDot.Name = "SliderDot"
-SliderDot.Size = UDim2.fromOffset(7, 7)
-SliderDot.Position = UDim2.fromOffset(15, 12)
-SliderDot.BackgroundColor3 = Theme.Accent
-SliderDot.BorderSizePixel = 0
-SliderDot.ZIndex = 9
-SliderDot.Parent = SliderCard
+local InstantTpTitleLabel = Instance.new("TextLabel")
+InstantTpTitleLabel.Size = UDim2.new(1, -20, 0, 24)
+InstantTpTitleLabel.Position = UDim2.fromOffset(18, 3)
+InstantTpTitleLabel.BackgroundTransparency = 1
+InstantTpTitleLabel.Text = "Instant teleport gunakan jika anti hit guards delivery failed"
+InstantTpTitleLabel.TextColor3 = Theme.Text
+InstantTpTitleLabel.Font = Enum.Font.GothamBold
+InstantTpTitleLabel.TextSize = 7.5
+InstantTpTitleLabel.TextWrapped = true
+InstantTpTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+InstantTpTitleLabel.Parent = InstantTpBtn
 
-local SliderDotCorner = Instance.new("UICorner")
-SliderDotCorner.CornerRadius = UDim.new(1, 0)
-SliderDotCorner.Parent = SliderDot
-
-local SliderTitle = Instance.new("TextLabel")
-SliderTitle.Size = UDim2.new(1, -100, 0, 16)
-SliderTitle.Position = UDim2.fromOffset(30, 7)
-SliderTitle.BackgroundTransparency = 1
-SliderTitle.Text = "FLY SPEED"
-SliderTitle.TextColor3 = Theme.Text
-SliderTitle.Font = Enum.Font.GothamBold
-SliderTitle.TextSize = 10
-SliderTitle.TextXAlignment = Enum.TextXAlignment.Left
-SliderTitle.ZIndex = 9
-SliderTitle.Parent = SliderCard
-
-local SliderValueLabel = Instance.new("TextLabel")
-SliderValueLabel.Size = UDim2.fromOffset(60, 16)
-SliderValueLabel.Position = UDim2.new(1, -72, 0, 7)
-SliderValueLabel.BackgroundTransparency = 1
-SliderValueLabel.Text = tostring(MOVE_SPEED)
-SliderValueLabel.TextColor3 = Theme.AccentLight
-SliderValueLabel.Font = Enum.Font.GothamBold
-SliderValueLabel.TextSize = 10
-SliderValueLabel.TextXAlignment = Enum.TextXAlignment.Right
-SliderValueLabel.ZIndex = 9
-SliderValueLabel.Parent = SliderCard
-
-local SliderTrack = Instance.new("TextButton")
-SliderTrack.Name = "SliderTrack"
-SliderTrack.Size = UDim2.new(1, -30, 0, 6)
-SliderTrack.Position = UDim2.fromOffset(15, 29)
-SliderTrack.BackgroundColor3 = Color3.fromRGB(12, 17, 27)
-SliderTrack.BorderSizePixel = 0
-SliderTrack.AutoButtonColor = false
-SliderTrack.Text = ""
-SliderTrack.ZIndex = 9
-SliderTrack.Parent = SliderCard
-
-local TrackCorner = Instance.new("UICorner")
-TrackCorner.CornerRadius = UDim.new(1, 0)
-TrackCorner.Parent = SliderTrack
-
-local TrackStroke = Instance.new("UIStroke")
-TrackStroke.Color = Theme.Border
-TrackStroke.Thickness = 1
-TrackStroke.Transparency = 0.5
-TrackStroke.Parent = SliderTrack
-
-local SliderFill = Instance.new("Frame")
-SliderFill.Name = "SliderFill"
-SliderFill.Size = UDim2.new((MOVE_SPEED - 1) / (450 - 1), 0, 1, 0)
-SliderFill.BackgroundColor3 = Theme.Accent
-SliderFill.BorderSizePixel = 0
-SliderFill.ZIndex = 10
-SliderFill.Parent = SliderTrack
-
-local FillCorner = Instance.new("UICorner")
-FillCorner.CornerRadius = UDim.new(1, 0)
-FillCorner.Parent = SliderFill
-
-local SliderKnob = Instance.new("Frame")
-SliderKnob.Name = "SliderKnob"
-SliderKnob.Size = UDim2.fromOffset(12, 12)
-SliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
-SliderKnob.Position = UDim2.new(1, 0, 0.5, 0)
-SliderKnob.BackgroundColor3 = Theme.Text
-SliderKnob.BorderSizePixel = 0
-SliderKnob.ZIndex = 11
-SliderKnob.Parent = SliderFill
-
-local KnobCorner = Instance.new("UICorner")
-KnobCorner.CornerRadius = UDim.new(1, 0)
-KnobCorner.Parent = SliderKnob
-
-local KnobStroke = Instance.new("UIStroke")
-KnobStroke.Color = Theme.Accent
-KnobStroke.Thickness = 1.5
-KnobStroke.Parent = SliderKnob
-
-local MIN_SPEED = 1
-local MAX_SPEED = 450
-local isDraggingSlider = false
-
-local function UpdateSliderInput(input)
-    local trackAbsoluteSize = SliderTrack.AbsoluteSize.X
-    local trackAbsolutePosition = SliderTrack.AbsolutePosition.X
-    local mouseX = input.Position.X
-
-    local relativeX = math.clamp(mouseX - trackAbsolutePosition, 0, trackAbsoluteSize)
-    local alpha = relativeX / trackAbsoluteSize
-
-    local calculatedSpeed = math.floor(MIN_SPEED + (alpha * (MAX_SPEED - MIN_SPEED)))
-    MOVE_SPEED = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
-
-    SliderFill.Size = UDim2.new((MOVE_SPEED - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 0, 1, 0)
-    SliderValueLabel.Text = tostring(MOVE_SPEED)
-end
-
-SliderTrack.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDraggingSlider = true
-        Tween(SliderStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
-        UpdateSliderInput(input)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if isDraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        UpdateSliderInput(input)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        if isDraggingSlider then
-            isDraggingSlider = false
-            Tween(SliderStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-        end
-    end
-end)
+local InstantTpStatusLabel = Instance.new("TextLabel")
+InstantTpStatusLabel.Size = UDim2.new(1, -20, 0, 11)
+InstantTpStatusLabel.Position = UDim2.fromOffset(18, 27)
+InstantTpStatusLabel.BackgroundTransparency = 1
+InstantTpStatusLabel.Text = "Status: OFF"
+InstantTpStatusLabel.TextColor3 = Theme.TextMuted
+InstantTpStatusLabel.Font = Enum.Font.GothamMedium
+InstantTpStatusLabel.TextSize = 6.5
+InstantTpStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+InstantTpStatusLabel.Parent = InstantTpBtn
 
 --------------------------------------------------------------------------------
--- EVENT HOVER & BUTTON CLICKS
+-- LOGIKA TELEPORTATION (PRIORITAS 2 PLAYER)
 --------------------------------------------------------------------------------
-AntiHitV1Button.MouseEnter:Connect(function()
-    if IsTransitioning then return end
-    Tween(AntiHitV1Button, 0.16, { BackgroundColor3 = isAntiHitV1Active and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-    Tween(AntiHitV1Stroke, 0.16, { Transparency = 0, Color = isAntiHitV1Active and Theme.OnStroke or Theme.Accent })
-end)
-
-AntiHitV1Button.MouseLeave:Connect(function()
-    if isAntiHitV1Active then
-        Tween(AntiHitV1Button, 0.18, { BackgroundColor3 = Theme.On })
-        Tween(AntiHitV1Stroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-    else
-        Tween(AntiHitV1Button, 0.18, { BackgroundColor3 = Theme.Off })
-        Tween(AntiHitV1Stroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-    end
-end)
-
-FlyBetaButton.MouseEnter:Connect(function()
-    if IsTransitioning then return end
-    Tween(FlyBetaButton, 0.16, { BackgroundColor3 = isFlyActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-    Tween(FlyBetaStroke, 0.16, { Transparency = 0, Color = isFlyActive and Theme.OnStroke or Theme.Accent })
-end)
-
-FlyBetaButton.MouseLeave:Connect(function()
-    if isFlyActive then
-        Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.On })
-        Tween(FlyBetaStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-    else
-        Tween(FlyBetaButton, 0.18, { BackgroundColor3 = Theme.Off })
-        Tween(FlyBetaStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-    end
-end)
-
-AntiHitButton.MouseEnter:Connect(function()
-    if IsTransitioning then return end
-    Tween(AntiHitButton, 0.16, { BackgroundColor3 = isAntiHitActive and Color3.fromRGB(22, 58, 51) or Theme.CardHover })
-    Tween(AntiHitStroke, 0.16, { Transparency = 0, Color = isAntiHitActive and Theme.OnStroke or Theme.Accent })
-end)
-
-AntiHitButton.MouseLeave:Connect(function()
-    if isAntiHitActive then
-        Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.On })
-        Tween(AntiHitStroke, 0.18, { Color = Theme.OnStroke, Transparency = 0.15 })
-    else
-        Tween(AntiHitButton, 0.18, { BackgroundColor3 = Theme.Off })
-        Tween(AntiHitStroke, 0.18, { Color = Theme.OffStroke, Transparency = 0.2 })
-    end
-end)
-
---------------------------------------------------------------------------------
--- TOGGLE BUTTON & DRAG LOGIC UI
---------------------------------------------------------------------------------
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Name = "MinimizedToggle"
-ToggleButton.Size = UDim2.fromOffset(245, 50)
-ToggleButton.Position = UDim2.fromScale(0.5, 0.5)
-ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-ToggleButton.BackgroundColor3 = Theme.Background
-ToggleButton.BorderSizePixel = 0
-ToggleButton.Text = ""
-ToggleButton.Visible = false
-ToggleButton.AutoButtonColor = false
-ToggleButton.Active = true
-ToggleButton.ZIndex = 500
-ToggleButton.Parent = ScreenGui
-
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 18)
-ToggleCorner.Parent = ToggleButton
-
-local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Color = Theme.Border
-ToggleStroke.Thickness = 1.5
-ToggleStroke.Transparency = 0.05
-ToggleStroke.Parent = ToggleButton
-
-local ToggleGradient = Instance.new("UIGradient")
-ToggleGradient.Rotation = 90
-ToggleGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 16, 26)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 15))
-})
-ToggleGradient.Parent = ToggleButton
-
-local ToggleLogo = Instance.new("Frame")
-ToggleLogo.Name = "ToggleLogo"
-ToggleLogo.Size = UDim2.fromOffset(34, 34)
-ToggleLogo.Position = UDim2.fromOffset(8, 8)
-ToggleLogo.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
-ToggleLogo.BorderSizePixel = 0
-ToggleLogo.ZIndex = 501
-ToggleLogo.Parent = ToggleButton
-
-local ToggleLogoCorner = Instance.new("UICorner")
-ToggleLogoCorner.CornerRadius = UDim.new(0, 10)
-ToggleLogoCorner.Parent = ToggleLogo
-
-local ToggleLogoStroke = Instance.new("UIStroke")
-ToggleLogoStroke.Color = Theme.Accent
-ToggleLogoStroke.Thickness = 1
-ToggleLogoStroke.Transparency = 0.35
-ToggleLogoStroke.Parent = ToggleLogo
-
-local ToggleFVertical = Instance.new("Frame")
-ToggleFVertical.Size = UDim2.fromOffset(6, 22)
-ToggleFVertical.Position = UDim2.fromOffset(9, 6)
-ToggleFVertical.BackgroundColor3 = Theme.Accent
-ToggleFVertical.BorderSizePixel = 0
-ToggleFVertical.Rotation = -7
-ToggleFVertical.ZIndex = 502
-ToggleFVertical.Parent = ToggleLogo
-
-local ToggleFTop = Instance.new("Frame")
-ToggleFTop.Size = UDim2.fromOffset(17, 6)
-ToggleFTop.Position = UDim2.fromOffset(13, 5)
-ToggleFTop.BackgroundColor3 = Theme.Accent
-ToggleFTop.BorderSizePixel = 0
-ToggleFTop.Rotation = -7
-ToggleFTop.ZIndex = 502
-ToggleFTop.Parent = ToggleLogo
-
-local ToggleFMiddle = Instance.new("Frame")
-ToggleFMiddle.Size = UDim2.fromOffset(13, 5)
-ToggleFMiddle.Position = UDim2.fromOffset(12, 14)
-ToggleFMiddle.BackgroundColor3 = Theme.AccentLight
-ToggleFMiddle.BorderSizePixel = 0
-ToggleFMiddle.Rotation = -7
-ToggleFMiddle.ZIndex = 502
-ToggleFMiddle.Parent = ToggleLogo
-
-local ToggleTitle = Instance.new("TextLabel")
-ToggleTitle.Size = UDim2.new(1, -65, 0, 22)
-ToggleTitle.Position = UDim2.fromOffset(51, 8)
-ToggleTitle.BackgroundTransparency = 1
-ToggleTitle.RichText = true
-ToggleTitle.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
-ToggleTitle.TextColor3 = Theme.Text
-ToggleTitle.Font = Enum.Font.GothamBold
-ToggleTitle.TextSize = 13
-ToggleTitle.TextXAlignment = Enum.TextXAlignment.Left
-ToggleTitle.ZIndex = 501
-ToggleTitle.Parent = ToggleButton
-
-local ToggleSubtitle = Instance.new("TextLabel")
-ToggleSubtitle.Size = UDim2.new(1, -65, 0, 13)
-ToggleSubtitle.Position = UDim2.fromOffset(52, 29)
-ToggleSubtitle.BackgroundTransparency = 1
-ToggleSubtitle.Text = "MAIN UTILITIES"
-ToggleSubtitle.TextColor3 = Theme.TextMuted
-ToggleSubtitle.Font = Enum.Font.GothamMedium
-ToggleSubtitle.TextSize = 7
-ToggleSubtitle.TextXAlignment = Enum.TextXAlignment.Left
-ToggleSubtitle.ZIndex = 501
-ToggleSubtitle.Parent = ToggleButton
-
-local MainDragging, MainDragStart, MainStartPosition, MainDragInput = false, nil, nil, nil
-
-Header.InputBegan:Connect(function(input)
-    if IsTransitioning then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        MainDragging = true
-        MainDragStart = input.Position
-        MainStartPosition = MainFrame.Position
-        MainDragInput = input
-    end
-end)
-
-Header.InputEnded:Connect(function(input)
-    if input == MainDragInput then
-        MainDragging = false
-        MainDragInput = nil
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if not MainDragging then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        if not MainDragStart or not MainStartPosition then return end
-        local delta = input.Position - MainDragStart
-        MainFrame.Position = UDim2.new(MainStartPosition.X.Scale, MainStartPosition.X.Offset + delta.X, MainStartPosition.Y.Scale, MainStartPosition.Y.Offset + delta.Y)
-    end
-end)
-
-local ToggleDragging, ToggleDragStart, ToggleStartPosition, ToggleMoved = false, nil, nil, false
-
-ToggleButton.InputBegan:Connect(function(input)
-    if IsTransitioning then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        ToggleDragging = true
-        ToggleMoved = false
-        ToggleDragStart = input.Position
-        ToggleStartPosition = ToggleButton.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if not ToggleDragging then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        if not ToggleDragStart or not ToggleStartPosition then return end
-        local delta = input.Position - ToggleDragStart
-        if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then ToggleMoved = true end
-        ToggleButton.Position = UDim2.new(ToggleStartPosition.X.Scale, ToggleStartPosition.X.Offset + delta.X, ToggleStartPosition.Y.Scale, ToggleStartPosition.Y.Offset + delta.Y)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        ToggleDragging = false
-    end
-end)
-
-ToggleButton.MouseEnter:Connect(function()
-    if ToggleDragging or IsTransitioning then return end
-    Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(252, 52) })
-    Tween(ToggleStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
-end)
-
-ToggleButton.MouseLeave:Connect(function()
-    if ToggleDragging then return end
-    Tween(ToggleButton, 0.15, { Size = UDim2.fromOffset(245, 50) })
-    Tween(ToggleStroke, 0.15, { Color = Theme.Border, Transparency = 0.05 })
-end)
-
---------------------------------------------------------------------------------
--- ANIMATED TRANSITION MINIMIZE & RESTORE
---------------------------------------------------------------------------------
-local function GetViewport()
-    local camera = workspace.CurrentCamera
-    return camera and camera.ViewportSize or Vector2.new(1920, 1080)
+local function RequestAPI(options)
+    local req = request or http_request or (syn and syn.request) or (http and http.request)
+    if req then return req(options) end
+    return nil
 end
 
-local function GetCenterPosition()
-    local viewport = GetViewport()
-    return UDim2.fromOffset(viewport.X * 0.5, viewport.Y * 0.5)
-end
+local function FindLowestTailServer()
+    local cursor = ""
+    local pages = {}
 
-local function GetTopTogglePosition()
-    local viewport = GetViewport()
-    return UDim2.fromOffset(viewport.X * 0.5, -5)
-end
+    for page = 1, 8 do
+        local url = string.format("https://games.roblox.com/v1/games/%d/servers/0?sortOrder=Asc&limit=100", PlaceId)
+        if cursor ~= "" then url = url .. "&cursor=" .. cursor end
 
-local function GetTopRightTogglePosition()
-    local viewport = GetViewport()
-    return UDim2.fromOffset(viewport.X - 10, -5)
-end
-
-local function MinimizeUI()
-    if IsTransitioning or IsMinimized then return end
-    IsTransitioning = true
-    IsMinimized = true
-
-    MinimizeButton.Active = false
-    FlyBetaButton.Active = false
-    AntiHitButton.Active = false
-    AntiHitV1Button.Active = false
-
-    local centerPosition = GetCenterPosition()
-
-    Tween(MainFrame, 0.45, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-    task.wait(0.47)
-    task.wait(0.30)
-
-    Tween(MainFrame, 0.40, { Size = UDim2.fromOffset(245, 50) }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-    task.wait(0.42)
-
-    MainFrame.Visible = false
-    ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-    ToggleButton.Position = centerPosition
-    ToggleButton.Size = UDim2.fromOffset(245, 50)
-    ToggleButton.Visible = true
-
-    task.wait(0.05)
-    local topPosition = GetTopTogglePosition()
-
-    Tween(ToggleButton, 0.55, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    task.wait(0.58)
-
-    ToggleButton.AnchorPoint = Vector2.new(1, 0.5)
-    local topRightPosition = GetTopRightTogglePosition()
-    Tween(ToggleButton, 0.45, { Position = topRightPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    task.wait(0.48)
-
-    ToggleButton.Active = true
-    IsTransitioning = false
-end
-
-local function RestoreUI()
-    if IsTransitioning or not IsMinimized then return end
-    IsTransitioning = true
-    ToggleButton.Active = false
-
-    local topPosition = GetTopTogglePosition()
-    local centerPosition = GetCenterPosition()
-
-    ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-    Tween(ToggleButton, 0.40, { Position = topPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-    task.wait(0.42)
-
-    Tween(ToggleButton, 0.50, { Position = centerPosition }, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-    task.wait(0.53)
-    task.wait(0.20)
-
-    ToggleButton.Visible = false
-    MainFrame.Visible = true
-    MainFrame.Position = centerPosition
-    MainFrame.Size = UDim2.fromOffset(245, 50)
-
-    Tween(MainFrame, 0.45, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-    task.wait(0.48)
-
-    Tween(MainFrame, 0.55, { Position = MAIN_HOME_POSITION }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    task.wait(0.58)
-
-    IsMinimized = false
-    IsTransitioning = false
-
-    MinimizeButton.Active = true
-    FlyBetaButton.Active = true
-    AntiHitButton.Active = true
-    AntiHitV1Button.Active = true
-end
-
-MinimizeButton.MouseEnter:Connect(function()
-    if IsTransitioning then return end
-    Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.CardHover })
-    Tween(MinStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
-end)
-
-MinimizeButton.MouseLeave:Connect(function()
-    Tween(MinimizeButton, 0.15, { BackgroundColor3 = Theme.Card })
-    Tween(MinStroke, 0.15, { Color = Theme.Border, Transparency = 0.25 })
-end)
-
-MinimizeButton.MouseButton1Click:Connect(function() MinimizeUI() end)
-ToggleButton.MouseButton1Click:Connect(function()
-    if ToggleMoved then
-        ToggleMoved = false
-        return
+        local res = RequestAPI({Url = url, Method = "GET"})
+        if res and res.Body then
+            local decoded = HttpService:JSONDecode(res.Body)
+            if decoded and decoded.data then
+                table.insert(pages, decoded.data)
+                cursor = decoded.nextPageCursor or ""
+                if cursor == "" then break end
+            else break end
+        else break end
     end
-    RestoreUI()
-end)
 
---------------------------------------------------------------------------------
--- UPDATE STATUS STATE DISPLAY
---------------------------------------------------------------------------------
-local function UpdateAntiHitV1UI()
-    if isAntiHitV1Active then
-        AntiHitV1StatusText.Text = "ON"
-        AntiHitV1StatusText.TextColor3 = Theme.OnAccent
-        AntiHitV1Sub.Text = "Fake visual protection enabled"
-        AntiHitV1StatusDot.BackgroundColor3 = Theme.OnAccent
-        Tween(AntiHitV1Button, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-        Tween(AntiHitV1Stroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
-    else
-        AntiHitV1StatusText.Text = "OFF"
-        AntiHitV1StatusText.TextColor3 = Theme.TextMuted
-        AntiHitV1Sub.Text = "Fake visual protection disabled"
-        AntiHitV1StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-        Tween(AntiHitV1Button, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-        Tween(AntiHitV1Stroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
-    end
-end
+    for p = #pages, 1, -1 do
+        local currentList = pages[p]
+        for b = #currentList, 1, -1 do
+            local server = currentList[b]
+            local playing = server.playing or 0
+            local maxPlayers = server.maxPlayers or 0
 
-local function UpdateFlyBetaUI()
-    if isFlyActive then
-        FlyStatusText.Text = "ON"
-        FlyStatusText.TextColor3 = Theme.OnAccent
-        FlyBetaSub.Text = "Fly mode active"
-        FlyStatusDot.BackgroundColor3 = Theme.OnAccent
-        Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-        Tween(FlyBetaStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
-    else
-        FlyStatusText.Text = "OFF"
-        FlyStatusText.TextColor3 = Theme.TextMuted
-        FlyBetaSub.Text = "Toggle fly mode"
-        FlyStatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-        Tween(FlyBetaButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-        Tween(FlyBetaStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+            if server.id 
+               and not _G.LeonBlacklist[server.id] 
+               and playing == 2 
+               and (maxPlayers - playing) >= 2 then
 
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.PlatformStand = false
+                return server.id, playing
             end
         end
-        RemoveBlock()
     end
+
+    for p = #pages, 1, -1 do
+        local currentList = pages[p]
+        for b = #currentList, 1, -1 do
+            local server = currentList[b]
+            local playing = server.playing or 0
+            local maxPlayers = server.maxPlayers or 0
+
+            if server.id 
+               and not _G.LeonBlacklist[server.id] 
+               and playing == 1 
+               and (maxPlayers - playing) >= 2 then
+
+                return server.id, playing
+            end
+        end
+    end
+
+    return nil, nil
 end
 
-local function UpdateAntiHitUI()
-    if isAntiHitActive then
-        StatusText.Text = "ON"
-        StatusText.TextColor3 = Theme.OnAccent
-        AntiHitSub.Text = "Protection enabled"
-        StatusDot.BackgroundColor3 = Theme.OnAccent
-        Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.On }, Enum.EasingStyle.Quart)
-        Tween(AntiHitStroke, 0.22, { Color = Theme.OnStroke, Transparency = 0.1 })
+local function StartAutoHop()
+    if IsSearching then
+        IsSearching = false
+        BtnTitle.Text = "AUTO HOP SERVER"
+        BtnTitle.TextColor3 = Theme.Text
+        StatusLabel.Text = "Status: Idle (2P > 1P)"
+        StatusDot.BackgroundColor3 = Theme.Accent
+        BtnStroke.Color = Theme.OffStroke
+        return
+    end
+
+    IsSearching = true
+    BtnTitle.Text = "STOP SEARCHING"
+    BtnTitle.TextColor3 = Color3.fromRGB(255, 100, 100)
+    StatusDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    BtnStroke.Color = Color3.fromRGB(180, 50, 50)
+
+    task.spawn(function()
+        local attempt = 1
+
+        while IsSearching do
+            StatusLabel.Text = string.format("Scanning tail... (#%d)", attempt)
+
+            local foundJobId, playerCount = FindLowestTailServer()
+
+            if foundJobId then
+                _G.LeonBlacklist[foundJobId] = true
+                StatusLabel.Text = string.format("Found %dP! Joining...", playerCount)
+                BtnTitle.Text = "JOINING..."
+
+                local failConn
+                failConn = TeleportService.TeleportInitFailed:Connect(function()
+                    failConn:Disconnect()
+                    StatusLabel.Text = "Failed! Retrying..."
+                    task.wait(0.5)
+                end)
+
+                TeleportService:TeleportToPlaceInstance(PlaceId, foundJobId, LocalPlayer)
+                task.wait(5)
+            else
+                StatusLabel.Text = string.format("Retrying... (#%d)", attempt)
+                attempt = attempt + 1
+                task.wait(0.3)
+            end
+        end
+
+        BtnTitle.Text = "AUTO HOP SERVER"
+        BtnTitle.TextColor3 = Theme.Text
+        StatusDot.BackgroundColor3 = Theme.Accent
+        BtnStroke.Color = Theme.OffStroke
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- ANIMASI MINIMIZE / EXPAND TOGGLE
+--------------------------------------------------------------------------------
+local isCollapsed = false
+local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    isCollapsed = not isCollapsed
+
+    if isCollapsed then
+        ToggleBtn.Text = ">"
+        
+        TweenService:Create(ExtraFeatures, tweenInfo, {GroupTransparency = 1}):Play()
+        TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.fromOffset(MAIN_WIDTH, CLOSED_HEIGHT)}):Play()
+        
+        task.delay(0.3, function()
+            if isCollapsed then
+                ExtraFeatures.Visible = false
+            end
+        end)
     else
-        StatusText.Text = "OFF"
-        StatusText.TextColor3 = Theme.TextMuted
-        AntiHitSub.Text = "Protection disabled"
-        StatusDot.BackgroundColor3 = Color3.fromRGB(100, 111, 130)
-        Tween(AntiHitButton, 0.22, { BackgroundColor3 = Theme.Off }, Enum.EasingStyle.Quart)
-        Tween(AntiHitStroke, 0.22, { Color = Theme.OffStroke, Transparency = 0.2 })
+        ToggleBtn.Text = "<"
+        ExtraFeatures.Visible = true
+        
+        TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.fromOffset(MAIN_WIDTH, FULL_HEIGHT)}):Play()
+        TweenService:Create(ExtraFeatures, tweenInfo, {GroupTransparency = 0}):Play()
     end
-end
-
-AntiHitV1Button.MouseButton1Click:Connect(function()
-    if IsTransitioning then return end
-    isAntiHitV1Active = not isAntiHitV1Active
-    UpdateAntiHitV1UI()
-
-    Tween(AntiHitV1Button, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 1) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    task.delay(0.08, function()
-        if AntiHitV1Button.Parent then
-            Tween(AntiHitV1Button, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        end
-    end)
 end)
-
-FlyBetaButton.MouseButton1Click:Connect(function()
-    if IsTransitioning then return end
-    isFlyActive = not isFlyActive
-    UpdateFlyBetaUI()
-
-    Tween(FlyBetaButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 105) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    task.delay(0.08, function()
-        if FlyBetaButton.Parent then
-            Tween(FlyBetaButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 104) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        end
-    end)
-end)
-
-AntiHitButton.MouseButton1Click:Connect(function()
-    if IsTransitioning then return end
-    isAntiHitActive = not isAntiHitActive
-    UpdateAntiHitUI()
-
-    Tween(AntiHitButton, 0.07, { Size = UDim2.new(1, -4, 0, 44), Position = UDim2.fromOffset(2, 53) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    task.delay(0.08, function()
-        if AntiHitButton.Parent then
-            Tween(AntiHitButton, 0.10, { Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 52) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        end
-    end)
-end)
-
-UpdateAntiHitV1UI()
-UpdateFlyBetaUI()
-UpdateAntiHitUI()
 
 --------------------------------------------------------------------------------
--- INTRO ANIMATION UI
+-- EVENT CLICK HANDLERS
 --------------------------------------------------------------------------------
-MainFrame.Size = UDim2.fromOffset(30, 30)
-MainFrame.BackgroundTransparency = 1
+AutoHopBtn.MouseButton1Click:Connect(StartAutoHop)
 
-MainStroke.Transparency = 1
-TopAccent.BackgroundTransparency = 1
-LogoHolder.BackgroundTransparency = 1
-LogoStroke.Transparency = 1
-Title.TextTransparency = 1
-Subtitle.TextTransparency = 1
-MinimizeButton.BackgroundTransparency = 1
-MinimizeButton.TextTransparency = 1
-MinStroke.Transparency = 1
-
-AntiHitV1Button.BackgroundTransparency = 1
-AntiHitV1Stroke.Transparency = 1
-AntiHitV1Title.TextTransparency = 1
-AntiHitV1Sub.TextTransparency = 1
-AntiHitV1StatusText.TextTransparency = 1
-AntiHitV1StatusDot.BackgroundTransparency = 1
-
-FlyBetaButton.BackgroundTransparency = 1
-FlyBetaStroke.Transparency = 1
-FlyBetaTitle.TextTransparency = 1
-FlyBetaSub.TextTransparency = 1
-FlyStatusText.TextTransparency = 1
-FlyStatusDot.BackgroundTransparency = 1
-
-AntiHitButton.BackgroundTransparency = 1
-AntiHitStroke.Transparency = 1
-AntiHitTitle.TextTransparency = 1
-AntiHitSub.TextTransparency = 1
-StatusText.TextTransparency = 1
-StatusDot.BackgroundTransparency = 1
-
-SliderCard.BackgroundTransparency = 1
-SliderStroke.Transparency = 1
-SliderTitle.TextTransparency = 1
-SliderValueLabel.TextTransparency = 1
-SliderTrack.BackgroundTransparency = 1
-TrackStroke.Transparency = 1
-SliderFill.BackgroundTransparency = 1
-SliderKnob.BackgroundTransparency = 1
-KnobStroke.Transparency = 1
-SliderDot.BackgroundTransparency = 1
-
-Tween(MainFrame, 0.55, { Size = UDim2.fromOffset(MAIN_WIDTH, MAIN_HEIGHT), BackgroundTransparency = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
-task.delay(0.05, function()
-    Tween(MainStroke, 0.4, { Transparency = 0.08 })
-    Tween(TopAccent, 0.4, { BackgroundTransparency = 0 })
-    Tween(LogoHolder, 0.35, { BackgroundTransparency = 0 })
-    Tween(LogoStroke, 0.35, { Transparency = 0.35 })
+AntiHitGuardsBtn.MouseButton1Click:Connect(function()
+    isAntiHitGuardsActive = not isAntiHitGuardsActive
+    if isAntiHitGuardsActive then
+        AntiHitStatusLabel.Text = "Status: ON"
+        AntiHitStatusLabel.TextColor3 = Color3.fromRGB(76, 220, 163)
+        AntiHitDot.BackgroundColor3 = Color3.fromRGB(76, 220, 163)
+        AntiHitGuardsBtn.BackgroundColor3 = Theme.On
+        AntiHitStroke.Color = Theme.OnStroke
+    else
+        AntiHitStatusLabel.Text = "Status: OFF"
+        AntiHitStatusLabel.TextColor3 = Theme.TextMuted
+        AntiHitDot.BackgroundColor3 = Theme.TextMuted
+        AntiHitGuardsBtn.BackgroundColor3 = Theme.Off
+        AntiHitStroke.Color = Theme.OffStroke
+    end
 end)
 
-task.delay(0.12, function()
-    Tween(Title, 0.35, { TextTransparency = 0 })
-    Tween(Subtitle, 0.35, { TextTransparency = 0 })
-    Tween(MinimizeButton, 0.35, { BackgroundTransparency = 0, TextTransparency = 0 })
-    Tween(MinStroke, 0.35, { Transparency = 0.25 })
-end)
-
-task.delay(0.22, function()
-    Tween(AntiHitV1Button, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-    Tween(AntiHitV1Stroke, 0.35, { Transparency = 0.2 })
-    Tween(AntiHitV1Title, 0.3, { TextTransparency = 0 })
-    Tween(AntiHitV1Sub, 0.3, { TextTransparency = 0 })
-    Tween(AntiHitV1StatusText, 0.3, { TextTransparency = 0 })
-    Tween(AntiHitV1StatusDot, 0.3, { BackgroundTransparency = 0 })
-
-    Tween(FlyBetaButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-    Tween(FlyBetaStroke, 0.35, { Transparency = 0.2 })
-    Tween(FlyBetaTitle, 0.3, { TextTransparency = 0 })
-    Tween(FlyBetaSub, 0.3, { TextTransparency = 0 })
-    Tween(FlyStatusText, 0.3, { TextTransparency = 0 })
-    Tween(FlyStatusDot, 0.3, { BackgroundTransparency = 0 })
-
-    Tween(AntiHitButton, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-    Tween(AntiHitStroke, 0.35, { Transparency = 0.2 })
-    Tween(AntiHitTitle, 0.3, { TextTransparency = 0 })
-    Tween(AntiHitSub, 0.3, { TextTransparency = 0 })
-    Tween(StatusText, 0.3, { TextTransparency = 0 })
-    Tween(StatusDot, 0.3, { BackgroundTransparency = 0 })
-
-    Tween(SliderCard, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quart)
-    Tween(SliderStroke, 0.35, { Transparency = 0.2 })
-    Tween(SliderTitle, 0.3, { TextTransparency = 0 })
-    Tween(SliderValueLabel, 0.3, { TextTransparency = 0 })
-    Tween(SliderTrack, 0.3, { BackgroundTransparency = 0 })
-    TrackStroke.Transparency = 1
-    Tween(TrackStroke, 0.3, { Transparency = 0.5 })
-    Tween(SliderFill, 0.3, { BackgroundTransparency = 0 })
-    Tween(SliderKnob, 0.3, { BackgroundTransparency = 0 })
-    Tween(KnobStroke, 0.3, { Transparency = 0 })
-    Tween(SliderDot, 0.3, { BackgroundTransparency = 0 })
+InstantTpBtn.MouseButton1Click:Connect(function()
+    isInstantTpActive = not isInstantTpActive
+    if isInstantTpActive then
+        InstantTpStatusLabel.Text = "Status: ON"
+        InstantTpStatusLabel.TextColor3 = Color3.fromRGB(76, 220, 163)
+        InstantTpDot.BackgroundColor3 = Color3.fromRGB(76, 220, 163)
+        InstantTpBtn.BackgroundColor3 = Theme.On
+        InstantTpStroke.Color = Theme.OnStroke
+    else
+        InstantTpStatusLabel.Text = "Status: OFF"
+        InstantTpStatusLabel.TextColor3 = Theme.TextMuted
+        InstantTpDot.BackgroundColor3 = Theme.TextMuted
+        InstantTpBtn.BackgroundColor3 = Theme.Off
+        InstantTpStroke.Color = Theme.OffStroke
+    end
 end)
