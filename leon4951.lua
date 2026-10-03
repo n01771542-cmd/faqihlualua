@@ -19,18 +19,9 @@ local LocalPlayer = Players.LocalPlayer
 -- KOORDINAT TARGET & STATE FITUR
 --------------------------------------------------------------------------------
 local TARGET_POS = Vector3.new(491, 70, -371)
-local WAYPOINT_POS = Vector3.new(618.43, 71.69, -394.05)
-local safeZoneHoldDuration = 1.0
 
 local isAntiHitGuardsActive = false
 local isProcessingAntiHitV1 = false
-
-local isInstantTpActive = false
-local isProcessingInstantTp = false
-
--- AUTOMATIC ANTI-SLOW STATE
-local lockedWalkSpeed = 16
-local autoAntiSlowConnection = nil
 
 if not _G.LeonBlacklist then
     _G.LeonBlacklist = {}
@@ -57,7 +48,7 @@ local Theme = {
 }
 
 --------------------------------------------------------------------------------
--- UI SETUP & NOTIFICATION BANNER
+-- UI SETUP
 --------------------------------------------------------------------------------
 local GUI_NAME = "LEON4951_HUB_ELEGANT"
 pcall(function()
@@ -72,94 +63,6 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 1
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
-
--- NOTIFIKASI DI ATAS LAYAR
-local TopNotifFrame = Instance.new("Frame")
-TopNotifFrame.Name = "TopNotifFrame"
-TopNotifFrame.Size = UDim2.fromOffset(320, 52)
-TopNotifFrame.AnchorPoint = Vector2.new(0.5, 0)
-TopNotifFrame.Position = UDim2.new(0.5, 0, 0, -70)
-TopNotifFrame.BackgroundColor3 = Theme.Background
-TopNotifFrame.BorderSizePixel = 0
-TopNotifFrame.Parent = ScreenGui
-
-local NotifCorner = Instance.new("UICorner")
-NotifCorner.CornerRadius = UDim.new(0, 8)
-NotifCorner.Parent = TopNotifFrame
-
-local NotifStroke = Instance.new("UIStroke")
-NotifStroke.Color = Theme.Accent
-NotifStroke.Thickness = 1.5
-NotifStroke.Transparency = 0.1
-NotifStroke.Parent = TopNotifFrame
-
-local SmallNoticeLabel = Instance.new("TextLabel")
-SmallNoticeLabel.Size = UDim2.new(1, -16, 0, 16)
-SmallNoticeLabel.Position = UDim2.fromOffset(8, 6)
-SmallNoticeLabel.BackgroundTransparency = 1
-SmallNoticeLabel.Text = "Pakai fitur ini jika anti hit guards delivery failed."
-SmallNoticeLabel.TextColor3 = Theme.AccentLight
-SmallNoticeLabel.Font = Enum.Font.GothamBold
-SmallNoticeLabel.TextSize = 9
-SmallNoticeLabel.TextScaled = true
-SmallNoticeLabel.Parent = TopNotifFrame
-
-local BigNoticeLabel = Instance.new("TextLabel")
-BigNoticeLabel.Size = UDim2.new(1, -16, 0, 20)
-BigNoticeLabel.Position = UDim2.fromOffset(8, 24)
-BigNoticeLabel.BackgroundTransparency = 1
-BigNoticeLabel.Text = "Drop egg, ambil egg kembali baru ke safe zone"
-BigNoticeLabel.TextColor3 = Theme.Text
-BigNoticeLabel.Font = Enum.Font.GothamBold
-BigNoticeLabel.TextSize = 9.5
-BigNoticeLabel.TextScaled = true
-BigNoticeLabel.Parent = TopNotifFrame
-
-local function ShowTopNotification()
-    TopNotifFrame:TweenPosition(UDim2.new(0.5, 0, 0, 15), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.4, true)
-    task.delay(8, function()
-        TopNotifFrame:TweenPosition(UDim2.new(0.5, 0, 0, -70), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
-    end)
-end
-
---------------------------------------------------------------------------------
--- HELPER FUNCTIONS & AUTOMATIC ANTI-SLOW LOGIC
---------------------------------------------------------------------------------
-local function WaitForCharacterRoot(char)
-    if not char then return nil end
-    local root = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
-    if root and root.Parent and char.Parent then
-        return root
-    end
-    return nil
-end
-
-local function StartAutoAntiSlow(char)
-    if autoAntiSlowConnection then autoAntiSlowConnection:Disconnect() end
-
-    local humanoid = char:WaitForChild("Humanoid", 5)
-    if not humanoid then return end
-
-    task.wait(0.2)
-    if humanoid.WalkSpeed > 0 then
-        lockedWalkSpeed = humanoid.WalkSpeed
-    end
-
-    autoAntiSlowConnection = RunService.PreRender:Connect(function()
-        if humanoid and humanoid.Parent then
-            if humanoid.WalkSpeed ~= lockedWalkSpeed and humanoid.WalkSpeed > 0 then
-                humanoid.WalkSpeed = lockedWalkSpeed
-            end
-        else
-            if autoAntiSlowConnection then autoAntiSlowConnection:Disconnect() end
-        end
-    end)
-end
-
-if LocalPlayer.Character then task.spawn(function() StartAutoAntiSlow(LocalPlayer.Character) end) end
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    task.spawn(function() StartAutoAntiSlow(newChar) end)
-end)
 
 -- ============================================================================
 -- LOGIC FITUR 1: ANTI HIT GUARDS (Fake Visual & Real Teleport + Return)
@@ -256,53 +159,6 @@ local function ExecuteDropAndTeleportAntiHitV1()
     end)
 end
 
--- ============================================================================
--- LOGIC FITUR 2: INSTANT TELEPORT TO WAYPOINT (TOGGLE)
--- ============================================================================
-local function ExecuteTeleportToWaypoint()
-    if isProcessingInstantTp or not isInstantTpActive then return end
-    isProcessingInstantTp = true
-
-    local char = LocalPlayer.Character
-    if char then
-        local root = WaitForCharacterRoot(char)
-        if root then
-            local targetWaypointCFrame = CFrame.new(WAYPOINT_POS)
-            local startTime = os.clock()
-            local holdConnection
-
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = targetWaypointCFrame
-            char:PivotTo(targetWaypointCFrame)
-
-            holdConnection = RunService.Heartbeat:Connect(function()
-                if not char or not root or not root.Parent then
-                    if holdConnection then holdConnection:Disconnect() end
-                    return
-                end
-
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-                root.CFrame = targetWaypointCFrame
-                char:PivotTo(targetWaypointCFrame)
-
-                if os.clock() - startTime >= safeZoneHoldDuration then
-                    holdConnection:Disconnect()
-                end
-            end)
-
-            task.wait(safeZoneHoldDuration)
-
-            ShowTopNotification()
-        end
-    end
-
-    task.delay(0.05, function()
-        isProcessingInstantTp = false
-    end)
-end
-
 --------------------------------------------------------------------------------
 -- EVENT TRIGGERS (PROXIMITY & CHARACTER DETECTION)
 --------------------------------------------------------------------------------
@@ -311,25 +167,17 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt, playerWhoTrigger
         if isAntiHitGuardsActive then
             task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
         end
-        if isInstantTpActive then
-            task.spawn(function() ExecuteTeleportToWaypoint() end)
-        end
     end
 end)
 
 local function SetupCharacterDetection(char)
     char.ChildAdded:Connect(function(child)
         local name = string.lower(child.Name)
-        local isEggOrTool = string.find(name, "egg") or string.find(name, "telur") or child:IsA("Tool")
 
         if isAntiHitGuardsActive and not child:IsA("Tool") then
             if string.find(name, "egg") or string.find(name, "telur") then
                 task.spawn(function() ExecuteDropAndTeleportAntiHitV1() end)
             end
-        end
-
-        if isInstantTpActive and isEggOrTool then
-            task.spawn(function() ExecuteTeleportToWaypoint() end)
         end
     end)
 end
@@ -343,7 +191,7 @@ end)
 --------------------------------------------------------------------------------
 -- MAIN HUB UI STRUCTURE
 --------------------------------------------------------------------------------
-local FULL_HEIGHT = 168
+local FULL_HEIGHT = 124
 local CLOSED_HEIGHT = 78
 local MAIN_WIDTH = 180
 
@@ -474,7 +322,7 @@ Subtitle.Parent = Header
 
 local ExtraFeatures = Instance.new("CanvasGroup")
 ExtraFeatures.Name = "ExtraFeatures"
-ExtraFeatures.Size = UDim2.new(1, 0, 0, 90)
+ExtraFeatures.Size = UDim2.new(1, 0, 0, 44)
 ExtraFeatures.Position = UDim2.fromOffset(0, 78)
 ExtraFeatures.BackgroundTransparency = 1
 ExtraFeatures.BorderSizePixel = 0
@@ -530,7 +378,7 @@ local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 11)
 StatusLabel.Position = UDim2.fromOffset(18, 18)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Status: Idle (1P -2 Rows)"
+StatusLabel.Text = "Status: Idle (Bottom to Mid)"
 StatusLabel.TextColor3 = Theme.TextMuted
 StatusLabel.Font = Enum.Font.GothamMedium
 StatusLabel.TextSize = 7
@@ -593,65 +441,8 @@ AntiHitStatusLabel.TextSize = 7
 AntiHitStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 AntiHitStatusLabel.Parent = AntiHitGuardsBtn
 
--- ============================================================================
--- 3. TOMBOL BAWAH: INSTANT TELEPORT
--- ============================================================================
-local InstantTpBtn = Instance.new("TextButton")
-InstantTpBtn.Name = "InstantTpBtn"
-InstantTpBtn.Size = UDim2.new(1, -12, 0, 42)
-InstantTpBtn.Position = UDim2.fromOffset(6, 43)
-InstantTpBtn.BackgroundColor3 = Theme.Off
-InstantTpBtn.BorderSizePixel = 0
-InstantTpBtn.AutoButtonColor = false
-InstantTpBtn.Text = ""
-InstantTpBtn.Parent = ExtraFeatures
-
-local InstantTpCorner = Instance.new("UICorner")
-InstantTpCorner.CornerRadius = UDim.new(0, 8)
-InstantTpCorner.Parent = InstantTpBtn
-
-local InstantTpStroke = Instance.new("UIStroke")
-InstantTpStroke.Color = Theme.OffStroke
-InstantTpStroke.Thickness = 1
-InstantTpStroke.Transparency = 0.2
-InstantTpStroke.Parent = InstantTpBtn
-
-local InstantTpDot = Instance.new("Frame")
-InstantTpDot.Size = UDim2.fromOffset(6, 6)
-InstantTpDot.Position = UDim2.fromOffset(8, 18)
-InstantTpDot.BackgroundColor3 = Theme.TextMuted
-InstantTpDot.BorderSizePixel = 0
-InstantTpDot.Parent = InstantTpBtn
-
-local InstantTpDotCorner = Instance.new("UICorner")
-InstantTpDotCorner.CornerRadius = UDim.new(1, 0)
-InstantTpDotCorner.Parent = InstantTpDot
-
-local InstantTpTitleLabel = Instance.new("TextLabel")
-InstantTpTitleLabel.Size = UDim2.new(1, -20, 0, 24)
-InstantTpTitleLabel.Position = UDim2.fromOffset(18, 3)
-InstantTpTitleLabel.BackgroundTransparency = 1
-InstantTpTitleLabel.Text = "Instant teleport gunakan jika anti hit guards delivery failed"
-InstantTpTitleLabel.TextColor3 = Theme.Text
-InstantTpTitleLabel.Font = Enum.Font.GothamBold
-InstantTpTitleLabel.TextSize = 7.5
-InstantTpTitleLabel.TextWrapped = true
-InstantTpTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-InstantTpTitleLabel.Parent = InstantTpBtn
-
-local InstantTpStatusLabel = Instance.new("TextLabel")
-InstantTpStatusLabel.Size = UDim2.new(1, -20, 0, 11)
-InstantTpStatusLabel.Position = UDim2.fromOffset(18, 27)
-InstantTpStatusLabel.BackgroundTransparency = 1
-InstantTpStatusLabel.Text = "Status: OFF"
-InstantTpStatusLabel.TextColor3 = Theme.TextMuted
-InstantTpStatusLabel.Font = Enum.Font.GothamMedium
-InstantTpStatusLabel.TextSize = 6.5
-InstantTpStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-InstantTpStatusLabel.Parent = InstantTpBtn
-
 --------------------------------------------------------------------------------
--- LOGIKA TELEPORTATION (TARGET: 2 BARIS SEBELUM BARIS TERAKHIR 1 PLAYER)
+-- LOGIKA TELEPORTATION (DARI BARIS PALING BAWAH NAIK MAKSIMAL SAMPAI TENGAH)
 --------------------------------------------------------------------------------
 local function RequestAPI(options)
     local req = request or http_request or (syn and syn.request) or (http and http.request)
@@ -664,7 +455,6 @@ local function FindLowestTailServer()
     local servers1P = {}
     local servers2P = {}
 
-    -- Ambil seluruh daftar server terurut Ascending (Paling Sedikit Pemain)[span_1](start_span)[span_1](end_span)
     for page = 1, 10 do
         local url = string.format("https://games.roblox.com/v1/games/%d/servers/0?sortOrder=Asc&limit=100", PlaceId)
         if cursor ~= "" then url = url .. "&cursor=" .. cursor end
@@ -692,16 +482,15 @@ local function FindLowestTailServer()
         else break end
     end
 
-    -- LOGIKA TARGET: 2 Baris sebelum baris terakhir list 1 Player
-    -- (1 baris isi 2 server, jadi 2 baris sebelum paling bawah = offset -4)
+    -- TARGET 1 PLAYER: Mundur dari baris bawah, maksimal sampai area tengah
     if #servers1P > 0 then
-        local targetIndex = #servers1P - 4
-        
-        if targetIndex < 1 then
-            targetIndex = 1
-        end
+        local startIndex = #servers1P - 6
+        if startIndex < 1 then startIndex = #servers1P end
 
-        for i = targetIndex, 1, -1 do
+        local minLimit = math.floor(#servers1P * 0.5)
+        if minLimit < 1 then minLimit = 1 end
+
+        for i = startIndex, minLimit, -1 do
             local s = servers1P[i]
             if s and not _G.LeonBlacklist[s.id] then
                 return s.id, s.playing
@@ -709,12 +498,15 @@ local function FindLowestTailServer()
         end
     end
 
-    -- FALLBACK: Jika server 1P habis, ambil dari 2 Player (offset 2 baris dari bawah juga)
+    -- FALLBACK 2 PLAYER: Sama (Dari bawah ke tengah)
     if #servers2P > 0 then
-        local targetIndex2P = #servers2P - 4
-        if targetIndex2P < 1 then targetIndex2P = 1 end
+        local startIndex2P = #servers2P - 6
+        if startIndex2P < 1 then startIndex2P = #servers2P end
 
-        for i = targetIndex2P, 1, -1 do
+        local minLimit2P = math.floor(#servers2P * 0.5)
+        if minLimit2P < 1 then minLimit2P = 1 end
+
+        for i = startIndex2P, minLimit2P, -1 do
             local s = servers2P[i]
             if s and not _G.LeonBlacklist[s.id] then
                 return s.id, s.playing
@@ -730,7 +522,7 @@ local function StartAutoHop()
         IsSearching = false
         BtnTitle.Text = "AUTO HOP SERVER"
         BtnTitle.TextColor3 = Theme.Text
-        StatusLabel.Text = "Status: Idle (1P -2 Rows)"
+        StatusLabel.Text = "Status: Idle (Bottom to Mid)"
         StatusDot.BackgroundColor3 = Theme.Accent
         BtnStroke.Color = Theme.OffStroke
         return
@@ -826,22 +618,5 @@ AntiHitGuardsBtn.MouseButton1Click:Connect(function()
         AntiHitDot.BackgroundColor3 = Theme.TextMuted
         AntiHitGuardsBtn.BackgroundColor3 = Theme.Off
         AntiHitStroke.Color = Theme.OffStroke
-    end
-end)
-
-InstantTpBtn.MouseButton1Click:Connect(function()
-    isInstantTpActive = not isInstantTpActive
-    if isInstantTpActive then
-        InstantTpStatusLabel.Text = "Status: ON"
-        InstantTpStatusLabel.TextColor3 = Color3.fromRGB(76, 220, 163)
-        InstantTpDot.BackgroundColor3 = Color3.fromRGB(76, 220, 163)
-        InstantTpBtn.BackgroundColor3 = Theme.On
-        InstantTpStroke.Color = Theme.OnStroke
-    else
-        InstantTpStatusLabel.Text = "Status: OFF"
-        InstantTpStatusLabel.TextColor3 = Theme.TextMuted
-        InstantTpDot.BackgroundColor3 = Theme.TextMuted
-        InstantTpBtn.BackgroundColor3 = Theme.Off
-        InstantTpStroke.Color = Theme.OffStroke
     end
 end)
