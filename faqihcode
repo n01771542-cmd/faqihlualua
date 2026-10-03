@@ -530,7 +530,7 @@ local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 11)
 StatusLabel.Position = UDim2.fromOffset(18, 18)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Status: Idle (2P > 1P)"
+StatusLabel.Text = "Status: Idle (1P -2 Rows)"
 StatusLabel.TextColor3 = Theme.TextMuted
 StatusLabel.Font = Enum.Font.GothamMedium
 StatusLabel.TextSize = 7
@@ -651,7 +651,7 @@ InstantTpStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 InstantTpStatusLabel.Parent = InstantTpBtn
 
 --------------------------------------------------------------------------------
--- LOGIKA TELEPORTATION (PRIORITAS 2 PLAYER)
+-- LOGIKA TELEPORTATION (TARGET: 2 BARIS SEBELUM BARIS TERAKHIR 1 PLAYER)
 --------------------------------------------------------------------------------
 local function RequestAPI(options)
     local req = request or http_request or (syn and syn.request) or (http and http.request)
@@ -661,9 +661,11 @@ end
 
 local function FindLowestTailServer()
     local cursor = ""
-    local pages = {}
+    local servers1P = {}
+    local servers2P = {}
 
-    for page = 1, 8 do
+    -- Ambil seluruh daftar server terurut Ascending (Paling Sedikit Pemain)[span_1](start_span)[span_1](end_span)
+    for page = 1, 10 do
         local url = string.format("https://games.roblox.com/v1/games/%d/servers/0?sortOrder=Asc&limit=100", PlaceId)
         if cursor ~= "" then url = url .. "&cursor=" .. cursor end
 
@@ -671,43 +673,51 @@ local function FindLowestTailServer()
         if res and res.Body then
             local decoded = HttpService:JSONDecode(res.Body)
             if decoded and decoded.data then
-                table.insert(pages, decoded.data)
+                for _, server in ipairs(decoded.data) do
+                    local playing = server.playing or 0
+                    local maxPlayers = server.maxPlayers or 0
+
+                    if server.id and not _G.LeonBlacklist[server.id] and (maxPlayers - playing) >= 1 then
+                        if playing == 1 then
+                            table.insert(servers1P, server)
+                        elseif playing == 2 then
+                            table.insert(servers2P, server)
+                        end
+                    end
+                end
+
                 cursor = decoded.nextPageCursor or ""
                 if cursor == "" then break end
             else break end
         else break end
     end
 
-    for p = #pages, 1, -1 do
-        local currentList = pages[p]
-        for b = #currentList, 1, -1 do
-            local server = currentList[b]
-            local playing = server.playing or 0
-            local maxPlayers = server.maxPlayers or 0
+    -- LOGIKA TARGET: 2 Baris sebelum baris terakhir list 1 Player
+    -- (1 baris isi 2 server, jadi 2 baris sebelum paling bawah = offset -4)
+    if #servers1P > 0 then
+        local targetIndex = #servers1P - 4
+        
+        if targetIndex < 1 then
+            targetIndex = 1
+        end
 
-            if server.id 
-               and not _G.LeonBlacklist[server.id] 
-               and playing == 2 
-               and (maxPlayers - playing) >= 2 then
-
-                return server.id, playing
+        for i = targetIndex, 1, -1 do
+            local s = servers1P[i]
+            if s and not _G.LeonBlacklist[s.id] then
+                return s.id, s.playing
             end
         end
     end
 
-    for p = #pages, 1, -1 do
-        local currentList = pages[p]
-        for b = #currentList, 1, -1 do
-            local server = currentList[b]
-            local playing = server.playing or 0
-            local maxPlayers = server.maxPlayers or 0
+    -- FALLBACK: Jika server 1P habis, ambil dari 2 Player (offset 2 baris dari bawah juga)
+    if #servers2P > 0 then
+        local targetIndex2P = #servers2P - 4
+        if targetIndex2P < 1 then targetIndex2P = 1 end
 
-            if server.id 
-               and not _G.LeonBlacklist[server.id] 
-               and playing == 1 
-               and (maxPlayers - playing) >= 2 then
-
-                return server.id, playing
+        for i = targetIndex2P, 1, -1 do
+            local s = servers2P[i]
+            if s and not _G.LeonBlacklist[s.id] then
+                return s.id, s.playing
             end
         end
     end
@@ -720,7 +730,7 @@ local function StartAutoHop()
         IsSearching = false
         BtnTitle.Text = "AUTO HOP SERVER"
         BtnTitle.TextColor3 = Theme.Text
-        StatusLabel.Text = "Status: Idle (2P > 1P)"
+        StatusLabel.Text = "Status: Idle (1P -2 Rows)"
         StatusDot.BackgroundColor3 = Theme.Accent
         BtnStroke.Color = Theme.OffStroke
         return
@@ -736,7 +746,7 @@ local function StartAutoHop()
         local attempt = 1
 
         while IsSearching do
-            StatusLabel.Text = string.format("Scanning tail... (#%d)", attempt)
+            StatusLabel.Text = string.format("Scanning target... (#%d)", attempt)
 
             local foundJobId, playerCount = FindLowestTailServer()
 
@@ -779,10 +789,10 @@ ToggleBtn.MouseButton1Click:Connect(function()
 
     if isCollapsed then
         ToggleBtn.Text = ">"
-        
+
         TweenService:Create(ExtraFeatures, tweenInfo, {GroupTransparency = 1}):Play()
         TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.fromOffset(MAIN_WIDTH, CLOSED_HEIGHT)}):Play()
-        
+
         task.delay(0.3, function()
             if isCollapsed then
                 ExtraFeatures.Visible = false
@@ -791,7 +801,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
     else
         ToggleBtn.Text = "<"
         ExtraFeatures.Visible = true
-        
+
         TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.fromOffset(MAIN_WIDTH, FULL_HEIGHT)}):Play()
         TweenService:Create(ExtraFeatures, tweenInfo, {GroupTransparency = 0}):Play()
     end
