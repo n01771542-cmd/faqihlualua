@@ -2167,7 +2167,7 @@ do
             f.AnchorPoint = v.anchor
             f.Position = v.pos
             f.Size = v.size
-            gradient(f, v.rot, nil, seq({ 0, 1 - v.a }, { 1, 1 - v.b }))
+            gradient(f, v.rot, nil, seq({ 0, v.a }, { 1, v.b }))
             register(f, "BackgroundTransparency", 0.55, 0.05)
         end
 
