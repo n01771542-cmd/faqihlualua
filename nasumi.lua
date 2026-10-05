@@ -1,50 +1,40 @@
 --[[
-    ULTRA REALISTIC RENDERER V4
+    ULTRA REALISTIC RENDERER V4 + NOSTALGIC SORE
     Roblox LocalScript
     Recommended:
         StarterPlayer > StarterPlayerScripts
 
     PURPOSE
     -------
-    This version is intentionally focused on ONLY four visual systems:
+    Fokus hanya pada empat sistem visual:
 
       1. SUPER REALISTIC
       2. SUASANA / ATMOSPHERE
       3. SHADERS / POST-PROCESSING
       4. SUPER DETAIL + SUASANA COLOR
 
-    IMPORTANT TECHNICAL LIMIT
-    -------------------------
-    Roblox does not expose arbitrary custom GPU fragment shaders to a normal
-    LocalScript. This renderer therefore uses Roblox's real rendering pipeline:
-    Realistic lighting, physically based materials already present in the map,
-    SurfaceAppearance/PBR assets already present, local lights, Atmosphere,
-    ColorCorrection, Bloom, SunRays and DepthOfField.
+    BATAS TEKNIS
+    ------------
+    Roblox tidak mengizinkan custom GPU shader dari LocalScript biasa.
+    Renderer ini memakai pipeline asli Roblox: Realistic lighting, PBR yang
+    sudah ada di map, SurfaceAppearance, local lights, Atmosphere,
+    ColorCorrection, Bloom, SunRays dan DepthOfField.
 
-    It DOES NOT invent PBR texture maps that are not already in the place.
-    A NormalMap/RoughnessMap/MetalnessMap must come from an actual asset.
-    The renderer instead maximizes the quality of assets that already exist.
+    Script ini TIDAK membuat texture PBR baru. NormalMap/RoughnessMap/
+    MetalnessMap harus berasal dari asset asli.
 
-    This is a visual renderer only:
-      - no gameplay automation
-      - no remotes
-      - no player-data changes
-      - no movement changes
-      - no game-state changes
+    Script ini hanya visual:
+      - tanpa automation gameplay
+      - tanpa remote
+      - tanpa perubahan data pemain
+      - tanpa perubahan movement
+      - tanpa perubahan game-state
 
-    V4 DESIGN PRINCIPLE
-    -------------------
-    The previous approach leaned too hard on fog. V4 intentionally uses:
-      - very low aerial haze by default
-      - strong directional lighting
-      - controlled exposure
-      - material-specific response
-      - realistic local light response
-      - subtle cinematic grading
-      - multiple atmosphere/mood profiles
-      - aggressive detail preservation
-
-    QUALITY 10 is intentionally "visual maximum", not "fog maximum".
+    BARU: mood "NOSTALGIC SORE"
+      - cahaya matahari oranye-kuning yang tenang
+      - glow bloom lembut
+      - flare / pantulan cahaya di layar yang mengikuti matahari
+      - light leak hangat dan vignette
 ]]
 
 ----------------------------------------------------------------
@@ -71,6 +61,11 @@ local ROOT_NAME = "UltraRealisticRendererV4"
 local Existing = PlayerGui:FindFirstChild(ROOT_NAME)
 if Existing then
     Existing:Destroy()
+end
+
+local OldNostalgia = PlayerGui:FindFirstChild(ROOT_NAME .. "_Nostalgia")
+if OldNostalgia then
+    OldNostalgia:Destroy()
 end
 
 ----------------------------------------------------------------
@@ -186,17 +181,16 @@ end
 local Config = {
     Enabled = true,
 
-    -- The user-facing scale is deliberately 1-10.
+    -- Skala 1-10.
     Quality = 10,
 
-    -- Four systems only.
+    -- Empat sistem.
     SuperRealistic = true,
     Atmosphere = true,
     Shaders = true,
     SuperDetail = true,
 
-    -- Default atmosphere is intentionally CLEAR.
-    -- High realism does NOT mean putting fog over the map.
+    -- Atmosphere default sengaja BENING.
     AtmosphereDensity = 0.006,
     AtmosphereOffset = 0.12,
     AtmosphereHaze = 0.18,
@@ -233,16 +227,16 @@ local Config = {
     MaxAccentLights = 80,
     LightUpdateInterval = 0.12,
 
-    -- Material response.
+    -- Respons material.
     MetalReflectance = 0.12,
     GlassReflectance = 0.08,
     PlasticReflectance = 0.01,
 
-    -- Keep colors readable.
+    -- Warna tetap terbaca.
     PreserveOriginalColors = true,
     ColorInfluence = 0.06,
 
-    -- Camera clarity.
+    -- Kamera.
     CameraFOV = nil,
 
     -- UI.
@@ -252,8 +246,6 @@ local Config = {
 ----------------------------------------------------------------
 -- QUALITY PRESETS
 ----------------------------------------------------------------
--- These are deliberately different render philosophies rather than
--- simply "more fog".
 
 local QualityLevels = {
     [1] = {
@@ -440,8 +432,7 @@ local QualityLevels = {
 ----------------------------------------------------------------
 -- ATMOSPHERE / MOOD LIBRARY
 ----------------------------------------------------------------
--- Atmosphere is treated as a color/lighting mood system.
--- Density remains low in clear profiles so the map does not become foggy.
+-- Field opsional per mood: BloomSize, BloomThreshold, SunRays.
 
 local Atmospheres = {
     ["REALISTIC CLEAR"] = {
@@ -562,6 +553,30 @@ local Atmospheres = {
         Contrast = 0.11,
         Saturation = 0.08,
         Tint = Color3.fromRGB(255, 244, 225),
+    },
+
+    -- BARU: sore nostalgia. Matahari oranye-kuning, tenang, glow lembut.
+    ["NOSTALGIC SORE"] = {
+        ClockTime = 16.9,
+        Brightness = 2.20,
+        Exposure = 0.03,
+        Density = 0.0055,
+        Offset = 0.10,
+        Haze = 0.14,
+        Glare = 0.24,
+        Color = Color3.fromRGB(255, 214, 160),
+        Decay = Color3.fromRGB(232, 150, 88),
+        Ambient = Color3.fromRGB(58, 42, 32),
+        OutdoorAmbient = Color3.fromRGB(172, 134, 102),
+        Top = Color3.fromRGB(255, 205, 145),
+        Bottom = Color3.fromRGB(255, 176, 110),
+        Bloom = 0.13,
+        BloomSize = 30,        -- glow lebih lebar dan lembut
+        BloomThreshold = 0.95, -- bagian terang lebih mudah bersinar
+        SunRays = 0.075,
+        Contrast = 0.085,
+        Saturation = 0.07,
+        Tint = Color3.fromRGB(255, 240, 214),
     },
 
     ["SUNSET"] = {
@@ -941,8 +956,6 @@ local function configureLightingBase()
     rememberLighting("GeographicLatitude")
     rememberLighting("ClockTime")
 
-    -- Realistic is the native Roblox lighting path intended for
-    -- naturalistic lighting and shadows.
     safe(function()
         Lighting.LightingStyle = Enum.LightingStyle.Realistic
     end)
@@ -952,15 +965,12 @@ local function configureLightingBase()
     setProperty(Lighting, "ExposureCompensation", Config.Exposure)
     setProperty(Lighting, "ShadowSoftness", Config.ShadowSoftness)
 
-    -- Maximum supported environment response for PBR/specular assets.
     setProperty(Lighting, "EnvironmentDiffuseScale", Config.DiffuseScale)
     setProperty(Lighting, "EnvironmentSpecularScale", Config.SpecularScale)
 
-    -- Dark ambient prevents the entire map from looking uniformly lit.
     setProperty(Lighting, "Ambient", Color3.fromRGB(24, 27, 31))
     setProperty(Lighting, "OutdoorAmbient", Color3.fromRGB(132, 140, 151))
 
-    -- Ask Roblox to prioritize lighting/shading quality when supported.
     if hasProperty(Lighting, "PrioritizeLightingQuality") then
         setProperty(Lighting, "PrioritizeLightingQuality", true)
     end
@@ -1020,8 +1030,8 @@ local function configureShaders()
     end
 
     setProperty(bloom, "Intensity", mood.Bloom)
-    setProperty(bloom, "Size", Config.BloomSize)
-    setProperty(bloom, "Threshold", Config.BloomThreshold)
+    setProperty(bloom, "Size", mood.BloomSize or Config.BloomSize)
+    setProperty(bloom, "Threshold", mood.BloomThreshold or Config.BloomThreshold)
     setProperty(bloom, "Enabled", true)
 
     local color = State.Instances.ColorCorrection
@@ -1042,7 +1052,7 @@ local function configureShaders()
         State.Instances.SunRays = sun
     end
 
-    setProperty(sun, "Intensity", Config.SunRayIntensity)
+    setProperty(sun, "Intensity", mood.SunRays or Config.SunRayIntensity)
     setProperty(sun, "Spread", Config.SunRaySpread)
     setProperty(sun, "Enabled", true)
 
@@ -1164,8 +1174,7 @@ local function classifyPart(part)
         return result
     end
 
-    -- Name-based semantic classification catches custom MeshParts
-    -- where the Roblox Material alone does not reveal the intended surface.
+    -- Klasifikasi berdasarkan nama untuk MeshPart custom.
     if name:find("gold")
         or name:find("coin")
         or name:find("treasure")
@@ -1227,7 +1236,7 @@ local function isVisualPart(part)
 
     local name = string.lower(part.Name)
 
-    -- Never touch obvious gameplay/helper geometry.
+    -- Jangan sentuh geometri gameplay/helper.
     local blocked = {
         "hitbox",
         "hurtbox",
@@ -1269,14 +1278,11 @@ local function enhancePartMaterial(part)
 
     local info = classifyPart(part)
 
-    -- Do not overwrite an explicit MaterialVariant.
-    -- MaterialVariant is often the asset creator's own detail system.
+    -- Jangan timpa MaterialVariant milik pembuat asset.
     local materialVariant = getProperty(part, "MaterialVariant", "")
     local hasVariant = materialVariant and materialVariant ~= ""
 
     if not hasVariant then
-        -- Plastic tends to look cleaner under the realistic lighting path
-        -- when SmoothPlastic is available and the asset has no custom variant.
         if info.Type == "DEFAULT" then
             local current = getProperty(part, "Material", nil)
             if current == Enum.Material.Plastic then
@@ -1289,15 +1295,12 @@ local function enhancePartMaterial(part)
     if info.Reflectance ~= nil then
         local currentReflectance = getProperty(part, "Reflectance", 0)
 
-        -- Preserve intentionally shiny assets; only prevent completely dead
-        -- surfaces from losing all specular response.
         if currentReflectance < info.Reflectance then
             setProperty(part, "Reflectance", info.Reflectance)
             State.Stats.MaterialsEnhanced += 1
         end
     end
 
-    -- All visible geometry should be capable of receiving/casting shadows.
     if hasProperty(part, "CastShadow") then
         setProperty(part, "CastShadow", true)
     end
@@ -1315,15 +1318,12 @@ local function enhanceSurfaceAppearance(surface)
     rememberSurfaceAppearance(surface)
     State.Stats.SurfaceAppearances += 1
 
-    -- SurfaceAppearance is already the correct PBR system.
-    -- We DO NOT replace ColorMap/NormalMap/RoughnessMap/MetalnessMap.
-    -- Those are content assets and should remain artist-authored.
+    -- SurfaceAppearance sudah merupakan sistem PBR yang benar.
+    -- Map ColorMap/NormalMap/RoughnessMap/MetalnessMap TIDAK diganti.
 
     local currentColor = getProperty(surface, "Color", Color3.new(1, 1, 1))
 
     if Config.PreserveOriginalColors then
-        -- Tiny lift only. The goal is better light response, not recoloring
-        -- the actual art asset.
         local lift = Config.ColorInfluence
         local neutral = Color3.fromRGB(255, 255, 255)
         local result = currentColor:Lerp(neutral, lift)
@@ -1337,8 +1337,6 @@ local function enhanceSurfaceAppearance(surface)
     if hasProperty(surface, "EmissiveStrength") then
         local emissive = getProperty(surface, "EmissiveStrength", 0)
 
-        -- Keep authored emissive values. Only make an obviously emissive
-        -- asset cooperate with the bloom pipeline.
         if emissive > 0 then
             setProperty(surface, "EmissiveStrength", math.clamp(emissive, 0, 8))
         end
@@ -1365,7 +1363,7 @@ local function scanVisualAssets()
             enhancePartMaterial(object)
         end
 
-        -- Yield during huge maps so the renderer does not freeze the client.
+        -- Yield di map besar supaya client tidak freeze.
         if i % 500 == 0 then
             task.wait()
         end
@@ -1517,8 +1515,6 @@ local function enhanceExistingLights()
 
             local brightness = getProperty(object, "Brightness", 1)
             if brightness > 0 then
-                -- Preserve the artist's brightness but ensure it is not
-                -- accidentally invisible.
                 setProperty(object, "Brightness", math.max(brightness, 0.1))
             end
         end
@@ -1548,7 +1544,6 @@ local function scanAccentLights()
         return
     end
 
-    -- Prefer sources closest to the current camera.
     table.sort(candidates, function(a, b)
         local da = (a.Position - Camera.CFrame.Position).Magnitude
         local db = (b.Position - Camera.CFrame.Position).Magnitude
@@ -1571,16 +1566,10 @@ end
 ----------------------------------------------------------------
 -- DETAIL PRESERVATION
 ----------------------------------------------------------------
--- The workspace inventory shows a large amount of MeshPart,
--- SurfaceAppearance, Bone, Attachment and client-rendered asset content.
--- We never destroy or replace that geometry. We improve how the renderer
--- lights it.
 
 local function preserveDetailGeometry()
     for _, object in ipairs(Workspace:GetDescendants()) do
         if object:IsA("MeshPart") then
-            -- Preserve mesh geometry and authored collision/render state.
-            -- Only shadow capability is adjusted.
             if isVisualPart(object) then
                 setProperty(object, "CastShadow", true)
             end
@@ -1623,8 +1612,211 @@ local function applyQuality(level)
     configureLightingBase()
     configureMoodLighting()
 
-    -- Rebuild local light accents at quality-dependent density.
     task.spawn(scanAccentLights)
+end
+
+----------------------------------------------------------------
+-- NOSTALGIA FX (flare, light leak, vignette di layar)
+----------------------------------------------------------------
+
+local NostalgiaFX = {}
+
+do
+    -- Opsional: isi dengan asset id gambar radial glow (rbxassetid://...)
+    -- untuk flare yang lebih halus. Kosong = pakai lingkaran transparan.
+    local GLOW_IMAGE = ""
+
+    local gui, vignetteGroup, leakGroup, flareGroup
+    local flares = {}
+    local connection
+    local active = false
+    local intensity = 0
+    local sunVisible = 0
+
+    -- pos: 0 = di matahari, 1 = tengah layar, >1 = sisi seberang
+    local FLARE_DEFS = {
+        { pos = 0.00, size = 0.34, color = Color3.fromRGB(255, 200, 120), alpha = 0.90 },
+        { pos = 0.00, size = 0.14, color = Color3.fromRGB(255, 232, 170), alpha = 0.78 },
+        { pos = 0.55, size = 0.07, color = Color3.fromRGB(255, 170, 90),  alpha = 0.88 },
+        { pos = 1.00, size = 0.12, color = Color3.fromRGB(255, 190, 110), alpha = 0.92 },
+        { pos = 1.45, size = 0.05, color = Color3.fromRGB(255, 215, 150), alpha = 0.86 },
+        { pos = 1.85, size = 0.20, color = Color3.fromRGB(255, 160, 85),  alpha = 0.94 },
+    }
+
+    local function makeGroup(parent)
+        local g = Instance.new("CanvasGroup")
+        g.BackgroundTransparency = 1
+        g.Size = UDim2.fromScale(1, 1)
+        g.GroupTransparency = 1
+        g.Active = false
+        g.Parent = parent
+        return g
+    end
+
+    local function edge(parent, pos, size, rotation, alpha)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.BackgroundColor3 = Color3.fromRGB(70, 34, 14)
+        f.Position = pos
+        f.Size = size
+        f.Parent = parent
+
+        local g = Instance.new("UIGradient")
+        g.Rotation = rotation
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, alpha),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        g.Parent = f
+    end
+
+    local function build()
+        gui = Instance.new("ScreenGui")
+        gui.Name = ROOT_NAME .. "_Nostalgia"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 5
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        gui.Parent = PlayerGui
+
+        -- Vignette hangat di tepi layar
+        vignetteGroup = makeGroup(gui)
+        edge(vignetteGroup, UDim2.fromScale(0, 0),    UDim2.fromScale(1, 0.30), 90,  0.78)
+        edge(vignetteGroup, UDim2.fromScale(0, 0.70), UDim2.fromScale(1, 0.30), 270, 0.70)
+        edge(vignetteGroup, UDim2.fromScale(0, 0),    UDim2.fromScale(0.20, 1), 0,   0.82)
+        edge(vignetteGroup, UDim2.fromScale(0.80, 0), UDim2.fromScale(0.20, 1), 180, 0.82)
+
+        -- Light leak oranye-kuning dari pojok kanan atas
+        leakGroup = makeGroup(gui)
+        local leak = Instance.new("Frame")
+        leak.BorderSizePixel = 0
+        leak.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        leak.Size = UDim2.fromScale(1, 1)
+        leak.Parent = leakGroup
+
+        local leakGradient = Instance.new("UIGradient")
+        leakGradient.Rotation = 215
+        leakGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 190, 100)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 215, 140)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 235, 190)),
+        })
+        leakGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.80),
+            NumberSequenceKeypoint.new(0.55, 0.95),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        leakGradient.Parent = leak
+
+        -- Flare mengikuti posisi matahari di layar
+        flareGroup = makeGroup(gui)
+        for i, def in ipairs(FLARE_DEFS) do
+            local f
+            if GLOW_IMAGE ~= "" then
+                f = Instance.new("ImageLabel")
+                f.BackgroundTransparency = 1
+                f.Image = GLOW_IMAGE
+                f.ImageColor3 = def.color
+                f.ImageTransparency = def.alpha - 0.25
+            else
+                f = Instance.new("Frame")
+                f.BorderSizePixel = 0
+                f.BackgroundColor3 = def.color
+                f.BackgroundTransparency = def.alpha
+                local c = Instance.new("UICorner")
+                c.CornerRadius = UDim.new(1, 0)
+                c.Parent = f
+            end
+            f.AnchorPoint = Vector2.new(0.5, 0.5)
+            f.Parent = flareGroup
+            flares[i] = { Object = f, Def = def }
+        end
+    end
+
+    local function stop()
+        if connection then
+            connection:Disconnect()
+            connection = nil
+        end
+        if gui then
+            gui.Enabled = false
+        end
+    end
+
+    local function update(dt)
+        local cam = Workspace.CurrentCamera
+        if not cam or not gui then
+            return
+        end
+
+        intensity = lerp(intensity, active and 1 or 0, math.min(1, dt * 1.5))
+
+        if not active and intensity < 0.01 then
+            stop()
+            return
+        end
+
+        local camPos = cam.CFrame.Position
+        local sunDir = Lighting:GetSunDirection()
+        local facing = math.clamp(cam.CFrame.LookVector:Dot(sunDir), 0, 1)
+
+        local screenPoint, onScreen = cam:WorldToViewportPoint(camPos + sunDir * 1000)
+
+        -- Matahari tertutup bangunan/objek = flare memudar
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { Player.Character }
+        local blocked = Workspace:Raycast(camPos, sunDir * 2000, params) ~= nil
+
+        local target = (onScreen and screenPoint.Z > 0 and not blocked) and 1 or 0
+        sunVisible = lerp(sunVisible, target, math.min(1, dt * 3))
+
+        local size = cam.ViewportSize
+        local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
+        local axis = (size / 2) - sunPos
+        local base = math.min(size.X, size.Y)
+
+        for _, item in ipairs(flares) do
+            local p = sunPos + axis * item.Def.pos
+            local d = base * item.Def.size
+            item.Object.Position = UDim2.fromOffset(p.X, p.Y)
+            item.Object.Size = UDim2.fromOffset(d, d)
+        end
+
+        -- Napas cahaya pelan supaya terasa hidup dan tenang
+        local breathe = 0.5 + 0.5 * math.sin(os.clock() * 0.55)
+
+        vignetteGroup.GroupTransparency = 1 - intensity * 0.9
+        leakGroup.GroupTransparency = 1 - intensity * (0.55 + 0.20 * breathe)
+        flareGroup.GroupTransparency = 1 - intensity * sunVisible * (0.35 + 0.65 * facing)
+    end
+
+    function NostalgiaFX.SetEnabled(on)
+        active = on and true or false
+
+        if active then
+            if not gui or not gui.Parent then
+                table.clear(flares)
+                build()
+            end
+            gui.Enabled = true
+            if not connection then
+                connection = RunService.RenderStepped:Connect(update)
+            end
+        end
+        -- Saat nonaktif, update() memudarkan efek lalu memanggil stop().
+    end
+
+    function NostalgiaFX.Destroy()
+        active = false
+        intensity = 0
+        stop()
+        if gui then
+            gui:Destroy()
+            gui = nil
+        end
+        table.clear(flares)
+    end
 end
 
 ----------------------------------------------------------------
@@ -1640,6 +1832,8 @@ local function applyAtmosphere(name)
 
     configureLightingBase()
     configureMoodLighting()
+
+    NostalgiaFX.SetEnabled(name == "NOSTALGIC SORE" and Config.Shaders)
 
     return true
 end
@@ -1721,6 +1915,7 @@ local function restoreOriginal()
     end
 
     clearAccentLights()
+    NostalgiaFX.Destroy()
 
     for _, instance in ipairs(Original.Created) do
         if instance and instance.Parent then
@@ -1738,8 +1933,6 @@ API.Restore = restoreOriginal
 ----------------------------------------------------------------
 -- SIMPLE QUALITY UI
 ----------------------------------------------------------------
--- UI exists only to control the four requested systems.
--- No gameplay features are included.
 
 local function createUI()
     if not Config.ShowUI then
@@ -2062,7 +2255,6 @@ local maintenanceConnection = RunService.Heartbeat:Connect(function(dt)
         Camera = Workspace.CurrentCamera
 
         if Camera then
-            -- Re-evaluate only the nearest accent lights.
             for _, record in ipairs(State.AccentLights) do
                 local source = record.Source
                 local light = record.Light
@@ -2075,8 +2267,6 @@ local maintenanceConnection = RunService.Heartbeat:Connect(function(dt)
                     else
                         light.Enabled = true
 
-                        -- Slight distance attenuation gives the local lights
-                        -- a more natural falloff instead of a flat global glow.
                         local factor = 1 - math.clamp(distance / Config.LightDistance, 0, 1)
                         light.Brightness = lerp(0.15, 0.85, factor)
                     end
@@ -2111,83 +2301,14 @@ _G.UltraRealisticRendererV4 = API
 initialize()
 
 ----------------------------------------------------------------
--- DOCUMENTED USAGE
+-- USAGE
 ----------------------------------------------------------------
--- Examples:
---
 --   _G.UltraRealisticRendererV4.SetQuality(10)
---
+--   _G.UltraRealisticRendererV4.SetAtmosphere("NOSTALGIC SORE")
 --   _G.UltraRealisticRendererV4.SetAtmosphere("GOLDEN HOUR")
---
 --   _G.UltraRealisticRendererV4.SetAtmosphere("REALISTIC CLEAR")
---
 --   _G.UltraRealisticRendererV4.RefreshDetails()
---
 --   _G.UltraRealisticRendererV4.Restore()
 --
--- The renderer is intentionally visual-only.
-----------------------------------------------------------------
-
-----------------------------------------------------------------
--- V4 VISUAL AUDIT / DESIGN NOTES
-----------------------------------------------------------------
--- SYSTEM 1: SUPER REALISTIC
---   * Realistic lighting path
---   * Global shadows
---   * Shadow softness
---   * Environment diffuse/specular response
---   * Authored PBR assets preserved
---   * Material-specific reflectance
---   * Existing local lights upgraded
---
--- SYSTEM 2: SUASANA
---   * 20+ named atmosphere/mood profiles
---   * Time of day
---   * Atmospheric color
---   * Atmospheric decay
---   * Haze/glare
---   * Warm/cool ambient balance
---   * Separate visual identities for morning/noon/sunset/night/etc.
---
--- SYSTEM 3: SHADERS
---   * Bloom
---   * ColorCorrection
---   * SunRays
---   * Optional DepthOfField
---   * Controlled exposure
---   * Controlled contrast
---   * Controlled saturation
---   * No fake full-screen fog overlay
---
--- SYSTEM 4: SUPER DETAIL
---   * MeshPart preservation
---   * SurfaceAppearance preservation
---   * Material-aware response
---   * Local accent lights
---   * Shadow casting
---   * Distance-aware light falloff
---   * Semantic treatment for metal, glass, vegetation,
---     rock, sand, ice, crystal, water, egg, gold, etc.
---
--- WHAT THIS SCRIPT CANNOT DO
---   * It cannot create a brand-new high-resolution normal map
---     without an actual texture asset.
---   * It cannot turn a low-poly mesh into a high-poly mesh purely
---     through Lighting.
---   * It cannot inject arbitrary GPU shader code into Roblox.
---   * It cannot manufacture realistic surface micro-detail from nothing.
---
--- WHAT IT DOES INSTEAD
---   * It makes Roblox's native renderer expose as much of the
---     existing visual information as possible.
---   * It preserves authored PBR assets instead of overwriting them.
---   * It uses low haze by default so "realistic" does not become
---     "everything is gray/foggy".
---
--- MAP-SPECIFIC NOTE
--- The supplied workspace inventory contains substantial visual content:
--- MeshParts, SurfaceAppearance assets, Bones, Attachments and
--- client-rendered asset hierarchies. Those should remain the source
--- of geometric and texture detail; this renderer changes the way
--- those assets are lit and graded.
+-- Renderer ini visual-only.
 ----------------------------------------------------------------
