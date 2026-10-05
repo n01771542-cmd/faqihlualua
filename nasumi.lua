@@ -555,28 +555,42 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 244, 225),
     },
 
-    -- BARU: sore nostalgia. Matahari oranye-kuning, tenang, glow lembut.
+    -- Sore nostalgia V2: lebih gelap, hangat, sinematik, tenang.
+    -- Drift = matahari turun pelan (ping-pong), terasa seperti waktu berlalu.
     ["NOSTALGIC SORE"] = {
-        ClockTime = 16.9,
-        Brightness = 2.20,
-        Exposure = 0.03,
-        Density = 0.0055,
-        Offset = 0.10,
-        Haze = 0.14,
-        Glare = 0.24,
-        Color = Color3.fromRGB(255, 214, 160),
-        Decay = Color3.fromRGB(232, 150, 88),
-        Ambient = Color3.fromRGB(58, 42, 32),
-        OutdoorAmbient = Color3.fromRGB(172, 134, 102),
-        Top = Color3.fromRGB(255, 205, 145),
-        Bottom = Color3.fromRGB(255, 176, 110),
-        Bloom = 0.13,
-        BloomSize = 30,        -- glow lebih lebar dan lembut
-        BloomThreshold = 0.95, -- bagian terang lebih mudah bersinar
-        SunRays = 0.075,
-        Contrast = 0.085,
-        Saturation = 0.07,
-        Tint = Color3.fromRGB(255, 240, 214),
+        ClockTime = 17.45,
+        Brightness = 1.85,
+        Exposure = -0.02,
+        Density = 0.0065,
+        Offset = 0.08,
+        Haze = 0.20,
+        Glare = 0.34,
+        Color = Color3.fromRGB(255, 196, 138),
+        Decay = Color3.fromRGB(214, 118, 66),
+        Ambient = Color3.fromRGB(40, 28, 22),
+        OutdoorAmbient = Color3.fromRGB(128, 98, 76),
+        Top = Color3.fromRGB(255, 186, 120),
+        Bottom = Color3.fromRGB(230, 140, 88),
+        Bloom = 0.17,
+        BloomSize = 36,
+        BloomThreshold = 0.85,
+        SunRays = 0.09,
+        Contrast = 0.12,
+        Saturation = 0.06,
+        Tint = Color3.fromRGB(255, 232, 200),
+        GradeBrightness = -0.025,
+
+        -- Depth of field tipis: latar jauh sedikit lembut seperti lensa film.
+        DOFFar = 0.14,
+        DOFFocus = 90,
+        DOFRadius = 70,
+
+        Drift = {
+            Minutes = 14,
+            Clock0 = 17.15, Clock1 = 18.00,
+            Bright0 = 1.95, Bright1 = 1.50,
+            Exp0 = 0.01,    Exp1 = -0.06,
+        },
     },
 
     ["SUNSET"] = {
@@ -1040,7 +1054,7 @@ local function configureShaders()
         State.Instances.ColorCorrection = color
     end
 
-    setProperty(color, "Brightness", 0)
+    setProperty(color, "Brightness", mood.GradeBrightness or 0)
     setProperty(color, "Contrast", mood.Contrast)
     setProperty(color, "Saturation", mood.Saturation)
     setProperty(color, "TintColor", mood.Tint)
@@ -1062,11 +1076,11 @@ local function configureShaders()
         State.Instances.DOF = dof
     end
 
-    setProperty(dof, "FocusDistance", Config.DOFFocus)
-    setProperty(dof, "InFocusRadius", Config.DOFNear)
+    setProperty(dof, "FocusDistance", mood.DOFFocus or Config.DOFFocus)
+    setProperty(dof, "InFocusRadius", mood.DOFRadius or Config.DOFNear)
     setProperty(dof, "NearIntensity", Config.DOFStrength)
-    setProperty(dof, "FarIntensity", Config.DOFStrength)
-    setProperty(dof, "Enabled", Config.DOFEnabled)
+    setProperty(dof, "FarIntensity", mood.DOFFar or Config.DOFStrength)
+    setProperty(dof, "Enabled", mood.DOFFar ~= nil or Config.DOFEnabled)
 end
 
 ----------------------------------------------------------------
@@ -1622,26 +1636,43 @@ end
 local NostalgiaFX = {}
 
 do
-    -- Opsional: isi dengan asset id gambar radial glow (rbxassetid://...)
-    -- untuk flare yang lebih halus. Kosong = pakai lingkaran transparan.
-    local GLOW_IMAGE = ""
+    local SoundService = game:GetService("SoundService")
 
-    local gui, vignetteGroup, leakGroup, flareGroup
-    local flares = {}
-    local connection
-    local active = false
-    local intensity = 0
-    local sunVisible = 0
+    local MOOD_NAME = "NOSTALGIC SORE"
+
+    -- Opsional: asset id gambar radial glow untuk flare yang lebih halus.
+    local GLOW_IMAGE = ""
+    -- Opsional: asset id musik/ambience lembut (rbxassetid://...). Kosong = tanpa suara.
+    local AMBIENCE_SOUND_ID = ""
+    local AMBIENCE_VOLUME = 0.22
+    -- Jumlah debu cahaya maksimum (dikalikan Quality/10).
+    local MOTE_COUNT = 28
 
     -- pos: 0 = di matahari, 1 = tengah layar, >1 = sisi seberang
     local FLARE_DEFS = {
-        { pos = 0.00, size = 0.34, color = Color3.fromRGB(255, 200, 120), alpha = 0.90 },
-        { pos = 0.00, size = 0.14, color = Color3.fromRGB(255, 232, 170), alpha = 0.78 },
+        { pos = 0.00, size = 0.36, color = Color3.fromRGB(255, 196, 112), alpha = 0.90 },
+        { pos = 0.00, size = 0.15, color = Color3.fromRGB(255, 232, 170), alpha = 0.76 },
         { pos = 0.55, size = 0.07, color = Color3.fromRGB(255, 170, 90),  alpha = 0.88 },
         { pos = 1.00, size = 0.12, color = Color3.fromRGB(255, 190, 110), alpha = 0.92 },
         { pos = 1.45, size = 0.05, color = Color3.fromRGB(255, 215, 150), alpha = 0.86 },
         { pos = 1.85, size = 0.20, color = Color3.fromRGB(255, 160, 85),  alpha = 0.94 },
     }
+
+    local gui, vignetteGroup, leakGroup, flareGroup, moteGroup
+    local streakMain, streakSoft, halo
+    local flares, motes = {}, {}
+    local connection
+    local active = false
+    local intensity = 0
+    local sunVisible = 0
+    local driftClock = 0
+    local sound
+    local cloudsState
+    local rng = Random.new(1987)
+
+    ------------------------------------------------------------
+    -- Helper UI
+    ------------------------------------------------------------
 
     local function makeGroup(parent)
         local g = Instance.new("CanvasGroup")
@@ -1656,7 +1687,7 @@ do
     local function edge(parent, pos, size, rotation, alpha)
         local f = Instance.new("Frame")
         f.BorderSizePixel = 0
-        f.BackgroundColor3 = Color3.fromRGB(70, 34, 14)
+        f.BackgroundColor3 = Color3.fromRGB(38, 16, 6)
         f.Position = pos
         f.Size = size
         f.Parent = parent
@@ -1670,6 +1701,41 @@ do
         g.Parent = f
     end
 
+    local function fullGradientFrame(parent, color, rotation, sequence)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.BackgroundColor3 = color
+        f.Size = UDim2.fromScale(1, 1)
+        f.Parent = parent
+
+        local g = Instance.new("UIGradient")
+        g.Rotation = rotation
+        g.Transparency = sequence
+        g.Parent = f
+        return f, g
+    end
+
+    local function makeStreak(parent, color, alpha)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.AnchorPoint = Vector2.new(0.5, 0.5)
+        f.BackgroundColor3 = color
+        f.Parent = parent
+
+        local g = Instance.new("UIGradient")
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.5, alpha),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        g.Parent = f
+        return f
+    end
+
+    ------------------------------------------------------------
+    -- Build
+    ------------------------------------------------------------
+
     local function build()
         gui = Instance.new("ScreenGui")
         gui.Name = ROOT_NAME .. "_Nostalgia"
@@ -1679,37 +1745,29 @@ do
         gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         gui.Parent = PlayerGui
 
-        -- Vignette hangat di tepi layar
+        -- 1. Vignette hangat yang lebih dalam
         vignetteGroup = makeGroup(gui)
-        edge(vignetteGroup, UDim2.fromScale(0, 0),    UDim2.fromScale(1, 0.30), 90,  0.78)
-        edge(vignetteGroup, UDim2.fromScale(0, 0.70), UDim2.fromScale(1, 0.30), 270, 0.70)
-        edge(vignetteGroup, UDim2.fromScale(0, 0),    UDim2.fromScale(0.20, 1), 0,   0.82)
-        edge(vignetteGroup, UDim2.fromScale(0.80, 0), UDim2.fromScale(0.20, 1), 180, 0.82)
+        edge(vignetteGroup, UDim2.fromScale(0, 0),    UDim2.fromScale(1, 0.34), 90,  0.52)
+        edge(vignetteGroup, UDim2.fromScale(0, 0.66), UDim2.fromScale(1, 0.34), 270, 0.42)
+        edge(vignetteGroup, UDim2.fromScale(0, 0),    UDim2.fromScale(0.24, 1), 0,   0.60)
+        edge(vignetteGroup, UDim2.fromScale(0.76, 0), UDim2.fromScale(0.24, 1), 180, 0.60)
 
-        -- Light leak oranye-kuning dari pojok kanan atas
+        -- 2. Grading dua warna ala film: oranye di sisi matahari, biru pudar di bayangan
         leakGroup = makeGroup(gui)
-        local leak = Instance.new("Frame")
-        leak.BorderSizePixel = 0
-        leak.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        leak.Size = UDim2.fromScale(1, 1)
-        leak.Parent = leakGroup
-
-        local leakGradient = Instance.new("UIGradient")
-        leakGradient.Rotation = 215
-        leakGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 190, 100)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 215, 140)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 235, 190)),
-        })
-        leakGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.80),
-            NumberSequenceKeypoint.new(0.55, 0.95),
+        fullGradientFrame(leakGroup, Color3.fromRGB(255, 190, 100), 145, NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.78),
+            NumberSequenceKeypoint.new(0.55, 0.94),
             NumberSequenceKeypoint.new(1, 1),
-        })
-        leakGradient.Parent = leak
+        }))
+        fullGradientFrame(leakGroup, Color3.fromRGB(70, 100, 140), 325, NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.90),
+            NumberSequenceKeypoint.new(0.5, 1),
+            NumberSequenceKeypoint.new(1, 1),
+        }))
 
-        -- Flare mengikuti posisi matahari di layar
+        -- 3. Flare, streak, dan halo yang mengikuti matahari
         flareGroup = makeGroup(gui)
+
         for i, def in ipairs(FLARE_DEFS) do
             local f
             if GLOW_IMAGE ~= "" then
@@ -1731,16 +1789,138 @@ do
             f.Parent = flareGroup
             flares[i] = { Object = f, Def = def }
         end
+
+        streakSoft = makeStreak(flareGroup, Color3.fromRGB(255, 170, 90), 0.84)
+        streakMain = makeStreak(flareGroup, Color3.fromRGB(255, 225, 160), 0.40)
+
+        halo = Instance.new("Frame")
+        halo.BackgroundTransparency = 1
+        halo.AnchorPoint = Vector2.new(0.5, 0.5)
+        halo.Parent = flareGroup
+        local haloCorner = Instance.new("UICorner")
+        haloCorner.CornerRadius = UDim.new(1, 0)
+        haloCorner.Parent = halo
+        local haloStroke = Instance.new("UIStroke")
+        haloStroke.Color = Color3.fromRGB(255, 190, 110)
+        haloStroke.Thickness = 2
+        haloStroke.Transparency = 0.82
+        haloStroke.Parent = halo
+
+        -- 4. Debu cahaya yang melayang pelan dan berkilau
+        moteGroup = makeGroup(gui)
+        for i = 1, MOTE_COUNT do
+            local d = rng:NextInteger(2, 6)
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0
+            f.Size = UDim2.fromOffset(d, d)
+            f.BackgroundColor3 = Color3.fromRGB(255, 210, 140):Lerp(Color3.fromRGB(255, 238, 195), rng:NextNumber())
+            f.Parent = moteGroup
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(1, 0)
+            c.Parent = f
+
+            motes[i] = {
+                Object = f,
+                x = rng:NextNumber(),
+                y = rng:NextNumber(),
+                vx = rng:NextNumber(-0.004, 0.010),
+                vy = -rng:NextNumber(0.003, 0.012),
+                phase = rng:NextNumber(0, math.pi * 2),
+                speed = rng:NextNumber(0.6, 1.8),
+            }
+        end
     end
+
+    ------------------------------------------------------------
+    -- Awan hangat (Terrain Clouds)
+    ------------------------------------------------------------
+
+    local function applyClouds(on)
+        local terrain = Workspace:FindFirstChildOfClass("Terrain")
+        if not terrain then
+            return
+        end
+
+        if on then
+            if not cloudsState then
+                local existing = terrain:FindFirstChildOfClass("Clouds")
+                if existing then
+                    cloudsState = {
+                        Object = existing,
+                        Owned = false,
+                        Saved = {
+                            Color = existing.Color,
+                            Cover = existing.Cover,
+                            Density = existing.Density,
+                            Enabled = existing.Enabled,
+                        },
+                    }
+                else
+                    local c = Instance.new("Clouds")
+                    c.Name = "URV4_Clouds"
+                    c.Parent = terrain
+                    cloudsState = { Object = c, Owned = true }
+                end
+            end
+
+            local c = cloudsState.Object
+            setProperty(c, "Color", Color3.fromRGB(255, 176, 120))
+            setProperty(c, "Cover", 0.55)
+            setProperty(c, "Density", 0.55)
+            setProperty(c, "Enabled", true)
+        elseif cloudsState then
+            if cloudsState.Owned then
+                if cloudsState.Object.Parent then
+                    cloudsState.Object:Destroy()
+                end
+            else
+                for property, value in pairs(cloudsState.Saved) do
+                    setProperty(cloudsState.Object, property, value)
+                end
+            end
+            cloudsState = nil
+        end
+    end
+
+    ------------------------------------------------------------
+    -- Ambience (opsional)
+    ------------------------------------------------------------
+
+    local function startAmbience()
+        if AMBIENCE_SOUND_ID == "" or sound then
+            return
+        end
+
+        sound = Instance.new("Sound")
+        sound.Name = "URV4_NostalgiaAmbience"
+        sound.SoundId = AMBIENCE_SOUND_ID
+        sound.Looped = true
+        sound.Volume = 0
+        sound.Parent = SoundService
+        sound:Play()
+    end
+
+    ------------------------------------------------------------
+    -- Stop / Update
+    ------------------------------------------------------------
 
     local function stop()
         if connection then
             connection:Disconnect()
             connection = nil
         end
+
         if gui then
             gui.Enabled = false
         end
+
+        if sound then
+            sound:Stop()
+            sound:Destroy()
+            sound = nil
+        end
+
+        applyClouds(false)
     end
 
     local function update(dt)
@@ -1756,13 +1936,29 @@ do
             return
         end
 
+        -- Matahari turun pelan + napas cahaya yang sangat halus
+        local mood = Atmospheres[MOOD_NAME]
+        local drift = mood and mood.Drift
+        if active and drift then
+            driftClock += dt
+
+            local phase = (driftClock / (drift.Minutes * 60)) % 2
+            local t = phase < 1 and phase or (2 - phase)
+            t = t * t * (3 - 2 * t)
+
+            local breathing = math.sin(os.clock() * 0.7) * 0.02
+
+            setProperty(Lighting, "ClockTime", lerp(drift.Clock0, drift.Clock1, t))
+            setProperty(Lighting, "Brightness", lerp(drift.Bright0, drift.Bright1, t) + breathing)
+            setProperty(Lighting, "ExposureCompensation", lerp(drift.Exp0, drift.Exp1, t))
+        end
+
         local camPos = cam.CFrame.Position
         local sunDir = Lighting:GetSunDirection()
         local facing = math.clamp(cam.CFrame.LookVector:Dot(sunDir), 0, 1)
 
         local screenPoint, onScreen = cam:WorldToViewportPoint(camPos + sunDir * 1000)
 
-        -- Matahari tertutup bangunan/objek = flare memudar
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = { Player.Character }
@@ -1783,23 +1979,67 @@ do
             item.Object.Size = UDim2.fromOffset(d, d)
         end
 
-        -- Napas cahaya pelan supaya terasa hidup dan tenang
-        local breathe = 0.5 + 0.5 * math.sin(os.clock() * 0.55)
+        streakMain.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+        streakMain.Size = UDim2.fromOffset(size.X * 0.75, math.max(2, base * 0.006))
+        streakSoft.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+        streakSoft.Size = UDim2.fromOffset(size.X * 0.5, math.max(6, base * 0.03))
 
-        vignetteGroup.GroupTransparency = 1 - intensity * 0.9
+        halo.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+        halo.Size = UDim2.fromOffset(base * 0.5, base * 0.5)
+
+        -- Debu cahaya (jumlah mengikuti Quality)
+        local now = os.clock()
+        local visibleCount = math.floor(#motes * State.Quality / 10)
+
+        for i, m in ipairs(motes) do
+            local show = i <= visibleCount
+            m.Object.Visible = show
+
+            if show then
+                m.x = (m.x + m.vx * dt) % 1
+                m.y = (m.y + m.vy * dt) % 1
+                m.Object.Position = UDim2.fromScale(m.x, m.y)
+
+                local twinkle = 0.5 + 0.5 * math.sin(now * m.speed + m.phase)
+                m.Object.BackgroundTransparency = 1 - (0.15 + 0.55 * twinkle)
+            end
+        end
+
+        local breathe = 0.5 + 0.5 * math.sin(now * 0.55)
+
+        vignetteGroup.GroupTransparency = 1 - intensity * 0.95
         leakGroup.GroupTransparency = 1 - intensity * (0.55 + 0.20 * breathe)
         flareGroup.GroupTransparency = 1 - intensity * sunVisible * (0.35 + 0.65 * facing)
+        moteGroup.GroupTransparency = 1 - intensity * (0.30 + 0.70 * facing)
+
+        if sound then
+            sound.Volume = AMBIENCE_VOLUME * intensity
+        end
     end
 
+    ------------------------------------------------------------
+    -- API
+    ------------------------------------------------------------
+
     function NostalgiaFX.SetEnabled(on)
+        local wasActive = active
         active = on and true or false
 
         if active then
             if not gui or not gui.Parent then
                 table.clear(flares)
+                table.clear(motes)
                 build()
             end
+
+            if not wasActive then
+                driftClock = 0
+            end
+
             gui.Enabled = true
+            applyClouds(true)
+            startAmbience()
+
             if not connection then
                 connection = RunService.RenderStepped:Connect(update)
             end
@@ -1811,11 +2051,14 @@ do
         active = false
         intensity = 0
         stop()
+
         if gui then
             gui:Destroy()
             gui = nil
         end
+
         table.clear(flares)
+        table.clear(motes)
     end
 end
 
