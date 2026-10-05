@@ -1,17 +1,16 @@
 --[[
     ULTRA REALISTIC RENDERER V4 + NOSTALGIC SORE
     Roblox LocalScript
-    Recommended:
+    Recommended: 
         StarterPlayer > StarterPlayerScripts
 
     PURPOSE
     -------
     Fokus hanya pada empat sistem visual:
-
-      1. SUPER REALISTIC
-      2. SUASANA / ATMOSPHERE
-      3. SHADERS / POST-PROCESSING
-      4. SUPER DETAIL + SUASANA COLOR
+       1. SUPER REALISTIC
+       2. SUASANA / ATMOSPHERE
+       3. SHADERS / POST-PROCESSING
+       4. SUPER DETAIL + SUASANA COLOR
 
     BATAS TEKNIS
     ------------
@@ -435,7 +434,7 @@ local QualityLevels = {
 -- Field opsional per mood: BloomSize, BloomThreshold, SunRays.
 
 local Atmospheres = {
-    ["REALISTIC CLEAR"] = {
+    ["Cahaya Siang Jernih (Realistic Clear)"] = {
         ClockTime = 10.2,
         Brightness = 2.36,
         Exposure = 0.04,
@@ -455,7 +454,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 255, 255),
     },
 
-    ["CRISP MORNING"] = {
+    ["Pagi Segar & Cerah (Crisp Morning)"] = {
         ClockTime = 7.6,
         Brightness = 2.42,
         Exposure = 0.045,
@@ -475,7 +474,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(248, 252, 255),
     },
 
-    ["WARM MORNING"] = {
+    ["Pagi Hangat Kekuningan (Warm Morning)"] = {
         ClockTime = 8.5,
         Brightness = 2.38,
         Exposure = 0.04,
@@ -495,7 +494,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 249, 238),
     },
 
-    ["CLEAN NOON"] = {
+    ["Terang Siang Tepat (Clean Noon)"] = {
         ClockTime = 12.1,
         Brightness = 2.40,
         Exposure = 0.035,
@@ -515,7 +514,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 255, 255),
     },
 
-    ["WARM AFTERNOON"] = {
+    ["Siang Menjelang Sore (Warm Afternoon)"] = {
         ClockTime = 15.3,
         Brightness = 2.33,
         Exposure = 0.045,
@@ -535,7 +534,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 249, 240),
     },
 
-    ["GOLDEN HOUR"] = {
+    ["Sore Senja Keemasan (Golden Hour)"] = {
         ClockTime = 17.25,
         Brightness = 2.28,
         Exposure = 0.03,
@@ -557,7 +556,7 @@ local Atmospheres = {
 
     -- Sore nostalgia V3: lebih oranye, bayangan tegas, hangat seperti cahaya jendela.
     -- Drift = matahari turun pelan (ping-pong), terasa seperti waktu berlalu.
-    ["NOSTALGIC SORE"] = {
+    ["Sore Syahdu Nostalgia (Nostalgic Sore)"] = {
         ClockTime = 17.35,
         Brightness = 1.85,
         Exposure = -0.02,
@@ -593,7 +592,7 @@ local Atmospheres = {
         },
     },
 
-    ["SUNSET"] = {
+    ["Matahari Terbenam Jingga (Sunset)"] = {
         ClockTime = 18.05,
         Brightness = 2.18,
         Exposure = 0.015,
@@ -613,7 +612,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 235, 220),
     },
 
-    ["BLUE HOUR"] = {
+    ["Malam Temaram Kebiruan (Blue Hour)"] = {
         ClockTime = 19.0,
         Brightness = 1.88,
         Exposure = -0.015,
@@ -633,7 +632,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(225, 235, 255),
     },
 
-    ["MOONLIT"] = {
+    ["Malam Terang Bulan (Moonlit)"] = {
         ClockTime = 0.35,
         Brightness = 1.30,
         Exposure = -0.05,
@@ -653,7 +652,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(210, 225, 255),
     },
 
-    ["DEEP NIGHT"] = {
+    ["Malam Gelap Gulita (Deep Night)"] = {
         ClockTime = 2.1,
         Brightness = 0.92,
         Exposure = -0.08,
@@ -673,7 +672,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(190, 210, 255),
     },
 
-    ["OVERCAST"] = {
+    ["Cuaca Mendung Kelabu (Overcast)"] = {
         ClockTime = 11.2,
         Brightness = 1.75,
         Exposure = -0.015,
@@ -693,7 +692,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(238, 241, 244),
     },
 
-    ["RAIN MOOD"] = {
+    ["Suasana Hujan Basah (Rain Mood)"] = {
         ClockTime = 15.8,
         Brightness = 1.62,
         Exposure = -0.02,
@@ -713,7 +712,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(225, 235, 250),
     },
 
-    ["MISTY"] = {
+    ["Berkabut Tebal (Misty)"] = {
         ClockTime = 8.2,
         Brightness = 1.98,
         Exposure = 0,
@@ -733,7 +732,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(245, 248, 252),
     },
 
-    ["TROPICAL"] = {
+    ["Pantai Tropis Cerah (Tropical)"] = {
         ClockTime = 10.6,
         Brightness = 2.34,
         Exposure = 0.035,
@@ -753,7 +752,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(244, 255, 245),
     },
 
-    ["FOREST"] = {
+    ["Hutan Rimbun Hijau (Forest)"] = {
         ClockTime = 9.3,
         Brightness = 2.18,
         Exposure = 0.015,
@@ -773,7 +772,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(238, 250, 236),
     },
 
-    ["DESERT"] = {
+    ["Gurun Pasir Terik (Desert)"] = {
         ClockTime = 15.5,
         Brightness = 2.30,
         Exposure = 0.04,
@@ -793,7 +792,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 248, 232),
     },
 
-    ["ARCTIC"] = {
+    ["Kutub Es Dingin (Arctic)"] = {
         ClockTime = 12.0,
         Brightness = 2.42,
         Exposure = 0.04,
@@ -813,7 +812,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(236, 248, 255),
     },
 
-    ["MYSTIC"] = {
+    ["Malam Mistis Keunguan (Mystic)"] = {
         ClockTime = 20.2,
         Brightness = 1.55,
         Exposure = -0.02,
@@ -833,7 +832,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(240, 230, 255),
     },
 
-    ["NEON NIGHT"] = {
+    ["Kota Lampu Neon (Neon Night)"] = {
         ClockTime = 22.1,
         Brightness = 1.15,
         Exposure = -0.025,
@@ -853,7 +852,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(225, 235, 255),
     },
 
-    ["VOLCANIC"] = {
+    ["Kawah Gunung Berapi (Volcanic)"] = {
         ClockTime = 19.4,
         Brightness = 1.70,
         Exposure = 0,
@@ -873,7 +872,7 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 235, 220),
     },
 
-    ["DREAM"] = {
+    ["Dunia Halusinasi Mimpi (Dream)"] = {
         ClockTime = 16.8,
         Brightness = 2.16,
         Exposure = 0.02,
@@ -900,7 +899,7 @@ local Atmospheres = {
 
 local State = {
     Quality = Config.Quality,
-    AtmosphereName = "REALISTIC CLEAR",
+    AtmosphereName = "Cahaya Siang Jernih (Realistic Clear)",
 
     Instances = {
         Atmosphere = nil,
@@ -1009,7 +1008,7 @@ local function configureAtmosphere()
         State.Instances.Atmosphere = atmosphere
     end
 
-    local mood = Atmospheres[State.AtmosphereName] or Atmospheres["REALISTIC CLEAR"]
+    local mood = Atmospheres[State.AtmosphereName] or Atmospheres["Cahaya Siang Jernih (Realistic Clear)"]
 
     setProperty(atmosphere, "Density", mood.Density)
     setProperty(atmosphere, "Offset", mood.Offset)
@@ -1035,7 +1034,7 @@ local function configureShaders()
         return
     end
 
-    local mood = Atmospheres[State.AtmosphereName] or Atmospheres["REALISTIC CLEAR"]
+    local mood = Atmospheres[State.AtmosphereName] or Atmospheres["Cahaya Siang Jernih (Realistic Clear)"]
 
     local bloom = State.Instances.Bloom
     if not bloom then
@@ -1639,7 +1638,7 @@ local NostalgiaFX = {}
 do
     local SoundService = game:GetService("SoundService")
 
-    local MOOD_NAME = "NOSTALGIC SORE"
+    local MOOD_NAME = "Sore Syahdu Nostalgia (Nostalgic Sore)"
 
     -- Opsional: asset id gambar radial glow untuk flare yang lebih halus.
     local GLOW_IMAGE = ""
@@ -2257,7 +2256,7 @@ local function applyAtmosphere(name)
     configureLightingBase()
     configureMoodLighting()
 
-    NostalgiaFX.SetEnabled(name == "NOSTALGIC SORE" and Config.Shaders)
+    NostalgiaFX.SetEnabled(name == "Sore Syahdu Nostalgia (Nostalgic Sore)" and Config.Shaders)
 
     return true
 end
@@ -2728,9 +2727,9 @@ initialize()
 -- USAGE
 ----------------------------------------------------------------
 --   _G.UltraRealisticRendererV4.SetQuality(10)
---   _G.UltraRealisticRendererV4.SetAtmosphere("NOSTALGIC SORE")
---   _G.UltraRealisticRendererV4.SetAtmosphere("GOLDEN HOUR")
---   _G.UltraRealisticRendererV4.SetAtmosphere("REALISTIC CLEAR")
+--   _G.UltraRealisticRendererV4.SetAtmosphere("Sore Syahdu Nostalgia (Nostalgic Sore)")
+--   _G.UltraRealisticRendererV4.SetAtmosphere("Sore Senja Keemasan (Golden Hour)")
+--   _G.UltraRealisticRendererV4.SetAtmosphere("Cahaya Siang Jernih (Realistic Clear)")
 --   _G.UltraRealisticRendererV4.RefreshDetails()
 --   _G.UltraRealisticRendererV4.Restore()
 --
