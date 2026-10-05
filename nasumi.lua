@@ -1,5 +1,5 @@
 --[[
-    VISUAL REALISTIS
+    VISUAL REALISTIS (VERSI LENGKAP + LENSA MATAHARI)
     Roblox LocalScript
     Letakkan di: StarterPlayer > StarterPlayerScripts
 
@@ -8,15 +8,18 @@
     1. Suasana (cahaya + atmosfer + warna) yang mudah dipilih
     2. Sore Keemasan: sun rays / god rays 3D di dalam map, glow matahari 3D,
        pantulan cahaya di permukaan, ambient hangat, bayangan lembut
-    3. Hujan: partikel hujan, tanah becek, genangan air
-    4. Malam: setiap "egg" diberi cahaya hangat yang halus
-    5. Kualitas 1-10
+    3. LENSA MATAHARI: saat kamera menghadap matahari muncul inti putih panas,
+       garis cahaya, sinar bintang, bokeh oranye/merah, bayangan gelap
+       kemerahan, selimut hangat, dan blur halus (seperti foto referensi)
+    4. Hujan: partikel hujan, tanah becek, genangan air
+    5. Malam: setiap "egg" diberi cahaya hangat yang halus
+    6. Kualitas 1-10
 
     CATATAN TEKNIS
     --------------
     - LocalScript tidak bisa membuat shader GPU custom. Skrip ini memakai
       pipeline asli Roblox (Realistic lighting, Atmosphere, Bloom, SunRays,
-      ColorCorrection) + objek 3D lokal (Beam, BillboardGui, ParticleEmitter).
+      ColorCorrection, Blur) + objek 3D lokal (Beam, BillboardGui, ParticleEmitter).
     - Semua objek buatan skrip hanya terlihat oleh pemain ini (client only).
     - Tidak mengubah gameplay, data pemain, atau movement.
     - Restore(): mengembalikan semua ke kondisi awal.
@@ -53,6 +56,7 @@ end
 for _, guiName in ipairs({
     ROOT_NAME,
     ROOT_NAME .. "_Flare",
+    ROOT_NAME .. "_Lensa",
     "UltraRealisticRendererV4",
     "UltraRealisticRendererV4_Nostalgia",
 }) do
@@ -202,7 +206,7 @@ local Settings = {
 -- Field opsional:
 --   Shafts     = kekuatan sun rays 3D di map (0 - 1)
 --   SunGlow    = kekuatan glow matahari 3D (0 - 1)
---   Flare      = kekuatan lens flare layar (0 - 1, tipis)
+--   Flare      = kekuatan LENSA MATAHARI di layar (0 - 1)
 --   Sheen      = tambahan pantulan di permukaan
 --   Rain / Wet = hujan dan tanah becek
 --   EggGlow    = kekuatan cahaya hangat di egg (0 - 1)
@@ -270,7 +274,7 @@ local Moods = {
         SunRays = 0.32, SunRaySpread = 0.9,
         Contrast = 0.12, Saturation = 0.08, Tint = Color3.fromRGB(255, 232, 215),
         ShaftColor = Color3.fromRGB(255, 180, 125),
-        Shafts = 0.8, SunGlow = 1.0, Flare = 0.5, Sheen = 0.07,
+        Shafts = 0.8, SunGlow = 1.0, Flare = 0.8, Sheen = 0.07,
         CloudColor = Color3.fromRGB(240, 130, 110), CloudCover = 0.5, CloudDensity = 0.5,
         EggGlow = 0.35,
     },
@@ -1103,7 +1107,7 @@ local function scanAccentLights()
 end
 
 ----------------------------------------------------------------
--- DUNIA 3D: sun rays, glow matahari, lens flare, hujan, genangan
+-- DUNIA 3D: sun rays, glow matahari, hujan, genangan
 ----------------------------------------------------------------
 
 local World = {}
@@ -1119,10 +1123,7 @@ do
     local rng = Random.new(1987)
 
     local anchor, sunPart, sunGui, sunStreak
-    local flareGui
     local sunLayers = {}
-    local ghosts = {}
-    local streaks, spokes, glows = {}, {}, {}
     local shafts = {}
     local puddles = {}
     local rainPart, rainEmitter, rainSound
@@ -1174,27 +1175,6 @@ do
         { size = 0.36, alpha = 0.840, color = Color3.fromRGB(255, 195, 95) },
         { size = 0.18, alpha = 0.650, color = Color3.fromRGB(255, 225, 130) },
         { size = 0.08, alpha = 0.300, color = Color3.fromRGB(255, 246, 200) },
-    }
-
-    local GHOST_DEFS = {
-        { pos = 0.45, size = 0.050, alpha = 0.94, color = Color3.fromRGB(255, 190, 120) },
-        { pos = 0.90, size = 0.100, alpha = 0.96, color = Color3.fromRGB(255, 200, 130) },
-    }
-
-    -- Garis cahaya diagonal panjang (seperti di foto referensi), menembus matahari
-    -- dan lebih panjang ke arah kiri-bawah.
-    local STREAK_DEFS = {
-        { len = 1.40, h = 0.055, alpha = 0.55, off = 0.000 },
-        { len = 1.30, h = 0.010, alpha = 0.18, off = 0.000 },
-        { len = 0.95, h = 0.005, alpha = 0.35, off = 0.075 },
-        { len = 0.65, h = 0.004, alpha = 0.45, off = -0.060 },
-    }
-
-    -- Glow silau di sekitar matahari (ikut posisi matahari di layar)
-    local GLOW_DEFS = {
-        { size = 0.55, alpha = 0.88, color = Color3.fromRGB(255, 150, 70) },
-        { size = 0.28, alpha = 0.75, color = Color3.fromRGB(255, 185, 95) },
-        { size = 0.12, alpha = 0.50, color = Color3.fromRGB(255, 225, 150) },
     }
 
     local function makeInvisiblePart(name)
@@ -1268,120 +1248,6 @@ do
             NumberSequenceKeypoint.new(1, 1),
         })
         streakGradient.Parent = sunStreak
-
-        -- Lens flare tipis (hantu lensa, memang efek kamera di layar)
-        flareGui = Instance.new("ScreenGui")
-        flareGui.Name = ROOT_NAME .. "_Flare"
-        flareGui.ResetOnSpawn = false
-        flareGui.IgnoreGuiInset = true
-        flareGui.DisplayOrder = 4
-        flareGui.Enabled = false
-        flareGui.Parent = PlayerGui
-
-        for _, def in ipairs(GHOST_DEFS) do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.Active = false
-
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(1, 0)
-            corner.Parent = f
-
-            local stroke
-            if def.ring then
-                f.BackgroundTransparency = 1
-                stroke = Instance.new("UIStroke")
-                stroke.Color = def.color
-                stroke.Thickness = 2
-                stroke.Transparency = 1
-                stroke.Parent = f
-            else
-                f.BackgroundColor3 = def.color
-                f.BackgroundTransparency = 1
-            end
-
-            f.Parent = flareGui
-            table.insert(ghosts, { Frame = f, Stroke = stroke, Def = def })
-        end
-
-        -- Garis diagonal: oranye di matahari, memudar ke merah muda di ujung
-        for _, def in ipairs(STREAK_DEFS) do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.Active = false
-            f.AnchorPoint = Vector2.new(0.8, 0.5)
-            f.BackgroundColor3 = Color3.new(1, 1, 1)
-            f.BackgroundTransparency = 1
-
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(1, 0)
-            c.Parent = f
-
-            local g = Instance.new("UIGradient")
-            g.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(232, 130, 170)),
-                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 175, 120)),
-                ColorSequenceKeypoint.new(0.8, Color3.fromRGB(255, 240, 200)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 200, 140)),
-            })
-            g.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.4, 0.7),
-                NumberSequenceKeypoint.new(0.8, 0),
-                NumberSequenceKeypoint.new(0.9, 0.5),
-                NumberSequenceKeypoint.new(1, 1),
-            })
-            g.Parent = f
-
-            f.Parent = flareGui
-            table.insert(streaks, { Frame = f, Def = def })
-        end
-
-        -- Sinar bintang tipis di sekitar matahari
-        local SPOKE_COUNT = 14
-        for i = 1, SPOKE_COUNT do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.Active = false
-            f.AnchorPoint = Vector2.new(0, 0.5)
-            f.BackgroundColor3 = Color3.fromRGB(255, 214, 150)
-            f.BackgroundTransparency = 1
-
-            local g = Instance.new("UIGradient")
-            g.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.3),
-                NumberSequenceKeypoint.new(0.35, 0.75),
-                NumberSequenceKeypoint.new(1, 1),
-            })
-            g.Parent = f
-
-            f.Parent = flareGui
-            table.insert(spokes, {
-                Frame = f,
-                Def = {
-                    angle = (i - 1) * 360 / SPOKE_COUNT + ((i * 53) % 17 - 8),
-                    len = 0.12 + ((i * 29) % 11) / 11 * 0.30,
-                    alpha = 0.35 + ((i * 13) % 7) / 7 * 0.35,
-                },
-            })
-        end
-
-        for _, def in ipairs(GLOW_DEFS) do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.Active = false
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.BackgroundColor3 = def.color
-            f.BackgroundTransparency = 1
-
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(1, 0)
-            c.Parent = f
-
-            f.Parent = flareGui
-            table.insert(glows, { Frame = f, Def = def })
-        end
 
         -- Sun rays 3D (Beam)
         for _ = 1, MAX_SHAFTS do
@@ -1839,66 +1705,13 @@ do
         end
 
         ------------------------------------------------------------
-        -- Lens flare tipis
-        ------------------------------------------------------------
-        local flareFacing = clamp01((cam.CFrame.LookVector:Dot(sunDir) - 0.3) / 0.5)
-        local flareStrength = (mood.Flare or 0) * elevationVis * (0.45 + 0.55 * sunVis) * flareFacing
-        if screenPoint.Z <= 0 then
-            flareStrength = 0
-        end
-        flareGui.Enabled = flareStrength > 0.01
-
-        if flareGui.Enabled then
-            local size = cam.ViewportSize
-            local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
-            local axis = (size / 2) - sunPos
-            local base = math.min(size.X, size.Y)
-            local now = os.clock()
-
-            local angle = -37 + (sunPos.X - size.X / 2) / size.X * 10
-            local rad = math.rad(angle)
-            local perp = Vector2.new(-math.sin(rad), math.cos(rad))
-
-            for _, streak in ipairs(streaks) do
-                local p = sunPos + perp * base * streak.Def.off
-                streak.Frame.Position = UDim2.fromOffset(p.X, p.Y)
-                streak.Frame.Size = UDim2.fromOffset(size.X * streak.Def.len, math.max(2, base * streak.Def.h))
-                streak.Frame.Rotation = angle
-                streak.Frame.BackgroundTransparency = 1 - (1 - streak.Def.alpha) * flareStrength
-            end
-
-            for _, g in ipairs(glows) do
-                local d = base * g.Def.size
-                g.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
-                g.Frame.Size = UDim2.fromOffset(d, d)
-                g.Frame.BackgroundTransparency = 1 - (1 - g.Def.alpha) * flareStrength
-            end
-
-            for i, spoke in ipairs(spokes) do
-                local twinkle = 0.85 + 0.15 * math.sin(now * 1.7 + i * 2.1)
-                spoke.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
-                spoke.Frame.Size = UDim2.fromOffset(base * spoke.Def.len * (0.7 + 0.3 * flareStrength), math.max(1, base * 0.0035))
-                spoke.Frame.Rotation = spoke.Def.angle
-                spoke.Frame.BackgroundTransparency = 1 - spoke.Def.alpha * flareStrength * twinkle
-            end
-
-            for _, ghost in ipairs(ghosts) do
-                local p = sunPos + axis * ghost.Def.pos
-                local d = base * ghost.Def.size
-                ghost.Frame.Position = UDim2.fromOffset(p.X, p.Y)
-                ghost.Frame.Size = UDim2.fromOffset(d, d)
-                ghost.Frame.BackgroundTransparency = 1 - (1 - ghost.Def.alpha) * flareStrength
-            end
-        end
-
-        ------------------------------------------------------------
-        -- Efek kamera: bloom / sun rays / glare naik tipis saat menghadap matahari
+        -- Efek kamera: bloom / sun rays / glare naik saat menghadap matahari
         ------------------------------------------------------------
         local sens = elevationVis * sunVis * sunSensitive
 
         local bloom = State.Instances.Bloom
         if bloom and bloom.Parent then
-            bloom.Intensity = State.Base.Bloom + 0.10 * f3 * sens
+            bloom.Intensity = State.Base.Bloom + 0.45 * f3 * sens
         end
 
         local rays = State.Instances.SunRays
@@ -1910,7 +1723,7 @@ do
         if grade and grade.Parent then
             grade.TintColor = State.Base.Tint:Lerp(Color3.fromRGB(255, 205, 150), 0.25 * f2 * sens)
             grade.Saturation = State.Base.Saturation + 0.04 * f2 * sens
-            grade.Brightness = 0.015 * f3 * sens
+            grade.Brightness = 0.06 * f3 * sens
         end
 
         local atmosphere = State.Instances.Atmosphere
@@ -2009,11 +1822,6 @@ do
             rainSound = nil
         end
 
-        if flareGui then
-            flareGui:Destroy()
-            flareGui = nil
-        end
-
         for _, puddle in ipairs(puddles) do
             puddle.A:Destroy()
             puddle.B:Destroy()
@@ -2022,10 +1830,6 @@ do
 
         table.clear(shafts)
         table.clear(sunLayers)
-        table.clear(ghosts)
-        table.clear(streaks)
-        table.clear(spokes)
-        table.clear(glows)
 
         WorldFolder:ClearAllChildren()
 
@@ -2033,6 +1837,296 @@ do
         bodyLight = nil
         built = false
         mood = nil
+    end
+end
+
+----------------------------------------------------------------
+-- LENSA MATAHARI
+-- Pantulan cahaya di layar saat kamera menghadap matahari.
+----------------------------------------------------------------
+
+local SunLens = {}
+
+do
+    local gui, blur, wash
+    local haze, bokeh, spokes, streaks, edges = {}, {}, {}, {}, {}
+    local level = 0
+    local built = false
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.RespectCanCollide = false
+
+    -- alpha = transparansi akhir saat kekuatan penuh (makin kecil makin pekat)
+    local HAZE_DEFS = {
+        { size = 2.2,  alpha = 0.93, color = Color3.fromRGB(255, 120, 30) },
+        { size = 1.5,  alpha = 0.88, color = Color3.fromRGB(255, 150, 40) },
+        { size = 1.0,  alpha = 0.80, color = Color3.fromRGB(255, 180, 60) },
+        { size = 0.62, alpha = 0.66, color = Color3.fromRGB(255, 210, 100) },
+        { size = 0.34, alpha = 0.42, color = Color3.fromRGB(255, 238, 170) },
+        { size = 0.15, alpha = 0.10, color = Color3.fromRGB(255, 252, 235) },
+    }
+
+    -- t = jarak di sepanjang garis matahari -> bawah layar, off = geser samping
+    local BOKEH_DEFS = {
+        { t = 0.12, off =  0.10, size = 0.040, alpha = 0.60, color = Color3.fromRGB(255, 230, 130) },
+        { t = 0.30, off =  0.02, size = 0.060, alpha = 0.55, color = Color3.fromRGB(255, 215, 90) },
+        { t = 0.55, off = -0.05, size = 0.030, alpha = 0.60, color = Color3.fromRGB(255, 190, 60) },
+        { t = 0.85, off =  0.06, size = 0.110, alpha = 0.70, color = Color3.fromRGB(255, 160, 40) },
+        { t = 1.15, off = -0.10, size = 0.060, alpha = 0.65, color = Color3.fromRGB(255, 120, 30) },
+        { t = 1.40, off =  0.04, size = 0.140, alpha = 0.75, color = Color3.fromRGB(230, 70, 20) },
+        { t = 1.70, off = -0.02, size = 0.045, alpha = 0.55, color = Color3.fromRGB(255, 60, 30) },
+        { t = 2.00, off =  0.08, size = 0.090, alpha = 0.70, color = Color3.fromRGB(200, 50, 20) },
+    }
+
+    local function circle(color)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.Active = false
+        f.AnchorPoint = Vector2.new(0.5, 0.5)
+        f.BackgroundColor3 = color
+        f.BackgroundTransparency = 1
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(1, 0)
+        c.Parent = f
+        f.Parent = gui
+        return f
+    end
+
+    local function build()
+        if built then
+            return
+        end
+        built = true
+
+        gui = Instance.new("ScreenGui")
+        gui.Name = ROOT_NAME .. "_Lensa"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 5
+        gui.Enabled = false
+        gui.Parent = PlayerGui
+
+        -- Selimut hangat menutupi seluruh layar
+        wash = Instance.new("Frame")
+        wash.BorderSizePixel = 0
+        wash.Active = false
+        wash.Size = UDim2.fromScale(1, 1)
+        wash.BackgroundColor3 = Color3.fromRGB(255, 135, 35)
+        wash.BackgroundTransparency = 1
+        wash.Parent = gui
+
+        for _, def in ipairs(HAZE_DEFS) do
+            table.insert(haze, { Frame = circle(def.color), Def = def })
+        end
+
+        -- Garis cahaya panjang (lebar oranye + tipis putih-kuning)
+        local streakDefs = {
+            { w = 0.20, len = 2.1, alpha = 0.72, color = Color3.fromRGB(255, 160, 40) },
+            { w = 0.075, len = 1.7, alpha = 0.30, color = Color3.fromRGB(255, 225, 120) },
+            { w = 0.03, len = 1.3, alpha = 0.05, color = Color3.fromRGB(255, 250, 225) },
+        }
+        for _, def in ipairs(streakDefs) do
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0
+            f.Active = false
+            f.AnchorPoint = Vector2.new(0.5, 0.5)
+            f.BackgroundColor3 = def.color
+            f.BackgroundTransparency = 1
+
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(1, 0)
+            c.Parent = f
+
+            local g = Instance.new("UIGradient")
+            g.Rotation = 90
+            g.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.5, 0),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            g.Parent = f
+
+            f.Parent = gui
+            table.insert(streaks, { Frame = f, Def = def })
+        end
+
+        -- Sinar bintang di sekitar inti matahari
+        local SPOKES = 18
+        for i = 1, SPOKES do
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0
+            f.Active = false
+            f.AnchorPoint = Vector2.new(0, 0.5)
+            f.BackgroundColor3 = Color3.fromRGB(255, 215, 130)
+            f.BackgroundTransparency = 1
+
+            local g = Instance.new("UIGradient")
+            g.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.2),
+                NumberSequenceKeypoint.new(0.4, 0.7),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            g.Parent = f
+
+            f.Parent = gui
+            table.insert(spokes, {
+                Frame = f,
+                Angle = (i - 1) * 360 / SPOKES + ((i * 53) % 17 - 8),
+                Len = 0.25 + ((i * 29) % 11) / 11 * 0.55,
+                Alpha = 0.30 + ((i * 13) % 7) / 7 * 0.35,
+            })
+        end
+
+        for index, def in ipairs(BOKEH_DEFS) do
+            table.insert(bokeh, { Frame = circle(def.color), Def = def, Seed = index * 1.7 })
+        end
+
+        -- Bayangan gelap kemerahan di sisi layar (seperti di foto)
+        local edgeDefs = {
+            { color = Color3.fromRGB(70, 18, 4), alpha = 0.30, w = 0.95, h = 1.6, y = 0.50 },
+            { color = Color3.fromRGB(200, 55, 12), alpha = 0.55, w = 0.70, h = 0.75, y = 0.28 },
+        }
+        for _, def in ipairs(edgeDefs) do
+            local f = circle(def.color)
+            table.insert(edges, { Frame = f, Def = def })
+        end
+
+        blur = Instance.new("BlurEffect")
+        blur.Name = "VR_BlurLensa"
+        blur.Size = 0
+        blur.Parent = Lighting
+        table.insert(Original.Created, blur)
+    end
+
+    local function fade(frame, alpha, strength)
+        frame.BackgroundTransparency = 1 - (1 - alpha) * strength
+    end
+
+    function SunLens.Update(dt)
+        build()
+
+        local mood = State.Mood
+        local cam = Workspace.CurrentCamera
+        if not mood or not cam then
+            return
+        end
+
+        local sunDir = Lighting:GetSunDirection()
+        local cf = cam.CFrame
+        local camPos = cf.Position
+
+        local target = 0
+        local flare = mood.Flare or 0
+        local screenPoint = cam:WorldToViewportPoint(camPos + sunDir * 1000)
+        local elevation = clamp01((sunDir.Y + 0.05) / 0.12)
+
+        if flare > 0 and elevation > 0 and screenPoint.Z > 0 then
+            local aim = clamp01((cf.LookVector:Dot(sunDir) - 0.5) / 0.45)
+            aim = aim * aim * (3 - 2 * aim)
+
+            local list = { WorldFolder }
+            if Player.Character then
+                table.insert(list, Player.Character)
+            end
+            rayParams.FilterDescendantsInstances = list
+
+            -- Daun/pohon menutup sebagian matahari: cahaya tetap tembus sebagian
+            local offsets = {
+                Vector3.zero, cf.RightVector * 0.05, -cf.RightVector * 0.05,
+                cf.UpVector * 0.05, -cf.UpVector * 0.05,
+            }
+            local open = 0
+            for _, offset in ipairs(offsets) do
+                if not Workspace:Raycast(camPos, (sunDir + offset).Unit * 3000, rayParams) then
+                    open += 1
+                end
+            end
+
+            target = aim * (0.3 + 0.7 * open / #offsets) * elevation * flare
+        end
+
+        level = lerp(level, target, math.min(1, dt * 5))
+        local s = clamp01(level * State.Scale + level * (1 - State.Scale) * 0.5)
+
+        gui.Enabled = s > 0.01
+        blur.Size = 7 * s
+        if not gui.Enabled then
+            return
+        end
+
+        local size = cam.ViewportSize
+        local base = math.min(size.X, size.Y)
+        local center = size / 2
+        local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
+        local now = os.clock()
+
+        fade(wash, 0.62, s)
+
+        for _, h in ipairs(haze) do
+            local d = base * h.Def.size
+            h.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+            h.Frame.Size = UDim2.fromOffset(d, d)
+            fade(h.Frame, h.Def.alpha, s)
+        end
+
+        -- Garis cahaya sedikit miring, mengikuti posisi matahari di layar
+        local tilt = 14 + (sunPos.X - center.X) / size.X * 12
+        for _, st in ipairs(streaks) do
+            local pulse = 0.94 + 0.06 * math.sin(now * 1.3)
+            st.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+            st.Frame.Size = UDim2.fromOffset(base * st.Def.w * (0.6 + 0.4 * s), base * st.Def.len * pulse)
+            st.Frame.Rotation = tilt
+            fade(st.Frame, st.Def.alpha, s)
+        end
+
+        for i, sp in ipairs(spokes) do
+            local twinkle = 0.85 + 0.15 * math.sin(now * 1.7 + i * 2.1)
+            sp.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+            sp.Frame.Size = UDim2.fromOffset(base * sp.Len * (0.6 + 0.4 * s), math.max(1, base * 0.004))
+            sp.Frame.Rotation = sp.Angle
+            sp.Frame.BackgroundTransparency = 1 - sp.Alpha * s * twinkle
+        end
+
+        -- Bokeh: berderet dari matahari ke arah bawah/tengah layar, bergoyang pelan
+        local axis = center - sunPos
+        local dir = axis.Magnitude > base * 0.1 and axis.Unit or Vector2.new(-0.3, 1).Unit
+        local perp = Vector2.new(-dir.Y, dir.X)
+
+        for _, b in ipairs(bokeh) do
+            local sway = Vector2.new(math.sin(now * 0.6 + b.Seed), math.cos(now * 0.5 + b.Seed)) * base * 0.008
+            local p = sunPos + dir * base * 0.9 * b.Def.t + perp * base * b.Def.off + sway
+            local d = base * b.Def.size * (0.85 + 0.15 * s)
+            b.Frame.Position = UDim2.fromOffset(p.X, p.Y)
+            b.Frame.Size = UDim2.fromOffset(d, d)
+            fade(b.Frame, b.Def.alpha, s)
+        end
+
+        -- Bayangan tepi: di sisi berlawanan dari matahari
+        local rightSide = sunPos.X < center.X
+        for i, e in ipairs(edges) do
+            local x = rightSide and size.X * (1.0 - 0.02 * i) or size.X * (0.0 + 0.02 * i)
+            e.Frame.Position = UDim2.fromOffset(x, size.Y * e.Def.y)
+            e.Frame.Size = UDim2.fromOffset(base * e.Def.w, base * e.Def.h)
+            fade(e.Frame, e.Def.alpha, s)
+        end
+    end
+
+    function SunLens.Destroy()
+        if gui then
+            gui:Destroy()
+            gui = nil
+        end
+        if blur then
+            blur:Destroy()
+            blur = nil
+        end
+        table.clear(haze)
+        table.clear(bokeh)
+        table.clear(spokes)
+        table.clear(streaks)
+        table.clear(edges)
+        built = false
+        level = 0
     end
 end
 
@@ -2172,6 +2266,7 @@ local function restoreOriginal()
     end
     table.clear(Eggs.Records)
 
+    SunLens.Destroy()
     World.Destroy()
 
     for _, instance in ipairs(Original.Created) do
@@ -2477,6 +2572,7 @@ table.insert(State.Connections, RunService.RenderStepped:Connect(function(dt)
     end
 
     World.Update(dt)
+    SunLens.Update(dt)
 
     fpsAccumulator += dt
     fpsFrames += 1
