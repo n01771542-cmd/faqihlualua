@@ -1841,55 +1841,140 @@ do
 end
 
 ----------------------------------------------------------------
--- LENSA MATAHARI
--- Pantulan cahaya di layar saat kamera menghadap matahari.
+-- LENSA MATAHARI (v2)
+-- Meniru 3 foto referensi:
+--  * inti putih panas + balok cahaya miring "\" (foto 1, 2, 3)
+--  * sinar bintang tipis dan halo oranye lembut (foto 3)
+--  * ghost merah-oranye kiri & kanan dengan tepi kehijauan (foto 3)
+--  * ghost kecil + cincin kuning di bawah-kiri matahari (foto 3)
+--  * bokeh oranye/kuning/merah di bawah matahari (foto 1, 2)
+--  * bayangan gelap kemerahan di tepi + cincin bokeh di pinggirnya (foto 1, 2)
+--  * langit memutih, selimut hangat, vignette gelap, blur lembut
 ----------------------------------------------------------------
 
 local SunLens = {}
 
 do
-    local gui, blur, wash
-    local haze, bokeh, spokes, streaks, edges = {}, {}, {}, {}, {}
+    local LENS_INTENSITY = 1.0   -- naikkan (mis. 1.3) kalau mau lebih kuat
+    local TILT = -22             -- kemiringan balok cahaya; negatif = "\" seperti foto
+    local rgb = Color3.fromRGB
+
+    local gui, blur
+    local rig, beam
+    local ghostL, ghostR
+    local occluder, occGradient, rimGlow
+    local layers, spots = {}, {}
     local level = 0
     local built = false
+    local sideCache = 0
+
     local rayParams = RaycastParams.new()
     rayParams.FilterType = Enum.RaycastFilterType.Exclude
     rayParams.RespectCanCollide = false
 
-    -- alpha = transparansi akhir saat kekuatan penuh (makin kecil makin pekat)
-    local HAZE_DEFS = {
-        { size = 2.2,  alpha = 0.93, color = Color3.fromRGB(255, 120, 30) },
-        { size = 1.5,  alpha = 0.88, color = Color3.fromRGB(255, 150, 40) },
-        { size = 1.0,  alpha = 0.80, color = Color3.fromRGB(255, 180, 60) },
-        { size = 0.62, alpha = 0.66, color = Color3.fromRGB(255, 210, 100) },
-        { size = 0.34, alpha = 0.42, color = Color3.fromRGB(255, 238, 170) },
-        { size = 0.15, alpha = 0.10, color = Color3.fromRGB(255, 252, 235) },
-    }
+    -- Jumlah lapisan ikut kualitas (makin rendah makin ringan)
+    local function steps(n)
+        return math.max(4, math.floor(n * (0.55 + 0.45 * State.Scale) + 0.5))
+    end
 
-    -- t = jarak di sepanjang garis matahari -> bawah layar, off = geser samping
-    local BOKEH_DEFS = {
-        { t = 0.12, off =  0.10, size = 0.040, alpha = 0.60, color = Color3.fromRGB(255, 230, 130) },
-        { t = 0.30, off =  0.02, size = 0.060, alpha = 0.55, color = Color3.fromRGB(255, 215, 90) },
-        { t = 0.55, off = -0.05, size = 0.030, alpha = 0.60, color = Color3.fromRGB(255, 190, 60) },
-        { t = 0.85, off =  0.06, size = 0.110, alpha = 0.70, color = Color3.fromRGB(255, 160, 40) },
-        { t = 1.15, off = -0.10, size = 0.060, alpha = 0.65, color = Color3.fromRGB(255, 120, 30) },
-        { t = 1.40, off =  0.04, size = 0.140, alpha = 0.75, color = Color3.fromRGB(230, 70, 20) },
-        { t = 1.70, off = -0.02, size = 0.045, alpha = 0.55, color = Color3.fromRGB(255, 60, 30) },
-        { t = 2.00, off =  0.08, size = 0.090, alpha = 0.70, color = Color3.fromRGB(200, 50, 20) },
-    }
+    -- Setiap lapisan: opacity penuh (Op) dan batas kemunculan (Gate 0-1)
+    local function register(object, property, opacity, gate)
+        object[property] = 1
+        table.insert(layers, { Obj = object, Prop = property, Op = opacity, Gate = gate or 0, Last = -1 })
+    end
 
-    local function circle(color)
+    local function newFrame(parent, color)
         local f = Instance.new("Frame")
         f.BorderSizePixel = 0
         f.Active = false
         f.AnchorPoint = Vector2.new(0.5, 0.5)
-        f.BackgroundColor3 = color
+        f.Position = UDim2.fromScale(0.5, 0.5)
+        f.BackgroundColor3 = color or Color3.new(1, 1, 1)
         f.BackgroundTransparency = 1
-        local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(1, 0)
-        c.Parent = f
-        f.Parent = gui
+        f.Parent = parent
         return f
+    end
+
+    local function round(frame, scale)
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(scale or 1, 0)
+        c.Parent = frame
+    end
+
+    local function seq(...)
+        local points = {}
+        for _, p in ipairs({ ... }) do
+            table.insert(points, NumberSequenceKeypoint.new(p[1], p[2]))
+        end
+        return NumberSequence.new(points)
+    end
+
+    local function gradient(frame, rotation, colors, transparency)
+        local g = Instance.new("UIGradient")
+        g.Rotation = rotation
+        if colors then
+            g.Color = colors
+        end
+        if transparency then
+            g.Transparency = transparency
+        end
+        g.Parent = frame
+        return g
+    end
+
+    -- Tumpukan elips berlapis = gradasi radial lembut (tanpa shader)
+    local function softStack(parent, cx, cy, w, h, rot, outer, inner, count, total, gate, radius, power)
+        count = steps(count)
+        local per = 1 - (1 - total) ^ (1 / count)
+
+        for i = 0, count - 1 do
+            local k = count > 1 and i / (count - 1) or 0
+            local scale = (1 - i / count) ^ (power or 1.5)
+
+            local f = newFrame(parent, outer:Lerp(inner, k))
+            f.Position = UDim2.fromScale(cx, cy)
+            f.Size = UDim2.fromScale(w * scale, h * scale)
+            f.Rotation = rot
+            round(f, radius)
+            register(f, "BackgroundTransparency", per, gate)
+        end
+    end
+
+    -- Balok cahaya panjang: pinggir lebar oranye, tengah sempit kuning-putih,
+    -- ujung atas/bawah memudar
+    local function column(parent, w, len, outer, inner, count, total, gate)
+        count = steps(count)
+        local per = 1 - (1 - total) ^ (1 / count)
+
+        for i = 0, count - 1 do
+            local k = count > 1 and i / (count - 1) or 0
+            local scale = (1 - i / count) ^ 1.25
+
+            local f = newFrame(parent, outer:Lerp(inner, k))
+            f.Size = UDim2.fromScale(w * scale, len * (0.55 + 0.45 * scale))
+            round(f, 1)
+            gradient(f, 90, nil, seq({ 0, 1 }, { 0.26, 0.55 }, { 0.5, 0 }, { 0.74, 0.55 }, { 1, 1 }))
+            register(f, "BackgroundTransparency", per, gate)
+        end
+    end
+
+    -- Lingkaran bokeh / ghost yang posisinya dihitung tiap frame
+    local function addSpot(def)
+        local f = newFrame(gui, def.Color)
+        round(f, 1)
+        register(f, "BackgroundTransparency", def.Op, def.Gate)
+
+        if def.Rim then
+            local stroke = Instance.new("UIStroke")
+            stroke.Color = def.Rim
+            stroke.Thickness = 2
+            stroke.Parent = f
+            register(stroke, "Transparency", def.RimOp or 0.6, def.Gate)
+        end
+
+        def.F = f
+        def.Seed = #spots * 1.37 + 0.5
+        table.insert(spots, def)
     end
 
     local function build()
@@ -1902,95 +1987,193 @@ do
         gui.Name = ROOT_NAME .. "_Lensa"
         gui.ResetOnSpawn = false
         gui.IgnoreGuiInset = true
-        gui.DisplayOrder = 5
+        gui.DisplayOrder = -1
         gui.Enabled = false
         gui.Parent = PlayerGui
 
-        -- Selimut hangat menutupi seluruh layar
-        wash = Instance.new("Frame")
-        wash.BorderSizePixel = 0
-        wash.Active = false
+        ------------------------------------------------------------
+        -- 1. Selimut hangat: atas kuning pucat, bawah oranye tua
+        ------------------------------------------------------------
+        local wash = newFrame(gui)
+        wash.AnchorPoint = Vector2.new(0, 0)
+        wash.Position = UDim2.fromScale(0, 0)
         wash.Size = UDim2.fromScale(1, 1)
-        wash.BackgroundColor3 = Color3.fromRGB(255, 135, 35)
-        wash.BackgroundTransparency = 1
-        wash.Parent = gui
+        gradient(wash, 90,
+            ColorSequence.new(rgb(255, 196, 90), rgb(190, 80, 16)),
+            seq({ 0, 0.1 }, { 1, 0 }))
+        register(wash, "BackgroundTransparency", 0.58, 0)
 
-        for _, def in ipairs(HAZE_DEFS) do
-            table.insert(haze, { Frame = circle(def.color), Def = def })
+        -- Langit memutih di bagian atas (foto 1 & 2)
+        local sky = newFrame(gui, rgb(255, 242, 175))
+        sky.AnchorPoint = Vector2.new(0, 0)
+        sky.Position = UDim2.fromScale(0, 0)
+        sky.Size = UDim2.fromScale(1, 0.6)
+        gradient(sky, 90, nil, seq({ 0, 0.2 }, { 1, 1 }))
+        register(sky, "BackgroundTransparency", 0.75, 0.25)
+
+        ------------------------------------------------------------
+        -- 2. Ghost merah-oranye kiri & kanan (foto 3)
+        ------------------------------------------------------------
+        ghostL = newFrame(gui)
+        ghostL.Rotation = 18
+        softStack(ghostL, 0.5, 0.5, 1, 1, 0, rgb(150, 45, 10), rgb(225, 85, 20), 9, 0.62, 0.25, 0.5, 1.2)
+
+        local fringeL = newFrame(ghostL)
+        fringeL.Size = UDim2.fromScale(0.98, 0.98)
+        round(fringeL, 0.5)
+        local strokeL = Instance.new("UIStroke")
+        strokeL.Color = rgb(170, 165, 40)
+        strokeL.Thickness = 3
+        strokeL.Parent = fringeL
+        register(strokeL, "Transparency", 0.35, 0.25)
+
+        ghostR = newFrame(gui)
+        ghostR.Rotation = -6
+        softStack(ghostR, 0.5, 0.5, 1, 1, 0, rgb(150, 35, 8), rgb(215, 60, 12), 9, 0.7, 0.25, 0.3, 1.2)
+
+        local fringeR = newFrame(ghostR)
+        fringeR.Size = UDim2.fromScale(0.98, 0.98)
+        round(fringeR, 0.3)
+        local strokeR = Instance.new("UIStroke")
+        strokeR.Color = rgb(150, 160, 40)
+        strokeR.Thickness = 3
+        strokeR.Parent = fringeR
+        register(strokeR, "Transparency", 0.35, 0.25)
+
+        ------------------------------------------------------------
+        -- 3. Bayangan gelap kemerahan di tepi + cahaya pinggirnya (foto 1 & 2)
+        ------------------------------------------------------------
+        occluder = newFrame(gui)
+        occluder.Size = UDim2.fromScale(0.34, 1)
+
+        local body = newFrame(occluder, rgb(58, 16, 4))
+        body.AnchorPoint = Vector2.new(0, 0)
+        body.Position = UDim2.fromScale(0, 0)
+        body.Size = UDim2.fromScale(1, 1)
+        occGradient = gradient(body, 0, nil, seq({ 0, 1 }, { 0.22, 0.45 }, { 0.5, 0.12 }, { 1, 0.1 }))
+        register(body, "BackgroundTransparency", 0.8, 0.45)
+
+        rimGlow = newFrame(occluder, rgb(255, 105, 20))
+        rimGlow.Size = UDim2.fromScale(0.36, 1)
+        gradient(rimGlow, 0, nil, seq({ 0, 1 }, { 0.5, 0.2 }, { 1, 1 }))
+        register(rimGlow, "BackgroundTransparency", 0.72, 0.45)
+
+        ------------------------------------------------------------
+        -- 4. Rig matahari (ikut posisi matahari di layar)
+        ------------------------------------------------------------
+        rig = newFrame(gui)
+
+        -- Halo oranye besar lalu halo kuning
+        softStack(rig, 0.5, 0.5, 2.6, 2.6, 0, rgb(225, 85, 15), rgb(255, 170, 40), 18, 0.78, 0, 1, 1.5)
+        softStack(rig, 0.5, 0.5, 1.15, 1.15, 0, rgb(255, 160, 35), rgb(255, 225, 120), 14, 0.85, 0, 1, 1.5)
+
+        -- Langit putih menyilaukan di sekitar matahari
+        softStack(rig, 0.5, 0.5, 1.0, 1.0, 0, rgb(255, 235, 170), rgb(255, 255, 245), 10, 0.55, 0.2, 1, 1.5)
+
+        -- Sinar bintang (mutlak, tidak ikut miring balok)
+        local rs = Random.new(41)
+        for i = 1, 28 do
+            local wide = i <= 10
+
+            local f = newFrame(rig, wide and rgb(255, 190, 70) or rgb(255, 235, 160))
+            f.Size = UDim2.fromScale(
+                wide and rs:NextNumber(1.0, 1.8) or rs:NextNumber(0.5, 1.5),
+                wide and 0.022 or 0.004
+            )
+            f.Rotation = wide and (i - 1) * 18 or (i * 37) % 180
+            round(f, 1)
+            gradient(f, 0, nil, seq({ 0, 1 }, { 0.35, 0.7 }, { 0.5, 0.15 }, { 0.65, 0.7 }, { 1, 1 }))
+            register(f, "BackgroundTransparency", wide and 0.18 or 0.5, 0.1)
         end
 
-        -- Garis cahaya panjang (lebar oranye + tipis putih-kuning)
-        local streakDefs = {
-            { w = 0.20, len = 2.1, alpha = 0.72, color = Color3.fromRGB(255, 160, 40) },
-            { w = 0.075, len = 1.7, alpha = 0.30, color = Color3.fromRGB(255, 225, 120) },
-            { w = 0.03, len = 1.3, alpha = 0.05, color = Color3.fromRGB(255, 250, 225) },
+        -- Balok cahaya miring "\" + inti putih
+        beam = newFrame(rig)
+        beam.Size = UDim2.fromScale(1, 1)
+
+        column(beam, 0.40, 2.8, rgb(255, 125, 15), rgb(255, 215, 80), 12, 0.9, 0.05)
+        column(beam, 0.14, 2.2, rgb(255, 200, 60), rgb(255, 245, 190), 8, 0.85, 0.05)
+        column(beam, 0.012, 2.5, rgb(255, 250, 230), rgb(255, 255, 250), 4, 0.7, 0.1)
+
+        softStack(beam, 0.5, 0.5, 0.20, 0.52, 0, rgb(255, 215, 90), rgb(255, 255, 248), 9, 0.99, 0, 1, 1.2)
+
+        -- Serpihan tak beraturan di tepi inti (foto 3)
+        local bits = {
+            { -0.045, -0.12, 0.035 }, { 0.020, 0.02, 0.050 }, { 0.050, -0.20, 0.030 },
+            { -0.050, 0.08, 0.040 }, { 0.030, 0.18, 0.040 }, { 0.060, 0.10, 0.030 },
+            { -0.030, -0.22, 0.025 },
         }
-        for _, def in ipairs(streakDefs) do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.Active = false
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.BackgroundColor3 = def.color
-            f.BackgroundTransparency = 1
-
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(1, 0)
-            c.Parent = f
-
-            local g = Instance.new("UIGradient")
-            g.Rotation = 90
-            g.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.5, 0),
-                NumberSequenceKeypoint.new(1, 1),
-            })
-            g.Parent = f
-
-            f.Parent = gui
-            table.insert(streaks, { Frame = f, Def = def })
+        for _, b in ipairs(bits) do
+            local f = newFrame(beam, rgb(255, 252, 235))
+            f.Position = UDim2.fromScale(0.5 + b[1], 0.5 + b[2])
+            f.Size = UDim2.fromScale(b[3], b[3] * 1.4)
+            round(f, 1)
+            register(f, "BackgroundTransparency", 0.55, 0)
         end
 
-        -- Sinar bintang di sekitar inti matahari
-        local SPOKES = 18
-        for i = 1, SPOKES do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.Active = false
-            f.AnchorPoint = Vector2.new(0, 0.5)
-            f.BackgroundColor3 = Color3.fromRGB(255, 215, 130)
-            f.BackgroundTransparency = 1
-
-            local g = Instance.new("UIGradient")
-            g.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.2),
-                NumberSequenceKeypoint.new(0.4, 0.7),
-                NumberSequenceKeypoint.new(1, 1),
-            })
-            g.Parent = f
-
-            f.Parent = gui
-            table.insert(spokes, {
-                Frame = f,
-                Angle = (i - 1) * 360 / SPOKES + ((i * 53) % 17 - 8),
-                Len = 0.25 + ((i * 29) % 11) / 11 * 0.55,
-                Alpha = 0.30 + ((i * 13) % 7) / 7 * 0.35,
-            })
-        end
-
-        for index, def in ipairs(BOKEH_DEFS) do
-            table.insert(bokeh, { Frame = circle(def.color), Def = def, Seed = index * 1.7 })
-        end
-
-        -- Bayangan gelap kemerahan di sisi layar (seperti di foto)
-        local edgeDefs = {
-            { color = Color3.fromRGB(70, 18, 4), alpha = 0.30, w = 0.95, h = 1.6, y = 0.50 },
-            { color = Color3.fromRGB(200, 55, 12), alpha = 0.55, w = 0.70, h = 0.75, y = 0.28 },
+        ------------------------------------------------------------
+        -- 5. Ghost kecil + bokeh (sejajar garis matahari -> tengah layar)
+        ------------------------------------------------------------
+        local axisSpots = {
+            -- ghost kecil (foto 3)
+            { D = 0.19, Off = 0.000, Size = 0.065, Color = rgb(255, 214, 70), Op = 0.62, Rim = rgb(255, 242, 160), RimOp = 0.85, Gate = 0.2 },
+            { D = 0.24, Off = 0.015, Size = 0.018, Color = rgb(200, 140, 210), Op = 0.45, Gate = 0.25 },
+            { D = 0.37, Off = -0.005, Size = 0.050, Color = rgb(255, 150, 30), Op = 0.50, Gate = 0.25 },
+            { D = 0.53, Off = 0.030, Size = 0.060, Color = rgb(235, 60, 20), Op = 0.60, Gate = 0.3 },
+            -- bokeh oranye lonjong (foto 1)
+            { D = 0.30, Off = -0.12, Size = 0.060, Asp = 2.0, Rot = 12, Color = rgb(255, 190, 50), Op = 0.35, Gate = 0.4 },
+            { D = 0.36, Off = -0.02, Size = 0.080, Asp = 1.6, Rot = 10, Color = rgb(255, 185, 40), Op = 0.45, Gate = 0.4 },
+            { D = 0.42, Off = 0.06, Size = 0.110, Asp = 1.4, Rot = 8, Color = rgb(255, 200, 60), Op = 0.40, Gate = 0.45 },
+            { D = 0.50, Off = -0.10, Size = 0.090, Color = rgb(255, 170, 40), Op = 0.50, Gate = 0.45 },
+            { D = 0.55, Off = 0.12, Size = 0.045, Color = rgb(255, 200, 60), Op = 0.50, Gate = 0.45 },
+            -- bokeh merah bawah (foto 2)
+            { D = 0.62, Off = -0.16, Size = 0.070, Color = rgb(240, 50, 20), Op = 0.70, Rim = rgb(255, 110, 60), RimOp = 0.5, Gate = 0.5 },
+            { D = 0.60, Off = 0.05, Size = 0.065, Color = rgb(240, 45, 20), Op = 0.70, Rim = rgb(255, 110, 60), RimOp = 0.5, Gate = 0.5 },
+            { D = 0.66, Off = -0.04, Size = 0.030, Color = rgb(240, 60, 25), Op = 0.65, Gate = 0.5 },
+            { D = 0.74, Off = 0.22, Size = 0.050, Color = rgb(235, 60, 25), Op = 0.60, Gate = 0.5 },
         }
-        for _, def in ipairs(edgeDefs) do
-            local f = circle(def.color)
-            table.insert(edges, { Frame = f, Def = def })
+        for _, def in ipairs(axisSpots) do
+            def.Mode = "axis"
+            addSpot(def)
         end
 
+        -- Bokeh di pinggir bayangan gelap (foto 1 & 2): X dalam pecahan layar (sisi kanan)
+        local rimSpots = {
+            { X = 0.763, Y = 0.280, Size = 0.040 }, { X = 0.757, Y = 0.400, Size = 0.075 },
+            { X = 0.705, Y = 0.185, Size = 0.035 }, { X = 0.684, Y = 0.260, Size = 0.030 },
+            { X = 0.730, Y = 0.500, Size = 0.035 }, { X = 0.700, Y = 0.080, Size = 0.030 },
+            { X = 0.770, Y = 0.170, Size = 0.028 }, { X = 0.660, Y = 0.350, Size = 0.025 },
+        }
+        for i, def in ipairs(rimSpots) do
+            def.Mode = "rim"
+            def.Color = i % 3 == 0 and rgb(255, 150, 30) or rgb(255, 190, 45)
+            def.Op = 0.55
+            def.Rim = rgb(255, 225, 120)
+            def.RimOp = 0.35
+            def.Gate = 0.5
+            addSpot(def)
+        end
+
+        ------------------------------------------------------------
+        -- 6. Vignette gelap di empat tepi (paling atas)
+        ------------------------------------------------------------
+        local vignette = {
+            { pos = UDim2.fromScale(0, 0), anchor = Vector2.new(0, 0), size = UDim2.fromScale(1, 0.28), rot = 90, a = 0, b = 1 },
+            { pos = UDim2.fromScale(0, 1), anchor = Vector2.new(0, 1), size = UDim2.fromScale(1, 0.34), rot = 90, a = 1, b = 0 },
+            { pos = UDim2.fromScale(0, 0), anchor = Vector2.new(0, 0), size = UDim2.fromScale(0.22, 1), rot = 0, a = 0, b = 1 },
+            { pos = UDim2.fromScale(1, 0), anchor = Vector2.new(1, 0), size = UDim2.fromScale(0.22, 1), rot = 0, a = 1, b = 0 },
+        }
+        for _, v in ipairs(vignette) do
+            local f = newFrame(gui, rgb(35, 12, 2))
+            f.AnchorPoint = v.anchor
+            f.Position = v.pos
+            f.Size = v.size
+            gradient(f, v.rot, nil, seq({ 0, 1 - v.a }, { 1, 1 - v.b }))
+            register(f, "BackgroundTransparency", 0.55, 0.05)
+        end
+
+        ------------------------------------------------------------
+        -- 7. Blur lembut (kamera sedikit tidak fokus saat silau)
+        ------------------------------------------------------------
         blur = Instance.new("BlurEffect")
         blur.Name = "VR_BlurLensa"
         blur.Size = 0
@@ -1998,8 +2181,20 @@ do
         table.insert(Original.Created, blur)
     end
 
-    local function fade(frame, alpha, strength)
-        frame.BackgroundTransparency = 1 - (1 - alpha) * strength
+    local function setSide(side)
+        sideCache = side
+
+        if side == 1 then
+            occluder.AnchorPoint = Vector2.new(1, 0.5)
+            occluder.Position = UDim2.fromScale(1, 0.5)
+            occGradient.Rotation = 0
+            rimGlow.Position = UDim2.fromScale(0, 0.5)
+        else
+            occluder.AnchorPoint = Vector2.new(0, 0.5)
+            occluder.Position = UDim2.fromScale(0, 0.5)
+            occGradient.Rotation = 180
+            rimGlow.Position = UDim2.fromScale(1, 0.5)
+        end
     end
 
     function SunLens.Update(dt)
@@ -2021,7 +2216,7 @@ do
         local elevation = clamp01((sunDir.Y + 0.05) / 0.12)
 
         if flare > 0 and elevation > 0 and screenPoint.Z > 0 then
-            local aim = clamp01((cf.LookVector:Dot(sunDir) - 0.5) / 0.45)
+            local aim = clamp01((cf.LookVector:Dot(sunDir) - 0.55) / 0.4)
             aim = aim * aim * (3 - 2 * aim)
 
             local list = { WorldFolder }
@@ -2046,68 +2241,79 @@ do
         end
 
         level = lerp(level, target, math.min(1, dt * 5))
-        local s = clamp01(level * State.Scale + level * (1 - State.Scale) * 0.5)
+        local s = clamp01(level * LENS_INTENSITY * (0.75 + 0.25 * State.Scale))
 
-        gui.Enabled = s > 0.01
-        blur.Size = 7 * s
-        if not gui.Enabled then
+        if s <= 0.005 then
+            gui.Enabled = false
+            blur.Size = 0
             return
         end
 
+        gui.Enabled = true
+        blur.Size = 6 * s
+
         local size = cam.ViewportSize
-        local base = math.min(size.X, size.Y)
+        local W, H = size.X, size.Y
         local center = size / 2
         local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
         local now = os.clock()
 
-        fade(wash, 0.62, s)
+        -- Rig matahari + kemiringan balok
+        rig.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+        rig.Size = UDim2.fromOffset(H, H)
+        beam.Rotation = TILT + math.sin(now * 0.5) * 1.2
 
-        for _, h in ipairs(haze) do
-            local d = base * h.Def.size
-            h.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
-            h.Frame.Size = UDim2.fromOffset(d, d)
-            fade(h.Frame, h.Def.alpha, s)
+        -- Ghost kiri/kanan bergeser berlawanan arah matahari (seperti ghost lensa asli)
+        local shift = (center - sunPos) * 0.45
+        ghostL.Position = UDim2.fromOffset(center.X + shift.X - W * 0.33, center.Y + shift.Y - H * 0.26)
+        ghostL.Size = UDim2.fromOffset(W * 0.36, H * 0.19)
+        ghostR.Position = UDim2.fromOffset(center.X + shift.X + W * 0.38, center.Y + shift.Y - H * 0.15)
+        ghostR.Size = UDim2.fromOffset(W * 0.24, H * 0.33)
+
+        -- Bayangan gelap di sisi berlawanan dari matahari (dengan histeresis)
+        local side = sideCache
+        if side == 0 then
+            side = sunPos.X < W * 0.62 and 1 or -1
+        elseif side == 1 and sunPos.X > W * 0.68 then
+            side = -1
+        elseif side == -1 and sunPos.X < W * 0.56 then
+            side = 1
+        end
+        if side ~= sideCache then
+            setSide(side)
         end
 
-        -- Garis cahaya sedikit miring, mengikuti posisi matahari di layar
-        local tilt = 14 + (sunPos.X - center.X) / size.X * 12
-        for _, st in ipairs(streaks) do
-            local pulse = 0.94 + 0.06 * math.sin(now * 1.3)
-            st.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
-            st.Frame.Size = UDim2.fromOffset(base * st.Def.w * (0.6 + 0.4 * s), base * st.Def.len * pulse)
-            st.Frame.Rotation = tilt
-            fade(st.Frame, st.Def.alpha, s)
-        end
-
-        for i, sp in ipairs(spokes) do
-            local twinkle = 0.85 + 0.15 * math.sin(now * 1.7 + i * 2.1)
-            sp.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
-            sp.Frame.Size = UDim2.fromOffset(base * sp.Len * (0.6 + 0.4 * s), math.max(1, base * 0.004))
-            sp.Frame.Rotation = sp.Angle
-            sp.Frame.BackgroundTransparency = 1 - sp.Alpha * s * twinkle
-        end
-
-        -- Bokeh: berderet dari matahari ke arah bawah/tengah layar, bergoyang pelan
+        -- Bokeh & ghost kecil
         local axis = center - sunPos
-        local dir = axis.Magnitude > base * 0.1 and axis.Unit or Vector2.new(-0.3, 1).Unit
+        local dir = axis.Magnitude > H * 0.05 and axis.Unit or Vector2.new(-0.5, 0.86).Unit
         local perp = Vector2.new(-dir.Y, dir.X)
 
-        for _, b in ipairs(bokeh) do
-            local sway = Vector2.new(math.sin(now * 0.6 + b.Seed), math.cos(now * 0.5 + b.Seed)) * base * 0.008
-            local p = sunPos + dir * base * 0.9 * b.Def.t + perp * base * b.Def.off + sway
-            local d = base * b.Def.size * (0.85 + 0.15 * s)
-            b.Frame.Position = UDim2.fromOffset(p.X, p.Y)
-            b.Frame.Size = UDim2.fromOffset(d, d)
-            fade(b.Frame, b.Def.alpha, s)
+        for _, sp in ipairs(spots) do
+            local sway = Vector2.new(math.sin(now * 0.55 + sp.Seed), math.cos(now * 0.45 + sp.Seed * 1.3)) * H * 0.006
+            local p
+
+            if sp.Mode == "axis" then
+                p = sunPos + dir * H * sp.D + perp * H * sp.Off + sway
+            else
+                local x = side == 1 and sp.X or (1 - sp.X)
+                p = Vector2.new(W * x, H * sp.Y) + sway
+            end
+
+            local d = H * sp.Size
+            sp.F.Position = UDim2.fromOffset(p.X, p.Y)
+            sp.F.Size = UDim2.fromOffset(d, d * (sp.Asp or 1))
+            sp.F.Rotation = sp.Rot or 0
         end
 
-        -- Bayangan tepi: di sisi berlawanan dari matahari
-        local rightSide = sunPos.X < center.X
-        for i, e in ipairs(edges) do
-            local x = rightSide and size.X * (1.0 - 0.02 * i) or size.X * (0.0 + 0.02 * i)
-            e.Frame.Position = UDim2.fromOffset(x, size.Y * e.Def.y)
-            e.Frame.Size = UDim2.fromOffset(base * e.Def.w, base * e.Def.h)
-            fade(e.Frame, e.Def.alpha, s)
+        -- Fade tiap lapisan menurut kekuatan & batas kemunculannya
+        for _, layer in ipairs(layers) do
+            local e = clamp01((s - layer.Gate) / (1 - layer.Gate))
+            local t = 1 - layer.Op * e
+
+            if math.abs(t - layer.Last) > 0.004 then
+                layer.Last = t
+                layer.Obj[layer.Prop] = t
+            end
         end
     end
 
@@ -2120,13 +2326,11 @@ do
             blur:Destroy()
             blur = nil
         end
-        table.clear(haze)
-        table.clear(bokeh)
-        table.clear(spokes)
-        table.clear(streaks)
-        table.clear(edges)
+        table.clear(layers)
+        table.clear(spots)
         built = false
         level = 0
+        sideCache = 0
     end
 end
 
@@ -2159,6 +2363,9 @@ local function applyQuality(level)
 
     State.Quality = level
     State.Scale = qualityScale(level)
+
+    -- Bangun ulang lensa agar jumlah lapisan mengikuti kualitas
+    SunLens.Destroy()
 
     applyMood(State.MoodName)
     task.spawn(scanAccentLights)
