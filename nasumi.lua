@@ -555,39 +555,39 @@ local Atmospheres = {
         Tint = Color3.fromRGB(255, 244, 225),
     },
 
-    -- Sore nostalgia V2: lebih gelap, hangat, sinematik, tenang.
+    -- Sore nostalgia V3: lebih oranye, bayangan tegas, hangat seperti cahaya jendela.
     -- Drift = matahari turun pelan (ping-pong), terasa seperti waktu berlalu.
     ["NOSTALGIC SORE"] = {
-        ClockTime = 17.45,
+        ClockTime = 17.35,
         Brightness = 1.85,
         Exposure = -0.02,
+        ShadowSoftness = 0.10,
         Density = 0.0065,
         Offset = 0.08,
         Haze = 0.20,
-        Glare = 0.34,
-        Color = Color3.fromRGB(255, 196, 138),
-        Decay = Color3.fromRGB(214, 118, 66),
-        Ambient = Color3.fromRGB(40, 28, 22),
-        OutdoorAmbient = Color3.fromRGB(128, 98, 76),
-        Top = Color3.fromRGB(255, 186, 120),
-        Bottom = Color3.fromRGB(230, 140, 88),
-        Bloom = 0.17,
+        Glare = 0.36,
+        Color = Color3.fromRGB(255, 176, 100),
+        Decay = Color3.fromRGB(232, 106, 52),
+        Ambient = Color3.fromRGB(46, 30, 22),
+        OutdoorAmbient = Color3.fromRGB(140, 100, 70),
+        Top = Color3.fromRGB(255, 172, 100),
+        Bottom = Color3.fromRGB(240, 128, 72),
+        Bloom = 0.18,
         BloomSize = 36,
         BloomThreshold = 0.85,
-        SunRays = 0.09,
+        SunRays = 0.10,
         Contrast = 0.12,
-        Saturation = 0.06,
-        Tint = Color3.fromRGB(255, 232, 200),
+        Saturation = 0.07,
+        Tint = Color3.fromRGB(255, 222, 180),
         GradeBrightness = -0.025,
 
-        -- Depth of field tipis: latar jauh sedikit lembut seperti lensa film.
         DOFFar = 0.14,
         DOFFocus = 90,
         DOFRadius = 70,
 
         Drift = {
             Minutes = 14,
-            Clock0 = 17.15, Clock1 = 18.00,
+            Clock0 = 17.10, Clock1 = 17.95,
             Bright0 = 1.95, Bright1 = 1.50,
             Exp0 = 0.01,    Exp1 = -0.06,
         },
@@ -1096,6 +1096,7 @@ local function configureMoodLighting()
     setProperty(Lighting, "ClockTime", mood.ClockTime)
     setProperty(Lighting, "Brightness", mood.Brightness)
     setProperty(Lighting, "ExposureCompensation", mood.Exposure)
+    setProperty(Lighting, "ShadowSoftness", mood.ShadowSoftness or Config.ShadowSoftness)
 
     setProperty(Lighting, "Ambient", mood.Ambient)
     setProperty(Lighting, "OutdoorAmbient", mood.OutdoorAmbient)
@@ -1670,6 +1671,14 @@ do
     local cloudsState
     local rng = Random.new(1987)
 
+    local washGroup, washGradient, whiteout
+    local windowGroup, windowBox
+    local windowPanes = {}
+    local windowX, windowY
+    local bodyAttachment, bodyLight
+    local bodyBrightness = 0
+    local castTimer = 0
+
     ------------------------------------------------------------
     -- Helper UI
     ------------------------------------------------------------
@@ -1829,6 +1838,62 @@ do
                 speed = rng:NextNumber(0.6, 1.8),
             }
         end
+
+        -- 5. Cahaya hangat menyelimuti layar saat menghadap matahari
+        washGroup = makeGroup(gui)
+
+        local washFrame
+        washFrame, washGradient = fullGradientFrame(washGroup, Color3.fromRGB(255, 255, 255), 0, NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.38),
+            NumberSequenceKeypoint.new(0.45, 0.70),
+            NumberSequenceKeypoint.new(1, 0.93),
+        }))
+        washGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 218, 125)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 150, 58)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(235, 100, 38)),
+        })
+
+        -- Saat menatap langsung matahari: seluruh layar diselimuti kabut kuning hangat
+        whiteout = Instance.new("Frame")
+        whiteout.BorderSizePixel = 0
+        whiteout.BackgroundColor3 = Color3.fromRGB(255, 226, 160)
+        whiteout.BackgroundTransparency = 1
+        whiteout.Size = UDim2.fromScale(1, 1)
+        whiteout.Parent = washGroup
+
+        -- 6. Cahaya jendela: empat kaca, bingkai jadi bayangan, jatuh berlawanan arah matahari
+        windowGroup = makeGroup(gui)
+
+        windowBox = Instance.new("Frame")
+        windowBox.BackgroundTransparency = 1
+        windowBox.AnchorPoint = Vector2.new(0.5, 0.5)
+        windowBox.Rotation = -12
+        windowBox.Parent = windowGroup
+
+        for row = 0, 1 do
+            for col = 0, 1 do
+                local pane = Instance.new("Frame")
+                pane.BorderSizePixel = 0
+                pane.BackgroundColor3 = Color3.fromRGB(255, 196, 108)
+                pane.Size = UDim2.fromScale(0.47, 0.47)
+                pane.Position = UDim2.fromScale(col * 0.53, row * 0.53)
+                pane.Parent = windowBox
+
+                local g = Instance.new("UIGradient")
+                g.Rotation = 90
+                g.Transparency = NumberSequence.new(0.72, 0.90)
+                g.Parent = pane
+
+                local stroke = Instance.new("UIStroke")
+                stroke.Color = Color3.fromRGB(255, 186, 104)
+                stroke.Thickness = 7
+                stroke.Transparency = 0.92
+                stroke.Parent = pane
+
+                table.insert(windowPanes, { Object = pane, Gradient = g })
+            end
+        end
     end
 
     ------------------------------------------------------------
@@ -1904,6 +1969,57 @@ do
     -- Stop / Update
     ------------------------------------------------------------
 
+    ------------------------------------------------------------
+    -- Cahaya hangat di tubuh karakter + bayangan
+    ------------------------------------------------------------
+
+    local function updateBody(dt, sunDir, strength)
+        local char = Player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then
+            return
+        end
+
+        if not bodyAttachment or not bodyAttachment.Parent then
+            bodyAttachment = Instance.new("Attachment")
+            bodyAttachment.Name = "URV4_WarmBodyAttachment"
+            bodyAttachment.Parent = Workspace.Terrain
+
+            bodyLight = Instance.new("PointLight")
+            bodyLight.Name = "URV4_WarmBodyLight"
+            bodyLight.Color = Color3.fromRGB(255, 160, 80)
+            bodyLight.Range = 16
+            bodyLight.Brightness = 0
+            bodyLight.Shadows = false
+            bodyLight.Parent = bodyAttachment
+        end
+
+        -- Sumber hangat berada di sisi matahari, jadi tubuh terang di sisi itu
+        bodyAttachment.WorldPosition = root.Position + sunDir * 7 + Vector3.new(0, 1.5, 0)
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { char }
+        local covered = Workspace:Raycast(root.Position + Vector3.new(0, 2, 0), sunDir * 300, params) ~= nil
+
+        local elevation = math.clamp(sunDir.Y * 4 + 0.35, 0, 1)
+        local target = covered and 0 or (1.2 * elevation * strength)
+
+        bodyBrightness = lerp(bodyBrightness, target, math.min(1, dt * 2.5))
+        bodyLight.Brightness = bodyBrightness
+
+        -- Pastikan semua bagian karakter (termasuk aksesori baru) memberi bayangan
+        castTimer += dt
+        if castTimer >= 2 then
+            castTimer = 0
+            for _, d in ipairs(char:GetDescendants()) do
+                if d:IsA("BasePart") then
+                    d.CastShadow = true
+                end
+            end
+        end
+    end
+
     local function stop()
         if connection then
             connection:Disconnect()
@@ -1921,6 +2037,13 @@ do
         end
 
         applyClouds(false)
+
+        if bodyAttachment then
+            bodyAttachment:Destroy()
+            bodyAttachment = nil
+            bodyLight = nil
+        end
+        bodyBrightness = 0
     end
 
     local function update(dt)
@@ -2012,6 +2135,62 @@ do
         flareGroup.GroupTransparency = 1 - intensity * sunVisible * (0.35 + 0.65 * facing)
         moteGroup.GroupTransparency = 1 - intensity * (0.30 + 0.70 * facing)
 
+        ------------------------------------------------------------
+        -- Menghadap matahari: selimut hangat oranye-kuning
+        ------------------------------------------------------------
+        local f1 = facing
+        local f2 = facing * facing
+        local f3 = f2 * facing
+        local exposureMask = intensity * (0.5 + 0.5 * sunVisible)
+
+        washGradient.Rotation = math.deg(math.atan2(axis.Y, axis.X))
+        washGroup.GroupTransparency = 1 - exposureMask * (0.10 + 0.80 * f2)
+
+        local whiteAmount = math.clamp((facing - 0.88) / 0.12, 0, 1)
+        whiteout.BackgroundTransparency = 1 - 0.30 * whiteAmount * whiteAmount * sunVisible
+
+        -- Kamera "silau": post-processing ikut menguat saat melihat matahari
+        if active and mood then
+            setProperty(State.Instances.Bloom, "Intensity", mood.Bloom + 0.30 * f3 * sunVisible)
+            setProperty(State.Instances.SunRays, "Intensity", (mood.SunRays or Config.SunRayIntensity) + 0.22 * f2 * sunVisible)
+
+            local grade = State.Instances.ColorCorrection
+            setProperty(grade, "TintColor", mood.Tint:Lerp(Color3.fromRGB(255, 186, 112), 0.6 * f2 * intensity))
+            setProperty(grade, "Saturation", mood.Saturation + 0.10 * f2)
+            setProperty(grade, "Brightness", (mood.GradeBrightness or 0) + 0.035 * f3 * sunVisible)
+
+            setProperty(State.Instances.Atmosphere, "Glare", math.min(1, mood.Glare + 0.40 * f2))
+        end
+
+        ------------------------------------------------------------
+        -- Cahaya jendela
+        ------------------------------------------------------------
+        local center = size / 2
+        local wcenter = center + axis * 0.85
+        local wx = math.clamp(wcenter.X, size.X * 0.2, size.X * 0.8)
+        local wy = math.clamp(wcenter.Y, size.Y * 0.3, size.Y * 0.75)
+
+        windowX = windowX and lerp(windowX, wx, math.min(1, dt * 3)) or wx
+        windowY = windowY and lerp(windowY, wy, math.min(1, dt * 3)) or wy
+
+        local ww = base * 0.62
+        windowBox.Position = UDim2.fromOffset(
+            windowX + math.sin(now * 0.23) * base * 0.012,
+            windowY + math.cos(now * 0.19) * base * 0.010
+        )
+        windowBox.Size = UDim2.fromOffset(ww * 1.15, ww)
+        windowBox.Rotation = -12 + math.sin(now * 0.2) * 1.2
+
+        -- Setiap kaca berkedip pelan seperti awan/daun lewat di depan matahari
+        for i, pane in ipairs(windowPanes) do
+            local a = 0.72 + 0.07 * math.sin(now * 0.45 + i * 1.7)
+            pane.Gradient.Transparency = NumberSequence.new(a, a + 0.17)
+        end
+
+        windowGroup.GroupTransparency = 1 - intensity * (0.30 + 0.70 * f1) * (0.6 + 0.4 * sunVisible)
+
+        updateBody(dt, sunDir, intensity)
+
         if sound then
             sound.Volume = AMBIENCE_VOLUME * intensity
         end
@@ -2029,6 +2208,7 @@ do
             if not gui or not gui.Parent then
                 table.clear(flares)
                 table.clear(motes)
+                table.clear(windowPanes)
                 build()
             end
 
@@ -2059,6 +2239,7 @@ do
 
         table.clear(flares)
         table.clear(motes)
+        table.clear(windowPanes)
     end
 end
 
