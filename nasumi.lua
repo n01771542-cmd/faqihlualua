@@ -238,24 +238,24 @@ local Moods = {
 
     {
         Name = "Sore Keemasan",
-        ClockTime = 17.3, Brightness = 2.30, Exposure = 0.0, ShadowSoftness = 0.12,
-        Density = 0.32, Offset = 0.10, Haze = 1.5, Glare = 0.8,
-        Color = Color3.fromRGB(255, 205, 155), Decay = Color3.fromRGB(235, 140, 85),
-        Ambient = Color3.fromRGB(60, 46, 40), OutdoorAmbient = Color3.fromRGB(125, 103, 92),
-        Top = Color3.fromRGB(255, 196, 130), Bottom = Color3.fromRGB(185, 150, 130),
-        Bloom = 0.26, BloomSize = 22, BloomThreshold = 1.0,
-        SunRays = 0.30, SunRaySpread = 0.85,
-        Contrast = 0.10, Saturation = 0.06, Tint = Color3.fromRGB(255, 240, 222),
-        ShaftColor = Color3.fromRGB(255, 205, 140),
-        Shafts = 1.0, SunGlow = 1.0, Flare = 0.55, Sheen = 0.08,
+        ClockTime = 17.3, Brightness = 2.55, Exposure = -0.10, ShadowSoftness = 0.10,
+        Density = 0.34, Offset = 0.10, Haze = 1.7, Glare = 1.0,
+        Color = Color3.fromRGB(255, 170, 100), Decay = Color3.fromRGB(240, 112, 52),
+        Ambient = Color3.fromRGB(46, 32, 26), OutdoorAmbient = Color3.fromRGB(104, 78, 62),
+        Top = Color3.fromRGB(255, 160, 80), Bottom = Color3.fromRGB(170, 120, 95),
+        Bloom = 0.30, BloomSize = 22, BloomThreshold = 0.95,
+        SunRays = 0.38, SunRaySpread = 0.9,
+        Contrast = 0.18, Saturation = 0.10, Tint = Color3.fromRGB(255, 222, 190),
+        ShaftColor = Color3.fromRGB(255, 170, 90),
+        Shafts = 1.0, SunGlow = 1.0, Flare = 1.0, Sheen = 0.10,
         WarmBody = true,
-        CloudColor = Color3.fromRGB(255, 185, 140), CloudCover = 0.45, CloudDensity = 0.5,
+        CloudColor = Color3.fromRGB(255, 150, 95), CloudCover = 0.45, CloudDensity = 0.5,
         EggGlow = 0.0,
         Drift = {
             Minutes = 14,
             Clock0 = 17.05, Clock1 = 17.85,
-            Bright0 = 2.40, Bright1 = 1.95,
-            Exp0 = 0.02, Exp1 = -0.05,
+            Bright0 = 2.70, Bright1 = 2.10,
+            Exp0 = -0.06, Exp1 = -0.14,
         },
     },
 
@@ -285,7 +285,7 @@ local Moods = {
         Bloom = 0.04, BloomSize = 20, BloomThreshold = 1.3,
         SunRays = 0.0, SunRaySpread = 0.8,
         Contrast = 0.10, Saturation = -0.04, Tint = Color3.fromRGB(225, 235, 248),
-        Rain = true, Wet = true, Sheen = 0.0,
+        Rain = true, Wet = true, Sheen = 0.12,
         CloudColor = Color3.fromRGB(120, 128, 140), CloudCover = 0.9, CloudDensity = 0.8,
         EggGlow = 0.4,
     },
@@ -860,6 +860,19 @@ local function processPart(part)
     return info
 end
 
+local SLICK_MATERIALS = {
+    [Enum.Material.Concrete] = true,
+    [Enum.Material.Asphalt] = true,
+    [Enum.Material.Pavement] = true,
+    [Enum.Material.Cobblestone] = true,
+    [Enum.Material.Brick] = true,
+    [Enum.Material.Slate] = true,
+    [Enum.Material.Granite] = true,
+    [Enum.Material.Limestone] = true,
+    [Enum.Material.WoodPlanks] = true,
+    [Enum.Material.Plastic] = true,
+}
+
 local function stylePart(part, mood)
     local info = PartInfo[part]
     local original = Original.Parts[part]
@@ -877,11 +890,23 @@ local function stylePart(part, mood)
     end
 
     if wet then
-        add = math.max(add, 0.32)
+        add = math.max(add, 0.5)
     end
 
     local originalReflectance = original.Reflectance or 0
     setProperty(part, "Reflectance", math.clamp(math.max(originalReflectance, add), 0, 0.6))
+
+    -- Permukaan keras jadi licin (smooth) saat basah, dikembalikan saat kering.
+    local variant = getProperty(part, "MaterialVariant", "")
+    if wet and not info.SA and SLICK_MATERIALS[original.Material] and (not variant or variant == "") then
+        if part.Material ~= Enum.Material.SmoothPlastic then
+            setProperty(part, "Material", Enum.Material.SmoothPlastic)
+            info.Slick = true
+        end
+    elseif info.Slick then
+        setProperty(part, "Material", original.Material)
+        info.Slick = false
+    end
 
     if original.Color then
         local wanted = wet and wetColor(original.Color) or original.Color
@@ -1086,7 +1111,7 @@ local World = {}
 do
     local SUN_DISTANCE = 1800       -- jarak glow matahari dari kamera
     local MAX_SHAFTS = 36
-    local MAX_PUDDLES = 45
+    local MAX_PUDDLES = 80
     local RAIN_TEXTURE = ""         -- opsional: asset id tekstur garis hujan
     local RAIN_SOUND_ID = ""        -- opsional: asset id suara hujan
     local RAIN_SOUND_VOLUME = 0.5
@@ -1097,6 +1122,7 @@ do
     local flareGui
     local sunLayers = {}
     local ghosts = {}
+    local streaks, spokes = {}, {}
     local shafts = {}
     local puddles = {}
     local rainPart, rainEmitter, rainSound
@@ -1143,18 +1169,25 @@ do
     ------------------------------------------------------------
 
     local SUN_LAYERS = {
-        { size = 1.00, alpha = 0.965, color = Color3.fromRGB(255, 160, 80) },
-        { size = 0.62, alpha = 0.930, color = Color3.fromRGB(255, 175, 95) },
-        { size = 0.36, alpha = 0.860, color = Color3.fromRGB(255, 195, 120) },
-        { size = 0.18, alpha = 0.700, color = Color3.fromRGB(255, 220, 160) },
-        { size = 0.08, alpha = 0.350, color = Color3.fromRGB(255, 244, 215) },
+        { size = 1.00, alpha = 0.960, color = Color3.fromRGB(255, 140, 60) },
+        { size = 0.62, alpha = 0.920, color = Color3.fromRGB(255, 165, 70) },
+        { size = 0.36, alpha = 0.840, color = Color3.fromRGB(255, 195, 95) },
+        { size = 0.18, alpha = 0.650, color = Color3.fromRGB(255, 225, 130) },
+        { size = 0.08, alpha = 0.300, color = Color3.fromRGB(255, 246, 200) },
     }
 
     local GHOST_DEFS = {
-        { pos = 0.45, size = 0.050, alpha = 0.93, color = Color3.fromRGB(255, 190, 120) },
-        { pos = 0.90, size = 0.100, alpha = 0.95, color = Color3.fromRGB(255, 200, 130) },
-        { pos = 1.35, size = 0.040, alpha = 0.92, color = Color3.fromRGB(255, 215, 150) },
-        { pos = 1.80, size = 0.160, alpha = 0.96, color = Color3.fromRGB(255, 175, 100), ring = true },
+        { pos = 0.45, size = 0.050, alpha = 0.94, color = Color3.fromRGB(255, 190, 120) },
+        { pos = 0.90, size = 0.100, alpha = 0.96, color = Color3.fromRGB(255, 200, 130) },
+    }
+
+    -- Garis cahaya diagonal panjang (seperti di foto referensi), menembus matahari
+    -- dan lebih panjang ke arah kiri-bawah.
+    local STREAK_DEFS = {
+        { len = 1.25, h = 0.050, alpha = 0.90, off = 0.000 },
+        { len = 1.15, h = 0.008, alpha = 0.55, off = 0.000 },
+        { len = 0.80, h = 0.004, alpha = 0.75, off = 0.075 },
+        { len = 0.55, h = 0.003, alpha = 0.82, off = -0.060 },
     }
 
     local function makeInvisiblePart(name)
@@ -1265,6 +1298,68 @@ do
             table.insert(ghosts, { Frame = f, Stroke = stroke, Def = def })
         end
 
+        -- Garis diagonal: oranye di matahari, memudar ke merah muda di ujung
+        for _, def in ipairs(STREAK_DEFS) do
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0
+            f.Active = false
+            f.AnchorPoint = Vector2.new(0.8, 0.5)
+            f.BackgroundColor3 = Color3.new(1, 1, 1)
+            f.BackgroundTransparency = 1
+
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(1, 0)
+            c.Parent = f
+
+            local g = Instance.new("UIGradient")
+            g.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(232, 130, 170)),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 175, 120)),
+                ColorSequenceKeypoint.new(0.8, Color3.fromRGB(255, 240, 200)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 200, 140)),
+            })
+            g.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.4, 0.7),
+                NumberSequenceKeypoint.new(0.8, 0),
+                NumberSequenceKeypoint.new(0.9, 0.5),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            g.Parent = f
+
+            f.Parent = flareGui
+            table.insert(streaks, { Frame = f, Def = def })
+        end
+
+        -- Sinar bintang tipis di sekitar matahari
+        local SPOKE_COUNT = 14
+        for i = 1, SPOKE_COUNT do
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0
+            f.Active = false
+            f.AnchorPoint = Vector2.new(0, 0.5)
+            f.BackgroundColor3 = Color3.fromRGB(255, 214, 150)
+            f.BackgroundTransparency = 1
+
+            local g = Instance.new("UIGradient")
+            g.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.3),
+                NumberSequenceKeypoint.new(0.35, 0.75),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            g.Parent = f
+
+            f.Parent = flareGui
+            table.insert(spokes, {
+                Frame = f,
+                Def = {
+                    angle = (i - 1) * 360 / SPOKE_COUNT + ((i * 53) % 17 - 8),
+                    len = 0.12 + ((i * 29) % 11) / 11 * 0.30,
+                    alpha = 0.35 + ((i * 13) % 7) / 7 * 0.35,
+                },
+            })
+        end
+
         -- Sun rays 3D (Beam)
         for _ = 1, MAX_SHAFTS do
             local a0 = Instance.new("Attachment")
@@ -1297,23 +1392,35 @@ do
         rainPart = makeInvisiblePart("VR_Hujan")
         rainPart.Size = Vector3.new(100, 1, 100)
 
-        rainEmitter = Instance.new("ParticleEmitter")
-        rainEmitter.Rate = 0
-        rainEmitter.Lifetime = NumberRange.new(0.7, 0.9)
-        rainEmitter.Speed = NumberRange.new(90, 110)
-        rainEmitter.EmissionDirection = Enum.NormalId.Bottom
-        rainEmitter.SpreadAngle = Vector2.new(2, 2)
-        rainEmitter.Size = NumberSequence.new(0.6)
-        rainEmitter.Squash = NumberSequence.new(-0.85)
-        rainEmitter.Transparency = NumberSequence.new(0.55)
-        rainEmitter.Color = ColorSequence.new(Color3.fromRGB(200, 215, 235))
-        rainEmitter.LightEmission = 0.25
-        rainEmitter.LightInfluence = 0.5
-        rainEmitter.Acceleration = Vector3.new(6, 0, 3)
-        rainEmitter.LockedToPart = false
-        rainEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
-        rainEmitter.Texture = RAIN_TEXTURE ~= "" and RAIN_TEXTURE or "rbxasset://textures/particles/sparkles_main.dds"
-        rainEmitter.Parent = rainPart
+        rainEmitter = {}
+
+        local texture = RAIN_TEXTURE ~= "" and RAIN_TEXTURE or "rbxasset://textures/particles/sparkles_main.dds"
+        local rainLayers = {
+            { weight = 0.40, size = 0.70, squash = -0.88, transparency = 0.45, speed = NumberRange.new(100, 125), life = NumberRange.new(0.7, 0.9) },
+            { weight = 0.35, size = 0.50, squash = -0.85, transparency = 0.60, speed = NumberRange.new(85, 105), life = NumberRange.new(0.75, 0.95) },
+            { weight = 0.25, size = 0.35, squash = -0.80, transparency = 0.70, speed = NumberRange.new(70, 90), life = NumberRange.new(0.8, 1.0) },
+        }
+
+        for _, layer in ipairs(rainLayers) do
+            local e = Instance.new("ParticleEmitter")
+            e.Rate = 0
+            e.Lifetime = layer.life
+            e.Speed = layer.speed
+            e.EmissionDirection = Enum.NormalId.Bottom
+            e.SpreadAngle = Vector2.new(2, 2)
+            e.Size = NumberSequence.new(layer.size)
+            e.Squash = NumberSequence.new(layer.squash)
+            e.Transparency = NumberSequence.new(layer.transparency)
+            e.Color = ColorSequence.new(Color3.fromRGB(205, 220, 238))
+            e.LightEmission = 0.25
+            e.LightInfluence = 0.5
+            e.Acceleration = Vector3.new(6, 0, 3)
+            e.LockedToPart = false
+            e.Orientation = Enum.ParticleOrientation.VelocityParallel
+            e.Texture = texture
+            e.Parent = rainPart
+            table.insert(rainEmitter, { Emitter = e, Weight = layer.weight })
+        end
 
         if RAIN_SOUND_ID ~= "" then
             rainSound = Instance.new("Sound")
@@ -1433,6 +1540,30 @@ do
     -- Genangan air
     ------------------------------------------------------------
 
+    local function newDisc()
+        local p = Instance.new("Part")
+        p.Name = "VR_Genangan"
+        p.Shape = Enum.PartType.Cylinder
+        p.Anchored = true
+        p.CanCollide = false
+        p.CanQuery = false
+        p.CanTouch = false
+        p.CastShadow = false
+        -- Kaca bening: terlihat tembus ke tanah + memantulkan langit/cahaya
+        p.Material = Enum.Material.Glass
+        p.Color = Color3.fromRGB(222, 232, 238)
+        p.Reflectance = 0.9
+        p.Transparency = 1
+        return p
+    end
+
+    local function setPuddlesTransparency(t)
+        for _, puddle in ipairs(puddles) do
+            puddle.A.Transparency = t
+            puddle.B.Transparency = t
+        end
+    end
+
     local function placePuddles(center)
         local count = math.floor(MAX_PUDDLES * State.Scale)
 
@@ -1441,32 +1572,22 @@ do
 
             if index > count then
                 if puddle then
-                    puddle.Parent = nil
+                    puddle.A.Parent = nil
+                    puddle.B.Parent = nil
                 end
             else
                 if not puddle then
-                    puddle = Instance.new("Part")
-                    puddle.Name = "VR_Genangan"
-                    puddle.Shape = Enum.PartType.Cylinder
-                    puddle.Anchored = true
-                    puddle.CanCollide = false
-                    puddle.CanQuery = false
-                    puddle.CanTouch = false
-                    puddle.CastShadow = false
-                    puddle.Material = Enum.Material.SmoothPlastic
-                    puddle.Color = Color3.fromRGB(28, 34, 44)
-                    puddle.Reflectance = 0.7
-                    puddle.Transparency = 1
+                    puddle = { A = newDisc(), B = newDisc() }
                     puddles[index] = puddle
                 end
 
                 local angle = rng:NextNumber(0, math.pi * 2)
-                local radius = 5 + 85 * math.sqrt(rng:NextNumber())
+                local radius = 4 + 100 * math.sqrt(rng:NextNumber())
                 local origin = center + Vector3.new(math.cos(angle) * radius, 120, math.sin(angle) * radius)
                 local hit = Workspace:Raycast(origin, Vector3.new(0, -300, 0), rayParams)
 
                 local valid = false
-                if hit and hit.Normal.Y > 0.97 then
+                if hit and hit.Normal.Y > 0.95 then
                     if hit.Instance:IsA("Terrain") then
                         valid = hit.Material ~= Enum.Material.Water
                     else
@@ -1476,12 +1597,24 @@ do
                 end
 
                 if valid then
-                    local diameter = rng:NextNumber(3, 11)
-                    puddle.Size = Vector3.new(0.06, diameter, diameter)
-                    puddle.CFrame = CFrame.new(hit.Position + Vector3.new(0, 0.04, 0)) * CFrame.Angles(0, 0, math.pi / 2)
-                    puddle.Parent = WorldFolder
+                    local d = rng:NextNumber(4, 16)
+                    local yaw = rng:NextNumber(0, math.pi)
+                    local pos = hit.Position + Vector3.new(0, 0.05, 0)
+
+                    puddle.A.Size = Vector3.new(0.05, d, d * rng:NextNumber(0.7, 1))
+                    puddle.A.CFrame = CFrame.new(pos) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(0, 0, math.pi / 2)
+
+                    -- Bagian kedua menumpuk agar bentuknya tidak bulat sempurna
+                    local shift = Vector3.new(rng:NextNumber(-0.3, 0.3) * d, 0.012, rng:NextNumber(-0.3, 0.3) * d)
+                    local d2 = d * rng:NextNumber(0.5, 0.8)
+                    puddle.B.Size = Vector3.new(0.05, d2, d2 * rng:NextNumber(0.7, 1))
+                    puddle.B.CFrame = CFrame.new(pos + shift) * CFrame.Angles(0, yaw + 1.1, 0) * CFrame.Angles(0, 0, math.pi / 2)
+
+                    puddle.A.Parent = WorldFolder
+                    puddle.B.Parent = WorldFolder
                 else
-                    puddle.Parent = nil
+                    puddle.A.Parent = nil
+                    puddle.B.Parent = nil
                 end
             end
         end
@@ -1580,8 +1713,20 @@ do
         elevationVis = clamp01((sunDir.Y + 0.05) / 0.12)
 
         local screenPoint, onScreen = cam:WorldToViewportPoint(camPos + sunDir * SUN_DISTANCE)
-        local blocked = Workspace:Raycast(camPos, sunDir * 3000, rayParams) ~= nil
-        local visibleTarget = (onScreen and screenPoint.Z > 0 and not blocked) and 1 or 0
+        local clearRays = 0
+        local rayOffsets = {
+            Vector3.zero,
+            cam.CFrame.RightVector * 0.04,
+            -cam.CFrame.RightVector * 0.04,
+            cam.CFrame.UpVector * 0.04,
+            -cam.CFrame.UpVector * 0.04,
+        }
+        for _, offset in ipairs(rayOffsets) do
+            if not Workspace:Raycast(camPos, (sunDir + offset).Unit * 3000, rayParams) then
+                clearRays += 1
+            end
+        end
+        local visibleTarget = (onScreen and screenPoint.Z > 0) and clearRays / #rayOffsets or 0
         sunVis = lerp(sunVis, visibleTarget, math.min(1, dt * 4))
 
         local sunSensitive = (mood.SunGlow or 0) > 0 and 1 or 0
@@ -1606,7 +1751,8 @@ do
         ------------------------------------------------------------
         -- Lens flare tipis
         ------------------------------------------------------------
-        local flareStrength = (mood.Flare or 0) * elevationVis * sunVis * facing ^ 1.5
+        local flareFacing = clamp01((cam.CFrame.LookVector:Dot(sunDir) - 0.55) / 0.4)
+        local flareStrength = (mood.Flare or 0) * elevationVis * sunVis * flareFacing
         flareGui.Enabled = flareStrength > 0.01
 
         if flareGui.Enabled then
@@ -1614,19 +1760,34 @@ do
             local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
             local axis = (size / 2) - sunPos
             local base = math.min(size.X, size.Y)
+            local now = os.clock()
+
+            local angle = -37 + (sunPos.X - size.X / 2) / size.X * 10
+            local rad = math.rad(angle)
+            local perp = Vector2.new(-math.sin(rad), math.cos(rad))
+
+            for _, streak in ipairs(streaks) do
+                local p = sunPos + perp * base * streak.Def.off
+                streak.Frame.Position = UDim2.fromOffset(p.X, p.Y)
+                streak.Frame.Size = UDim2.fromOffset(size.X * streak.Def.len, math.max(2, base * streak.Def.h))
+                streak.Frame.Rotation = angle
+                streak.Frame.BackgroundTransparency = 1 - (1 - streak.Def.alpha) * flareStrength
+            end
+
+            for i, spoke in ipairs(spokes) do
+                local twinkle = 0.85 + 0.15 * math.sin(now * 1.7 + i * 2.1)
+                spoke.Frame.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+                spoke.Frame.Size = UDim2.fromOffset(base * spoke.Def.len * (0.7 + 0.3 * flareStrength), math.max(1, base * 0.0035))
+                spoke.Frame.Rotation = spoke.Def.angle
+                spoke.Frame.BackgroundTransparency = 1 - spoke.Def.alpha * flareStrength * twinkle
+            end
 
             for _, ghost in ipairs(ghosts) do
                 local p = sunPos + axis * ghost.Def.pos
                 local d = base * ghost.Def.size
                 ghost.Frame.Position = UDim2.fromOffset(p.X, p.Y)
                 ghost.Frame.Size = UDim2.fromOffset(d, d)
-
-                local alpha = 1 - (1 - ghost.Def.alpha) * flareStrength
-                if ghost.Stroke then
-                    ghost.Stroke.Transparency = 1 - 0.15 * flareStrength
-                else
-                    ghost.Frame.BackgroundTransparency = alpha
-                end
+                ghost.Frame.BackgroundTransparency = 1 - (1 - ghost.Def.alpha) * flareStrength
             end
         end
 
@@ -1713,14 +1874,9 @@ do
                     placePuddles(camPos)
                 end
 
-                local t = 1 - 0.88 * clamp01(rainLevel * 1.2)
-                for _, puddle in ipairs(puddles) do
-                    puddle.Transparency = t
-                end
+                setPuddlesTransparency(1 - 0.45 * clamp01(rainLevel * 1.2))
             elseif lastPuddlePos then
-                for _, puddle in ipairs(puddles) do
-                    puddle.Transparency = 1
-                end
+                setPuddlesTransparency(1)
                 lastPuddlePos = nil
             end
         end
@@ -1728,7 +1884,10 @@ do
         coverLevel = lerp(coverLevel, coverTarget, math.min(1, dt * 3))
 
         rainPart.CFrame = CFrame.new(camPos + Vector3.new(0, 42, 0))
-        rainEmitter.Rate = 950 * scale * rainLevel * coverLevel
+        local totalRate = 4200 * scale * rainLevel * coverLevel
+        for _, item in ipairs(rainEmitter) do
+            item.Emitter.Rate = totalRate * item.Weight
+        end
 
         if rainSound then
             rainSound.Volume = RAIN_SOUND_VOLUME * rainLevel * (0.35 + 0.65 * coverLevel)
@@ -1756,13 +1915,16 @@ do
         end
 
         for _, puddle in ipairs(puddles) do
-            puddle:Destroy()
+            puddle.A:Destroy()
+            puddle.B:Destroy()
         end
         table.clear(puddles)
 
         table.clear(shafts)
         table.clear(sunLayers)
         table.clear(ghosts)
+        table.clear(streaks)
+        table.clear(spokes)
 
         WorldFolder:ClearAllChildren()
 
