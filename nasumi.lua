@@ -809,9 +809,86 @@ end
 
 local Atmos = {}
 
-function Atmos.Set(mood) end
+do
+    local gui, tint, tintGradient
+    local edges = {}
 
-function Atmos.Destroy() end
+    local function build()
+        if gui then
+            return
+        end
+
+        gui = Instance.new("ScreenGui")
+        gui.Name = ROOT .. "_Atmos"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = -2
+        gui.Parent = PlayerGui
+
+        tint = Instance.new("Frame")
+        tint.BorderSizePixel = 0
+        tint.Size = UDim2.fromScale(1, 1)
+        tint.BackgroundColor3 = Color3.new(1, 1, 1)
+        tint.BackgroundTransparency = 1
+        tint.Parent = gui
+
+        tintGradient = Instance.new("UIGradient")
+        tintGradient.Rotation = 90
+        tintGradient.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.05),
+            NumberSequenceKeypoint.new(0.55, 0.78),
+            NumberSequenceKeypoint.new(1, 0.45),
+        })
+        tintGradient.Parent = tint
+
+        local defs = {
+            { UDim2.fromScale(0, 0), Vector2.new(0, 0), UDim2.fromScale(1, 0.30), 90, 0, 1 },
+            { UDim2.fromScale(0, 1), Vector2.new(0, 1), UDim2.fromScale(1, 0.34), 90, 1, 0 },
+            { UDim2.fromScale(0, 0), Vector2.new(0, 0), UDim2.fromScale(0.20, 1), 0, 0, 1 },
+            { UDim2.fromScale(1, 0), Vector2.new(1, 0), UDim2.fromScale(0.20, 1), 0, 1, 0 },
+        }
+        for _, d in ipairs(defs) do
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0
+            f.Position = d[1]
+            f.AnchorPoint = d[2]
+            f.Size = d[3]
+            f.BackgroundColor3 = rgb(8, 3, 1)
+            f.BackgroundTransparency = 1
+            f.Parent = gui
+
+            local g = Instance.new("UIGradient")
+            g.Rotation = d[4]
+            g.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, d[5]),
+                NumberSequenceKeypoint.new(1, d[6]),
+            })
+            g.Parent = f
+            table.insert(edges, f)
+        end
+    end
+
+    function Atmos.Set(mood)
+        build()
+        local s = clamp01(mood.Overlay)
+
+        gui.Enabled = s > 0.01
+        tint.BackgroundTransparency = 1 - 0.62 * s
+        tintGradient.Color = ColorSequence.new(mood.OverlayTop, mood.OverlayBottom)
+
+        for _, f in ipairs(edges) do
+            f.BackgroundTransparency = 1 - 0.5 * s
+        end
+    end
+
+    function Atmos.Destroy()
+        if gui then
+            gui:Destroy()
+            gui = nil
+        end
+        table.clear(edges)
+    end
+end
 
 ----------------------------------------------------------------
 -- KLASIFIKASI MATERIAL
@@ -1377,8 +1454,6 @@ do
 
     local anchor, sunPart, sunGui, sunStreak
     local sunLayers = {}
-    local sunExtras = {}
-    local bokehPart, bokehEmitter
     local shafts = {}
     local puddles = {}
     local rainPart, rainEmitter, rainSound
@@ -1494,81 +1569,6 @@ do
             NumberSequenceKeypoint.new(1, 1),
         })
         streakGradient.Parent = sunStreak
-
-        -- Sinar bintang + balok cahaya miring, semuanya objek 3D di langit
-        for i = 1, 10 do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.Position = UDim2.fromScale(0.5, 0.5)
-            f.Size = UDim2.fromScale(i % 2 == 0 and 1.5 or 1.0, 0.012)
-            f.Rotation = (i - 1) * 18
-            f.BackgroundColor3 = rgb(255, 196, 96)
-            f.BackgroundTransparency = 1
-            f.Parent = sunGui
-
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(1, 0)
-            c.Parent = f
-
-            local g = Instance.new("UIGradient")
-            g.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.5, 0.2),
-                NumberSequenceKeypoint.new(1, 1),
-            })
-            g.Parent = f
-
-            table.insert(sunExtras, { Frame = f, Alpha = 0.5 })
-        end
-
-        local column = Instance.new("Frame")
-        column.BorderSizePixel = 0
-        column.AnchorPoint = Vector2.new(0.5, 0.5)
-        column.Position = UDim2.fromScale(0.5, 0.5)
-        column.Size = UDim2.fromScale(0.10, 1.7)
-        column.Rotation = -22
-        column.BackgroundColor3 = rgb(255, 170, 70)
-        column.BackgroundTransparency = 1
-        column.Parent = sunGui
-
-        local columnGradient = Instance.new("UIGradient")
-        columnGradient.Rotation = 90
-        columnGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.5, 0.35),
-            NumberSequenceKeypoint.new(1, 1),
-        })
-        columnGradient.Parent = column
-
-        table.insert(sunExtras, { Frame = column, Alpha = 0.45 })
-
-        -- Bokeh hangat: partikel cahaya melayang di udara sekitar kamu
-        bokehPart = makeInvisiblePart(PREFIX .. "Bokeh")
-        bokehPart.Size = Vector3.new(90, 40, 90)
-
-        bokehEmitter = Instance.new("ParticleEmitter")
-        bokehEmitter.Rate = 0
-        bokehEmitter.Lifetime = NumberRange.new(4, 7)
-        bokehEmitter.Speed = NumberRange.new(0.3, 1.2)
-        bokehEmitter.SpreadAngle = Vector2.new(180, 180)
-        bokehEmitter.Size = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(0.3, 1.1),
-            NumberSequenceKeypoint.new(1, 0.4),
-        })
-        bokehEmitter.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.25, 0.55),
-            NumberSequenceKeypoint.new(0.75, 0.65),
-            NumberSequenceKeypoint.new(1, 1),
-        })
-        bokehEmitter.Color = ColorSequence.new(rgb(255, 150, 50), rgb(255, 205, 100))
-        bokehEmitter.LightEmission = 1
-        bokehEmitter.LightInfluence = 0
-        bokehEmitter.LockedToPart = false
-        bokehEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-        bokehEmitter.Parent = bokehPart
 
         -- Sun rays 3D (Beam)
         for _ = 1, MAX_SHAFTS do
@@ -1930,10 +1930,6 @@ do
             end
 
             sunStreak.BackgroundTransparency = 1 - 0.75 * a * (0.3 + 0.7 * facing)
-
-            for _, extra in ipairs(sunExtras) do
-                extra.Frame.BackgroundTransparency = 1 - extra.Alpha * a * (0.3 + 0.7 * facing)
-            end
         end
 
         ------------------------------------------------------------
@@ -2038,16 +2034,6 @@ do
             rainSound.Volume = RAIN_SOUND_VOLUME * rainLevel * (0.35 + 0.65 * coverLevel)
         end
 
-        -- Bokeh 3D di udara (muncul saat sore, mengecil saat jauh dari matahari)
-        if bokehPart and bokehEmitter then
-            local flat = Vector3.new(sunDir.X, 0, sunDir.Z)
-            flat = flat.Magnitude > 0.01 and flat.Unit or Vector3.new(0, 0, -1)
-            bokehPart.CFrame = CFrame.new(camPos + flat * 40 + Vector3.new(0, 6, 0))
-
-            local strength = mood.Flare * Sun.Elev * Sun.Open * distFade * (0.4 + 0.6 * facing) * scale
-            bokehEmitter.Rate = 14 * strength
-        end
-
         if mood.WarmBody then
             updateBody(dt)
         end
@@ -2069,9 +2055,6 @@ do
         table.clear(puddles)
         table.clear(shafts)
         table.clear(sunLayers)
-        table.clear(sunExtras)
-        bokehPart = nil
-        bokehEmitter = nil
 
         WorldFolder:ClearAllChildren()
 
@@ -2090,9 +2073,429 @@ end
 
 local SunLens = {}
 
-function SunLens.Update(dt) end
+do
+    local LENS_INTENSITY = 1.0
+    local TILT = -22
 
-function SunLens.Destroy() end
+    local gui, blur
+    local rig, beam
+    local ghostL, ghostR
+    local occluder, occGradient, rimGlow
+    local layers, spots = {}, {}
+    local level = 0
+    local built = false
+    local sideCache = 0
+
+    local function steps(n)
+        return math.max(4, math.floor(n * (0.55 + 0.45 * State.Scale) + 0.5))
+    end
+
+    local function register(object, property, opacity, gate)
+        object[property] = 1
+        table.insert(layers, { Obj = object, Prop = property, Op = opacity, Gate = gate or 0, Last = -1 })
+    end
+
+    local function newFrame(parent, color)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.Active = false
+        f.AnchorPoint = Vector2.new(0.5, 0.5)
+        f.Position = UDim2.fromScale(0.5, 0.5)
+        f.BackgroundColor3 = color or Color3.new(1, 1, 1)
+        f.BackgroundTransparency = 1
+        f.Parent = parent
+        return f
+    end
+
+    local function round(frame, scale)
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(scale or 1, 0)
+        c.Parent = frame
+    end
+
+    local function seq(...)
+        local points = {}
+        for _, p in ipairs({ ... }) do
+            table.insert(points, NumberSequenceKeypoint.new(p[1], p[2]))
+        end
+        return NumberSequence.new(points)
+    end
+
+    local function gradient(frame, rotation, colors, transparency)
+        local g = Instance.new("UIGradient")
+        g.Rotation = rotation
+        if colors then
+            g.Color = colors
+        end
+        if transparency then
+            g.Transparency = transparency
+        end
+        g.Parent = frame
+        return g
+    end
+
+    local function softStack(parent, cx, cy, w, h, rot, outer, inner, count, total, gate, radius, power)
+        count = steps(count)
+        local per = 1 - (1 - total) ^ (1 / count)
+
+        for i = 0, count - 1 do
+            local k = count > 1 and i / (count - 1) or 0
+            local scale = (1 - i / count) ^ (power or 1.5)
+
+            local f = newFrame(parent, outer:Lerp(inner, k))
+            f.Position = UDim2.fromScale(cx, cy)
+            f.Size = UDim2.fromScale(w * scale, h * scale)
+            f.Rotation = rot
+            round(f, radius)
+            register(f, "BackgroundTransparency", per, gate)
+        end
+    end
+
+    local function column(parent, w, len, outer, inner, count, total, gate)
+        count = steps(count)
+        local per = 1 - (1 - total) ^ (1 / count)
+
+        for i = 0, count - 1 do
+            local k = count > 1 and i / (count - 1) or 0
+            local scale = (1 - i / count) ^ 1.25
+
+            local f = newFrame(parent, outer:Lerp(inner, k))
+            f.Size = UDim2.fromScale(w * scale, len * (0.55 + 0.45 * scale))
+            round(f, 1)
+            gradient(f, 90, nil, seq({ 0, 1 }, { 0.26, 0.55 }, { 0.5, 0 }, { 0.74, 0.55 }, { 1, 1 }))
+            register(f, "BackgroundTransparency", per, gate)
+        end
+    end
+
+    local function addSpot(def)
+        local f = newFrame(gui, def.Color)
+        round(f, 1)
+        register(f, "BackgroundTransparency", def.Op, def.Gate)
+
+        if def.Rim then
+            local stroke = Instance.new("UIStroke")
+            stroke.Color = def.Rim
+            stroke.Thickness = 2
+            stroke.Parent = f
+            register(stroke, "Transparency", def.RimOp or 0.6, def.Gate)
+        end
+
+        def.F = f
+        def.Seed = #spots * 1.37 + 0.5
+        table.insert(spots, def)
+    end
+
+    local function build()
+        if built then
+            return
+        end
+        built = true
+
+        gui = Instance.new("ScreenGui")
+        gui.Name = ROOT .. "_Lensa"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = -1
+        gui.Enabled = false
+        gui.Parent = PlayerGui
+
+        -- 1. Selimut hangat
+        local wash = newFrame(gui)
+        wash.AnchorPoint = Vector2.new(0, 0)
+        wash.Position = UDim2.fromScale(0, 0)
+        wash.Size = UDim2.fromScale(1, 1)
+        gradient(wash, 90, ColorSequence.new(rgb(255, 180, 80), rgb(180, 70, 14)), seq({ 0, 0.1 }, { 1, 0 }))
+        register(wash, "BackgroundTransparency", 0.58, 0)
+
+        local sky = newFrame(gui, rgb(255, 236, 165))
+        sky.AnchorPoint = Vector2.new(0, 0)
+        sky.Position = UDim2.fromScale(0, 0)
+        sky.Size = UDim2.fromScale(1, 0.6)
+        gradient(sky, 90, nil, seq({ 0, 0.2 }, { 1, 1 }))
+        register(sky, "BackgroundTransparency", 0.75, 0.25)
+
+        -- 2. Ghost kiri & kanan
+        ghostL = newFrame(gui)
+        ghostL.Rotation = 18
+        softStack(ghostL, 0.5, 0.5, 1, 1, 0, rgb(150, 45, 10), rgb(225, 85, 20), 9, 0.62, 0.25, 0.5, 1.2)
+
+        local fringeL = newFrame(ghostL)
+        fringeL.Size = UDim2.fromScale(0.98, 0.98)
+        round(fringeL, 0.5)
+        local strokeL = Instance.new("UIStroke")
+        strokeL.Color = rgb(170, 165, 40)
+        strokeL.Thickness = 3
+        strokeL.Parent = fringeL
+        register(strokeL, "Transparency", 0.35, 0.25)
+
+        ghostR = newFrame(gui)
+        ghostR.Rotation = -6
+        softStack(ghostR, 0.5, 0.5, 1, 1, 0, rgb(150, 35, 8), rgb(215, 60, 12), 9, 0.7, 0.25, 0.3, 1.2)
+
+        local fringeR = newFrame(ghostR)
+        fringeR.Size = UDim2.fromScale(0.98, 0.98)
+        round(fringeR, 0.3)
+        local strokeR = Instance.new("UIStroke")
+        strokeR.Color = rgb(150, 160, 40)
+        strokeR.Thickness = 3
+        strokeR.Parent = fringeR
+        register(strokeR, "Transparency", 0.35, 0.25)
+
+        -- 3. Bayangan gelap kemerahan di tepi
+        occluder = newFrame(gui)
+        occluder.Size = UDim2.fromScale(0.34, 1)
+
+        local body = newFrame(occluder, rgb(50, 13, 3))
+        body.AnchorPoint = Vector2.new(0, 0)
+        body.Position = UDim2.fromScale(0, 0)
+        body.Size = UDim2.fromScale(1, 1)
+        occGradient = gradient(body, 0, nil, seq({ 0, 1 }, { 0.22, 0.45 }, { 0.5, 0.12 }, { 1, 0.1 }))
+        register(body, "BackgroundTransparency", 0.8, 0.45)
+
+        rimGlow = newFrame(occluder, rgb(255, 105, 20))
+        rimGlow.Size = UDim2.fromScale(0.36, 1)
+        gradient(rimGlow, 0, nil, seq({ 0, 1 }, { 0.5, 0.2 }, { 1, 1 }))
+        register(rimGlow, "BackgroundTransparency", 0.72, 0.45)
+
+        -- 4. Rig matahari
+        rig = newFrame(gui)
+
+        softStack(rig, 0.5, 0.5, 2.6, 2.6, 0, rgb(225, 85, 15), rgb(255, 170, 40), 18, 0.78, 0, 1, 1.5)
+        softStack(rig, 0.5, 0.5, 1.15, 1.15, 0, rgb(255, 160, 35), rgb(255, 225, 120), 14, 0.85, 0, 1, 1.5)
+        softStack(rig, 0.5, 0.5, 1.0, 1.0, 0, rgb(255, 235, 170), rgb(255, 255, 245), 10, 0.55, 0.2, 1, 1.5)
+
+        local rs = Random.new(41)
+        for i = 1, 28 do
+            local wide = i <= 10
+
+            local f = newFrame(rig, wide and rgb(255, 190, 70) or rgb(255, 235, 160))
+            f.Size = UDim2.fromScale(
+                wide and rs:NextNumber(1.0, 1.8) or rs:NextNumber(0.5, 1.5),
+                wide and 0.022 or 0.004
+            )
+            f.Rotation = wide and (i - 1) * 18 or (i * 37) % 180
+            round(f, 1)
+            gradient(f, 0, nil, seq({ 0, 1 }, { 0.35, 0.7 }, { 0.5, 0.15 }, { 0.65, 0.7 }, { 1, 1 }))
+            register(f, "BackgroundTransparency", wide and 0.18 or 0.5, 0.1)
+        end
+
+        beam = newFrame(rig)
+        beam.Size = UDim2.fromScale(1, 1)
+
+        column(beam, 0.40, 2.8, rgb(255, 125, 15), rgb(255, 215, 80), 12, 0.9, 0.05)
+        column(beam, 0.14, 2.2, rgb(255, 200, 60), rgb(255, 245, 190), 8, 0.85, 0.05)
+        column(beam, 0.012, 2.5, rgb(255, 250, 230), rgb(255, 255, 250), 4, 0.7, 0.1)
+
+        softStack(beam, 0.5, 0.5, 0.20, 0.52, 0, rgb(255, 215, 90), rgb(255, 255, 248), 9, 0.99, 0, 1, 1.2)
+
+        local bits = {
+            { -0.045, -0.12, 0.035 }, { 0.020, 0.02, 0.050 }, { 0.050, -0.20, 0.030 },
+            { -0.050, 0.08, 0.040 }, { 0.030, 0.18, 0.040 }, { 0.060, 0.10, 0.030 },
+            { -0.030, -0.22, 0.025 },
+        }
+        for _, b in ipairs(bits) do
+            local f = newFrame(beam, rgb(255, 252, 235))
+            f.Position = UDim2.fromScale(0.5 + b[1], 0.5 + b[2])
+            f.Size = UDim2.fromScale(b[3], b[3] * 1.4)
+            round(f, 1)
+            register(f, "BackgroundTransparency", 0.55, 0)
+        end
+
+        -- 5. Ghost kecil + bokeh
+        local axisSpots = {
+            { D = 0.19, Off = 0.000, Size = 0.065, Color = rgb(255, 214, 70), Op = 0.62, Rim = rgb(255, 242, 160), RimOp = 0.85, Gate = 0.2 },
+            { D = 0.24, Off = 0.015, Size = 0.018, Color = rgb(200, 140, 210), Op = 0.45, Gate = 0.25 },
+            { D = 0.37, Off = -0.005, Size = 0.050, Color = rgb(255, 150, 30), Op = 0.50, Gate = 0.25 },
+            { D = 0.53, Off = 0.030, Size = 0.060, Color = rgb(235, 60, 20), Op = 0.60, Gate = 0.3 },
+            { D = 0.30, Off = -0.12, Size = 0.060, Asp = 2.0, Rot = 12, Color = rgb(255, 190, 50), Op = 0.35, Gate = 0.4 },
+            { D = 0.36, Off = -0.02, Size = 0.080, Asp = 1.6, Rot = 10, Color = rgb(255, 185, 40), Op = 0.45, Gate = 0.4 },
+            { D = 0.42, Off = 0.06, Size = 0.110, Asp = 1.4, Rot = 8, Color = rgb(255, 200, 60), Op = 0.40, Gate = 0.45 },
+            { D = 0.50, Off = -0.10, Size = 0.090, Color = rgb(255, 170, 40), Op = 0.50, Gate = 0.45 },
+            { D = 0.55, Off = 0.12, Size = 0.045, Color = rgb(255, 200, 60), Op = 0.50, Gate = 0.45 },
+            { D = 0.62, Off = -0.16, Size = 0.070, Color = rgb(240, 50, 20), Op = 0.70, Rim = rgb(255, 110, 60), RimOp = 0.5, Gate = 0.5 },
+            { D = 0.60, Off = 0.05, Size = 0.065, Color = rgb(240, 45, 20), Op = 0.70, Rim = rgb(255, 110, 60), RimOp = 0.5, Gate = 0.5 },
+            { D = 0.66, Off = -0.04, Size = 0.030, Color = rgb(240, 60, 25), Op = 0.65, Gate = 0.5 },
+            { D = 0.74, Off = 0.22, Size = 0.050, Color = rgb(235, 60, 25), Op = 0.60, Gate = 0.5 },
+        }
+        for _, def in ipairs(axisSpots) do
+            def.Mode = "axis"
+            addSpot(def)
+        end
+
+        local rimSpots = {
+            { X = 0.763, Y = 0.280, Size = 0.040 }, { X = 0.757, Y = 0.400, Size = 0.075 },
+            { X = 0.705, Y = 0.185, Size = 0.035 }, { X = 0.684, Y = 0.260, Size = 0.030 },
+            { X = 0.730, Y = 0.500, Size = 0.035 }, { X = 0.700, Y = 0.080, Size = 0.030 },
+            { X = 0.770, Y = 0.170, Size = 0.028 }, { X = 0.660, Y = 0.350, Size = 0.025 },
+        }
+        for i, def in ipairs(rimSpots) do
+            def.Mode = "rim"
+            def.Color = i % 3 == 0 and rgb(255, 150, 30) or rgb(255, 190, 45)
+            def.Op = 0.55
+            def.Rim = rgb(255, 225, 120)
+            def.RimOp = 0.35
+            def.Gate = 0.5
+            addSpot(def)
+        end
+
+        -- 6. Vignette gelap
+        local vignette = {
+            { pos = UDim2.fromScale(0, 0), anchor = Vector2.new(0, 0), size = UDim2.fromScale(1, 0.28), rot = 90, a = 0, b = 1 },
+            { pos = UDim2.fromScale(0, 1), anchor = Vector2.new(0, 1), size = UDim2.fromScale(1, 0.34), rot = 90, a = 1, b = 0 },
+            { pos = UDim2.fromScale(0, 0), anchor = Vector2.new(0, 0), size = UDim2.fromScale(0.22, 1), rot = 0, a = 0, b = 1 },
+            { pos = UDim2.fromScale(1, 0), anchor = Vector2.new(1, 0), size = UDim2.fromScale(0.22, 1), rot = 0, a = 1, b = 0 },
+        }
+        for _, v in ipairs(vignette) do
+            local f = newFrame(gui, rgb(30, 10, 2))
+            f.AnchorPoint = v.anchor
+            f.Position = v.pos
+            f.Size = v.size
+            gradient(f, v.rot, nil, seq({ 0, v.a }, { 1, v.b }))
+            register(f, "BackgroundTransparency", 0.55, 0.05)
+        end
+
+        -- 7. Blur lembut
+        blur = Instance.new("BlurEffect")
+        blur.Name = PREFIX .. "BlurLensa"
+        blur.Size = 0
+        blur.Parent = Lighting
+        table.insert(Original.Created, blur)
+    end
+
+    local function setSide(side)
+        sideCache = side
+
+        if side == 1 then
+            occluder.AnchorPoint = Vector2.new(1, 0.5)
+            occluder.Position = UDim2.fromScale(1, 0.5)
+            occGradient.Rotation = 0
+            rimGlow.Position = UDim2.fromScale(0, 0.5)
+        else
+            occluder.AnchorPoint = Vector2.new(0, 0.5)
+            occluder.Position = UDim2.fromScale(0, 0.5)
+            occGradient.Rotation = 180
+            rimGlow.Position = UDim2.fromScale(1, 0.5)
+        end
+    end
+
+    function SunLens.Update(dt)
+        build()
+
+        local mood = State.Mood
+        local cam = Workspace.CurrentCamera
+        if not mood or not cam then
+            return
+        end
+
+        local flare = mood.Flare
+        local screenPoint = cam:WorldToViewportPoint(Sun.Pos)
+
+        local target = 0
+        if flare > 0 and Sun.Elev > 0 and screenPoint.Z > 0 then
+            local aim = clamp01((Sun.Look - 0.55) / 0.4)
+            aim = aim * aim * (3 - 2 * aim)
+
+            -- makin jauh dari titik matahari, lensa makin pudar
+            local distFade = clamp01(Sun.Scale ^ 0.9)
+
+            target = aim * (0.3 + 0.7 * Sun.Open) * Sun.Elev * flare * distFade
+        end
+
+        level = lerp(level, target, math.min(1, dt * 5))
+        local s = clamp01(level * LENS_INTENSITY * (0.75 + 0.25 * State.Scale))
+
+        if s <= 0.005 then
+            gui.Enabled = false
+            blur.Size = 0
+            return
+        end
+
+        gui.Enabled = true
+        blur.Size = 5 * s
+
+        local size = cam.ViewportSize
+        local W, H = size.X, size.Y
+        local center = size / 2
+        local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
+        local now = os.clock()
+
+        -- Ukuran seluruh lensa ikut jarak ke titik matahari
+        local S = Sun.Scale
+        local sizeScale = math.clamp(S, 0.15, 1.2)
+
+        rig.Position = UDim2.fromOffset(sunPos.X, sunPos.Y)
+        rig.Size = UDim2.fromOffset(H * sizeScale, H * sizeScale)
+        beam.Rotation = TILT + math.sin(now * 0.5) * 1.2
+
+        local shift = (center - sunPos) * 0.45
+        local gs = 0.4 + 0.6 * sizeScale
+        ghostL.Position = UDim2.fromOffset(center.X + shift.X - W * 0.33, center.Y + shift.Y - H * 0.26)
+        ghostL.Size = UDim2.fromOffset(W * 0.36 * gs, H * 0.19 * gs)
+        ghostR.Position = UDim2.fromOffset(center.X + shift.X + W * 0.38, center.Y + shift.Y - H * 0.15)
+        ghostR.Size = UDim2.fromOffset(W * 0.24 * gs, H * 0.33 * gs)
+
+        local side = sideCache
+        if side == 0 then
+            side = sunPos.X < W * 0.62 and 1 or -1
+        elseif side == 1 and sunPos.X > W * 0.68 then
+            side = -1
+        elseif side == -1 and sunPos.X < W * 0.56 then
+            side = 1
+        end
+        if side ~= sideCache then
+            setSide(side)
+        end
+
+        local axis = center - sunPos
+        local dir = axis.Magnitude > H * 0.05 and axis.Unit or Vector2.new(-0.5, 0.86).Unit
+        local perp = Vector2.new(-dir.Y, dir.X)
+        local spread = 0.5 + 0.5 * sizeScale
+        local spotScale = 0.35 + 0.65 * sizeScale
+
+        for _, sp in ipairs(spots) do
+            local sway = Vector2.new(math.sin(now * 0.55 + sp.Seed), math.cos(now * 0.45 + sp.Seed * 1.3)) * H * 0.006
+            local p
+
+            if sp.Mode == "axis" then
+                p = sunPos + dir * H * sp.D * spread + perp * H * sp.Off * spread + sway
+            else
+                local x = side == 1 and sp.X or (1 - sp.X)
+                p = Vector2.new(W * x, H * sp.Y) + sway
+            end
+
+            local d = H * sp.Size * spotScale
+            sp.F.Position = UDim2.fromOffset(p.X, p.Y)
+            sp.F.Size = UDim2.fromOffset(d, d * (sp.Asp or 1))
+            sp.F.Rotation = sp.Rot or 0
+        end
+
+        for _, layer in ipairs(layers) do
+            local e = clamp01((s - layer.Gate) / (1 - layer.Gate))
+            local t = 1 - layer.Op * e
+
+            if math.abs(t - layer.Last) > 0.004 then
+                layer.Last = t
+                layer.Obj[layer.Prop] = t
+            end
+        end
+    end
+
+    function SunLens.Destroy()
+        if gui then
+            gui:Destroy()
+            gui = nil
+        end
+        if blur then
+            blur:Destroy()
+            blur = nil
+        end
+        table.clear(layers)
+        table.clear(spots)
+        built = false
+        level = 0
+        sideCache = 0
+    end
+end
 
 ----------------------------------------------------------------
 -- TERAPKAN SUASANA & KUALITAS
