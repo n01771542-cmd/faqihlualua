@@ -1,89 +1,74 @@
 --[[
-    LEON4951 SHADERS
+    ============================================================================
+    ULTRA REALISTIC RENDERER V4 + NOSTALGIC SORE (EDISI KOMBINASI & PENGATURAN)
+    ============================================================================
     Roblox LocalScript
-    Letakkan di: StarterPlayer > StarterPlayerScripts
+    Recommended Placement: StarterPlayer > StarterPlayerScripts
 
-    PERUBAHAN
-    ---------
-    1. Sore Keemasan: matahari DIAM di satu titik dunia. Makin jauh kamu dari
-       titik itu, glow + lensa + sinar matahari makin kecil dan memudar.
-    2. Suasana sore lebih gelap: oranye dominan, kuning halus, sedikit hitam.
-       Cahaya dan bayangan dibuat lebih tegas. Matahari sedikit dikecilkan.
-    3. UI kecil, halus, bisa digeser, dilipat, dan diganti ukurannya.
-       Shader bisa DIGABUNG (tap beberapa sekaligus).
-    4. Kabut lebih tebal dan sedikit lebih gelap.
-    5. Malam: setiap tempat telur (nest, titik telur guard, telur yang
-       ditaruh pemain) diberi cahaya hangat halus.
-    6. Hujan: genangan tidak bulat, berupa lapisan kaca bening di lantai.
-    7. Nama UI: Leon4951 shaders
+    FILOSOFI VISUAL
+    ---------------
+    Script ini dirancang untuk menciptakan pengalaman visual yang imersif, 
+    tenang, dan sangat realistis dengan memanfaatkan pipeline rendering asli Roblox.
+    
+    FITUR BARU UTAMA:
+    1. KOMBINASI SHADERS (MAKSIMAL 2): 
+       Anda dapat menggabungkan dua suasana (misal: "SORE" + "HUJAN") untuk 
+       menciptakan atmosfer hibrida yang unik. Sistem akan secara otomatis 
+       menghitung rata-rata nilai numerik dan melakukan Lerp pada nilai warna.
+       
+    2. PENGATURAN DETAIL PER SHADER:
+       Setiap suasana memiliki panel pengaturan sendiri yang memungkinkan Anda 
+       mengubah preset (Lumayan Terang, Sedang, Gelap) atau menyesuaikan 
+       parameter secara manual menggunakan slider yang halus dan responsif.
 
-    Semua efek hanya terlihat oleh pemain ini (client only).
-    Restore(): mengembalikan semuanya.
+    BATAS TEKNIS
+    ------------
+    - Roblox tidak mengizinkan custom GPU shader dari LocalScript biasa.
+    - Renderer ini memakai pipeline asli: Realistic lighting, PBR, SurfaceAppearance, 
+      local lights, Atmosphere, ColorCorrection, Bloom, SunRays, dan DepthOfField.
+    - Script ini TIDAK membuat texture PBR baru. NormalMap/RoughnessMap/MetalnessMap 
+      harus berasal dari asset asli pembuat map.
+    - Murni visual: tanpa automation gameplay, tanpa remote, tanpa perubahan data pemain.
 ]]
 
 ----------------------------------------------------------------
 -- SERVICES
 ----------------------------------------------------------------
-
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local SoundService = game:GetService("SoundService")
+local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
-local Terrain = Workspace:WaitForChild("Terrain")
-
-local ROOT = "Leon4951Shaders"
-local PREFIX = "L4_"
-local rgb = Color3.fromRGB
+local Camera = Workspace.CurrentCamera
 
 ----------------------------------------------------------------
--- BERSIHKAN VERSI LAMA
+-- ROOT & CLEANUP
 ----------------------------------------------------------------
+local ROOT_NAME = "UltraRealisticRendererV4"
 
-for _, globalName in ipairs({ "Leon4951Shaders", "VisualRealistis", "UltraRealisticRendererV4" }) do
-    local old = _G[globalName]
-    if old and old.Restore then
-        pcall(old.Restore)
-    end
+local Existing = PlayerGui:FindFirstChild(ROOT_NAME)
+if Existing then
+    Existing:Destroy()
 end
 
-for _, guiName in ipairs({
-    ROOT, ROOT .. "_Lensa", ROOT .. "_Atmos",
-    "VisualRealistis", "VisualRealistis_Lensa", "UltraRealisticRendererV4",
-}) do
-    local old = PlayerGui:FindFirstChild(guiName)
-    if old then
-        old:Destroy()
-    end
+local ExistingSettings = PlayerGui:FindFirstChild(ROOT_NAME .. "_Settings")
+if ExistingSettings then
+    ExistingSettings:Destroy()
 end
 
-for _, child in ipairs(Lighting:GetChildren()) do
-    local n = child.Name
-    if n:sub(1, 3) == "VR_" or n:sub(1, 3) == PREFIX or n:sub(1, 5) == "URV4_" then
-        child:Destroy()
-    end
+local OldNostalgia = PlayerGui:FindFirstChild(ROOT_NAME .. "_Nostalgia")
+if OldNostalgia then
+    OldNostalgia:Destroy()
 end
-
-for _, folderName in ipairs({ "VR_Dunia", "L4_Dunia" }) do
-    local old = Workspace:FindFirstChild(folderName)
-    if old then
-        old:Destroy()
-    end
-end
-
-local WorldFolder = Instance.new("Folder")
-WorldFolder.Name = "L4_Dunia"
-WorldFolder.Parent = Workspace
 
 ----------------------------------------------------------------
--- HELPER
+-- SAFE HELPERS
 ----------------------------------------------------------------
-
 local function safe(fn, fallback)
     local ok, result = pcall(fn)
     if ok then
@@ -116,7 +101,7 @@ local function hasProperty(instance, property)
         return false
     end
     return safe(function()
-        local _ = instance[property]
+        local value = instance[property]
         return true
     end, false)
 end
@@ -129,22 +114,22 @@ local function lerp(a, b, t)
     return a + (b - a) * t
 end
 
-local function wetColor(c)
-    return Color3.new(c.R * 0.72, c.G * 0.70, c.B * 0.66)
+local function colorLerp(a, b, t)
+    return a:Lerp(b, clamp01(t))
 end
 
-local weakKeys = { __mode = "k" }
+local function isFiniteNumber(v)
+    return typeof(v) == "number" and v == v and v > -math.huge and v < math.huge
+end
 
 ----------------------------------------------------------------
--- DATA ASLI (untuk Restore)
+-- ORIGINAL STATE
 ----------------------------------------------------------------
-
 local Original = {
     Lighting = {},
-    Parts = setmetatable({}, weakKeys),
-    SurfaceAppearances = setmetatable({}, weakKeys),
-    TerrainColors = {},
-    HiddenAtmospheres = {},
+    Effects = {},
+    Parts = {},
+    SurfaceAppearances = {},
     Created = {},
 }
 
@@ -164,6 +149,7 @@ local function rememberPart(part)
         Color = getProperty(part, "Color", nil),
         Reflectance = getProperty(part, "Reflectance", nil),
         CastShadow = getProperty(part, "CastShadow", nil),
+        MaterialVariant = getProperty(part, "MaterialVariant", nil),
     }
 end
 
@@ -173,2591 +159,1537 @@ local function rememberSurfaceAppearance(surface)
     end
     Original.SurfaceAppearances[surface] = {
         Color = getProperty(surface, "Color", nil),
+        EmissiveStrength = getProperty(surface, "EmissiveStrength", nil),
+        EmissiveTint = getProperty(surface, "EmissiveTint", nil),
     }
 end
 
 ----------------------------------------------------------------
--- PENGATURAN
+-- CONFIG
 ----------------------------------------------------------------
-
-local Settings = {
-    Quality = 8,                         -- 1 sampai 10
-    StartMoods = { "Sore Keemasan" },    -- boleh lebih dari satu, contoh { "Sore Keemasan", "Hujan" }
-    ShowPanel = true,
-
-    -- Matahari diam di satu titik dunia
-    SunDistance = 900,       -- jarak titik matahari dari titik awal (stud)
-    SunFalloff = 1.6,        -- makin besar, efek makin cepat mengecil saat menjauh
-    SunSize = 290,           -- ukuran glow matahari (stud), sedikit lebih kecil dari sebelumnya
-
-    ShadowSoftness = 0.1,
-
-    MaxAccentLights = 80,
+local Config = {
+    Enabled = true,
+    Quality = 10,
+    SuperRealistic = true,
+    Atmosphere = true,
+    Shaders = true,
+    SuperDetail = true,
+    AtmosphereDensity = 0.006,
+    AtmosphereOffset = 0.12,
+    AtmosphereHaze = 0.18,
+    AtmosphereGlare = 0.08,
+    Brightness = 2.35,
+    Exposure = 0.05,
+    ShadowSoftness = 0.18,
+    DiffuseScale = 1,
+    SpecularScale = 1,
+    BloomIntensity = 0.10,
+    BloomSize = 20,
+    BloomThreshold = 1.25,
+    Contrast = 0.10,
+    Saturation = 0.03,
+    ColorTemperature = 0,
+    SunRayIntensity = 0.045,
+    SunRaySpread = 0.78,
+    DOFEnabled = false,
+    DOFNear = 0,
+    DOFFar = 100000,
+    DOFFocus = 50,
+    DOFStrength = 0,
+    DetailDistance = 600,
     LightDistance = 500,
+    MaxAccentLights = 80,
     LightUpdateInterval = 0.12,
-
-    -- Cahaya telur (malam)
-    EggRange = 15,
-    EggBrightness = 1.0,
-    EggMaxLights = 48,
-    EggDistance = 320,
-    EggColor = rgb(255, 176, 100),
+    MetalReflectance = 0.12,
+    GlassReflectance = 0.08,
+    PlasticReflectance = 0.01,
+    PreserveOriginalColors = true,
+    ColorInfluence = 0.06,
+    CameraFOV = nil,
+    ShowUI = true,
 }
 
 ----------------------------------------------------------------
--- DAFTAR SUASANA
+-- QUALITY PRESETS
 ----------------------------------------------------------------
--- Fx = true  -> efek tambahan (hujan, kabut); kalau digabung, jam & matahari
---               mengikuti suasana utama (non-Fx).
--- Overlay    -> lapisan warna halus di layar (oranye-hitam untuk sore)
-
-local DEFAULT = {
-    Shafts = 0, SunGlow = 0, Flare = 0, Sheen = 0, EggGlow = 0, Overlay = 0,
-    OverlayTop = rgb(22, 9, 4), OverlayBottom = rgb(255, 140, 50),
-    SunRaySpread = 0.8, SunRays = 0, BloomSize = 20, BloomThreshold = 1.2,
-    ShadowSoftness = 0.2, ShaftColor = rgb(255, 205, 140),
+local QualityLevels = {
+    [1] = { Name = "LOW", Brightness = 2.0, Exposure = 0, ShadowSoftness = 0.45, Diffuse = 0.85, Specular = 0.75, AtmosphereDensity = 0.002, AtmosphereHaze = 0.08, Bloom = 0.00, Contrast = 0.02, Saturation = 0, SunRays = 0, DetailDistance = 250, LightDistance = 220, MaxLights = 20 },
+    [2] = { Name = "BASIC", Brightness = 2.05, Exposure = 0, ShadowSoftness = 0.38, Diffuse = 0.90, Specular = 0.82, AtmosphereDensity = 0.003, AtmosphereHaze = 0.10, Bloom = 0.01, Contrast = 0.035, Saturation = 0.005, SunRays = 0.005, DetailDistance = 300, LightDistance = 260, MaxLights = 28 },
+    [3] = { Name = "BALANCED", Brightness = 2.10, Exposure = 0.01, ShadowSoftness = 0.34, Diffuse = 0.95, Specular = 0.90, AtmosphereDensity = 0.004, AtmosphereHaze = 0.12, Bloom = 0.025, Contrast = 0.05, Saturation = 0.01, SunRays = 0.012, DetailDistance = 340, LightDistance = 300, MaxLights = 36 },
+    [4] = { Name = "GOOD", Brightness = 2.15, Exposure = 0.015, ShadowSoftness = 0.30, Diffuse = 0.98, Specular = 0.96, AtmosphereDensity = 0.0045, AtmosphereHaze = 0.13, Bloom = 0.04, Contrast = 0.065, Saturation = 0.015, SunRays = 0.018, DetailDistance = 390, LightDistance = 330, MaxLights = 44 },
+    [5] = { Name = "HIGH", Brightness = 2.20, Exposure = 0.02, ShadowSoftness = 0.26, Diffuse = 1, Specular = 1, AtmosphereDensity = 0.005, AtmosphereHaze = 0.14, Bloom = 0.055, Contrast = 0.075, Saturation = 0.02, SunRays = 0.024, DetailDistance = 440, LightDistance = 370, MaxLights = 52 },
+    [6] = { Name = "VERY HIGH", Brightness = 2.25, Exposure = 0.03, ShadowSoftness = 0.23, Diffuse = 1, Specular = 1, AtmosphereDensity = 0.0055, AtmosphereHaze = 0.15, Bloom = 0.07, Contrast = 0.085, Saturation = 0.025, SunRays = 0.030, DetailDistance = 490, LightDistance = 410, MaxLights = 60 },
+    [7] = { Name = "ULTRA", Brightness = 2.30, Exposure = 0.04, ShadowSoftness = 0.20, Diffuse = 1, Specular = 1, AtmosphereDensity = 0.006, AtmosphereHaze = 0.16, Bloom = 0.085, Contrast = 0.095, Saturation = 0.03, SunRays = 0.036, DetailDistance = 540, LightDistance = 450, MaxLights = 68 },
+    [8] = { Name = "CINEMATIC", Brightness = 2.32, Exposure = 0.045, ShadowSoftness = 0.19, Diffuse = 1, Specular = 1, AtmosphereDensity = 0.006, AtmosphereHaze = 0.17, Bloom = 0.095, Contrast = 0.105, Saturation = 0.035, SunRays = 0.040, DetailDistance = 580, LightDistance = 470, MaxLights = 74 },
+    [9] = { Name = "EXTREME", Brightness = 2.34, Exposure = 0.05, ShadowSoftness = 0.18, Diffuse = 1, Specular = 1, AtmosphereDensity = 0.006, AtmosphereHaze = 0.18, Bloom = 0.10, Contrast = 0.11, Saturation = 0.04, SunRays = 0.043, DetailDistance = 620, LightDistance = 490, MaxLights = 78 },
+    [10] = { Name = "ABSOLUTE REALISM", Brightness = 2.36, Exposure = 0.055, ShadowSoftness = 0.16, Diffuse = 1, Specular = 1, AtmosphereDensity = 0.006, AtmosphereHaze = 0.18, Bloom = 0.105, Contrast = 0.115, Saturation = 0.045, SunRays = 0.045, DetailDistance = 700, LightDistance = 520, MaxLights = 80 },
 }
-
-local Moods = {
-    {
-        Name = "Siang Cerah",
-        ClockTime = 11.0, Brightness = 2.40, Exposure = 0.03, ShadowSoftness = 0.20,
-        Density = 0.25, Offset = 0.15, Haze = 0.5, Glare = 0.15,
-        Color = rgb(205, 225, 255), Decay = rgb(190, 210, 240),
-        Ambient = rgb(36, 40, 46), OutdoorAmbient = rgb(150, 160, 175),
-        Top = rgb(255, 248, 235), Bottom = rgb(200, 205, 215),
-        Bloom = 0.06, BloomSize = 18, BloomThreshold = 1.3,
-        SunRays = 0.05, SunRaySpread = 0.8,
-        Contrast = 0.08, Saturation = 0.03, Tint = rgb(255, 255, 255),
-        Shafts = 0.15, SunGlow = 0.35, Flare = 0.15, Sheen = 0.03,
-    },
-    {
-        Name = "Pagi Segar",
-        ClockTime = 7.2, Brightness = 2.30, Exposure = 0.03, ShadowSoftness = 0.18,
-        Density = 0.30, Offset = 0.12, Haze = 0.9, Glare = 0.30,
-        Color = rgb(210, 228, 255), Decay = rgb(240, 205, 170),
-        Ambient = rgb(40, 40, 44), OutdoorAmbient = rgb(140, 148, 165),
-        Top = rgb(255, 226, 190), Bottom = rgb(190, 190, 205),
-        Bloom = 0.10, BloomSize = 22, BloomThreshold = 1.15,
-        SunRays = 0.12, SunRaySpread = 0.85,
-        Contrast = 0.09, Saturation = 0.04, Tint = rgb(252, 250, 248),
-        ShaftColor = rgb(255, 225, 180),
-        Shafts = 0.45, SunGlow = 0.6, Flare = 0.30, Sheen = 0.05,
-    },
-    {
-        -- SORE KEEMASAN: gelap, oranye dominan, kuning halus, sedikit hitam,
-        -- cahaya & bayangan lebih mencolok
-        Name = "Sore Keemasan",
-        ClockTime = 17.3, Brightness = 2.35, Exposure = -0.22, ShadowSoftness = 0.04,
-        Density = 0.37, Offset = 0.10, Haze = 1.9, Glare = 1.0,
-        Color = rgb(255, 148, 78), Decay = rgb(226, 92, 38),
-        Ambient = rgb(30, 18, 12), OutdoorAmbient = rgb(84, 56, 40),
-        Top = rgb(255, 138, 58), Bottom = rgb(112, 70, 50),
-        Bloom = 0.34, BloomSize = 24, BloomThreshold = 0.9,
-        SunRays = 0.46, SunRaySpread = 0.9,
-        Contrast = 0.27, Saturation = 0.14, Tint = rgb(255, 204, 158),
-        ShaftColor = rgb(255, 160, 80),
-        Shafts = 1.0, SunGlow = 1.0, Flare = 1.0, Sheen = 0.13,
-        Overlay = 0.8, OverlayTop = rgb(22, 9, 4), OverlayBottom = rgb(255, 138, 48),
-        WarmBody = true,
-        CloudColor = rgb(255, 140, 85), CloudCover = 0.45, CloudDensity = 0.5,
-    },
-    {
-        Name = "Senja Jingga",
-        ClockTime = 18.15, Brightness = 1.85, Exposure = -0.10, ShadowSoftness = 0.06,
-        Density = 0.40, Offset = 0.08, Haze = 2.0, Glare = 1.0,
-        Color = rgb(255, 170, 130), Decay = rgb(200, 88, 62),
-        Ambient = rgb(44, 28, 28), OutdoorAmbient = rgb(108, 76, 80),
-        Top = rgb(255, 154, 108), Bottom = rgb(140, 96, 100),
-        Bloom = 0.30, BloomSize = 24, BloomThreshold = 0.95,
-        SunRays = 0.34, SunRaySpread = 0.9,
-        Contrast = 0.18, Saturation = 0.10, Tint = rgb(255, 222, 200),
-        ShaftColor = rgb(255, 170, 115),
-        Shafts = 0.85, SunGlow = 1.0, Flare = 0.85, Sheen = 0.08,
-        Overlay = 0.6, OverlayTop = rgb(26, 10, 10), OverlayBottom = rgb(255, 120, 70),
-        CloudColor = rgb(236, 120, 100), CloudCover = 0.5, CloudDensity = 0.5,
-        EggGlow = 0.35,
-    },
-    {
-        Name = "Sedikit Sore",
-        ClockTime = 16.5, Brightness = 1.90, Exposure = -0.03, ShadowSoftness = 0.20,
-        Density = 0.30, Offset = 0.08, Haze = 1.2, Glare = 0.0,
-        Color = rgb(255, 205, 140), Decay = rgb(240, 150, 70),
-        Ambient = rgb(52, 40, 28), OutdoorAmbient = rgb(120, 98, 72),
-        Top = rgb(255, 200, 110), Bottom = rgb(190, 150, 100),
-        Bloom = 0.10, BloomSize = 22, BloomThreshold = 1.1,
-        Contrast = 0.12, Saturation = 0.08, Tint = rgb(255, 235, 200),
-        Sheen = 0.06, HideSun = true,
-        CloudColor = rgb(255, 200, 120), CloudCover = 0.55, CloudDensity = 0.5,
-        EggGlow = 0.1,
-    },
-    {
-        -- KABUT: lebih tebal dan sedikit lebih gelap
-        Fx = true,
-        Name = "Kabut Halus",
-        ClockTime = 9.5, Brightness = 1.55, Exposure = -0.12, ShadowSoftness = 0.30,
-        Density = 0.54, Offset = 0.0, Haze = 2.4, Glare = 0.1,
-        Color = rgb(176, 186, 198), Decay = rgb(116, 126, 144),
-        Ambient = rgb(30, 33, 38), OutdoorAmbient = rgb(82, 90, 102),
-        Top = rgb(200, 202, 202), Bottom = rgb(130, 136, 146),
-        Bloom = 0.05, BloomSize = 22, BloomThreshold = 1.2,
-        Contrast = 0.10, Saturation = -0.04, Tint = rgb(222, 228, 236),
-        Overlay = 0.35, OverlayTop = rgb(30, 34, 40), OverlayBottom = rgb(120, 128, 140),
-        CloudColor = rgb(160, 166, 176), CloudCover = 0.7, CloudDensity = 0.6,
-        EggGlow = 0.3,
-    },
-    {
-        Fx = true,
-        Name = "Berkabut",
-        ClockTime = 8.0, Brightness = 1.65, Exposure = -0.08, ShadowSoftness = 0.32,
-        Density = 0.68, Offset = 0.0, Haze = 3.5, Glare = 0.2,
-        Color = rgb(184, 194, 207), Decay = rgb(126, 138, 158),
-        Ambient = rgb(38, 41, 46), OutdoorAmbient = rgb(96, 104, 116),
-        Top = rgb(214, 212, 206), Bottom = rgb(150, 155, 165),
-        Bloom = 0.06, BloomSize = 26, BloomThreshold = 1.2,
-        SunRays = 0.06, SunRaySpread = 0.9,
-        Contrast = 0.06, Saturation = -0.03, Tint = rgb(230, 236, 244),
-        Shafts = 0.4, SunGlow = 0.25, Flare = 0.08,
-        Overlay = 0.4, OverlayTop = rgb(34, 38, 44), OverlayBottom = rgb(130, 138, 150),
-        CloudColor = rgb(200, 204, 212), CloudCover = 0.75, CloudDensity = 0.65,
-        EggGlow = 0.3,
-    },
-    {
-        Name = "Sedikit Gelap",
-        ClockTime = 19.2, Brightness = 1.20, Exposure = -0.15, ShadowSoftness = 0.25,
-        Density = 0.30, Offset = 0.10, Haze = 1.0, Glare = 0.0,
-        Color = rgb(150, 160, 185), Decay = rgb(80, 90, 120),
-        Ambient = rgb(24, 26, 34), OutdoorAmbient = rgb(70, 76, 96),
-        Top = rgb(150, 160, 190), Bottom = rgb(70, 72, 92),
-        Bloom = 0.05, BloomSize = 20, BloomThreshold = 1.1,
-        Contrast = 0.14, Saturation = -0.02, Tint = rgb(225, 230, 245),
-        EggGlow = 0.6,
-    },
-    {
-        Fx = true,
-        Name = "Hujan",
-        ClockTime = 14.5, Brightness = 1.35, Exposure = -0.10, ShadowSoftness = 0.35,
-        Density = 0.45, Offset = 0.02, Haze = 2.0, Glare = 0.0,
-        Color = rgb(160, 166, 174), Decay = rgb(120, 127, 138),
-        Ambient = rgb(40, 42, 46), OutdoorAmbient = rgb(88, 94, 102),
-        Top = rgb(180, 184, 190), Bottom = rgb(115, 119, 126),
-        Bloom = 0.05, BloomSize = 20, BloomThreshold = 1.2,
-        Contrast = 0.12, Saturation = -0.03, Tint = rgb(225, 228, 233),
-        Rain = true, Wet = true, Sheen = 0.12,
-        CloudColor = rgb(120, 128, 140), CloudCover = 0.9, CloudDensity = 0.8,
-        EggGlow = 0.4,
-    },
-    {
-        Name = "Hutan Hijau",
-        ClockTime = 9.3, Brightness = 2.15, Exposure = 0.015, ShadowSoftness = 0.2,
-        Density = 0.35, Offset = 0.10, Haze = 1.1, Glare = 0.3,
-        Color = rgb(185, 215, 190), Decay = rgb(105, 155, 115),
-        Ambient = rgb(24, 38, 27), OutdoorAmbient = rgb(90, 125, 96),
-        Top = rgb(255, 240, 200), Bottom = rgb(205, 225, 185),
-        Bloom = 0.06, BloomSize = 20, BloomThreshold = 1.2,
-        SunRays = 0.12, SunRaySpread = 0.85,
-        Contrast = 0.10, Saturation = 0.07, Tint = rgb(238, 250, 236),
-        ShaftColor = rgb(255, 240, 190),
-        Shafts = 0.9, SunGlow = 0.5, Flare = 0.2, Sheen = 0.04,
-    },
-    {
-        Name = "Pantai Tropis",
-        ClockTime = 10.6, Brightness = 2.34, Exposure = 0.035, ShadowSoftness = 0.2,
-        Density = 0.22, Offset = 0.14, Haze = 0.6, Glare = 0.2,
-        Color = rgb(190, 225, 225), Decay = rgb(116, 185, 170),
-        Ambient = rgb(27, 43, 37), OutdoorAmbient = rgb(125, 158, 143),
-        Top = rgb(255, 248, 230), Bottom = rgb(218, 242, 206),
-        Bloom = 0.065, BloomSize = 18, BloomThreshold = 1.25,
-        SunRays = 0.06,
-        Contrast = 0.09, Saturation = 0.08, Tint = rgb(244, 255, 245),
-        Shafts = 0.2, SunGlow = 0.45, Flare = 0.2, Sheen = 0.06,
-    },
-    {
-        Name = "Gurun Pasir",
-        ClockTime = 15.5, Brightness = 2.30, Exposure = 0.04, ShadowSoftness = 0.18,
-        Density = 0.30, Offset = 0.16, Haze = 1.0, Glare = 0.3,
-        Color = rgb(238, 220, 188), Decay = rgb(202, 166, 113),
-        Ambient = rgb(52, 43, 32), OutdoorAmbient = rgb(167, 145, 115),
-        Top = rgb(255, 232, 190), Bottom = rgb(255, 213, 158),
-        Bloom = 0.065, BloomSize = 20, BloomThreshold = 1.2,
-        SunRays = 0.08, SunRaySpread = 0.85,
-        Contrast = 0.10, Saturation = 0.065, Tint = rgb(255, 248, 232),
-        ShaftColor = rgb(255, 220, 160),
-        Shafts = 0.3, SunGlow = 0.6, Flare = 0.25, Sheen = 0.04,
-    },
-    {
-        Name = "Gunung Berapi",
-        ClockTime = 19.4, Brightness = 1.70, Exposure = 0.0, ShadowSoftness = 0.2,
-        Density = 0.60, Offset = 0.06, Haze = 2.0, Glare = 0.2,
-        Color = rgb(235, 150, 120), Decay = rgb(150, 52, 38),
-        Ambient = rgb(42, 20, 18), OutdoorAmbient = rgb(110, 53, 45),
-        Top = rgb(255, 170, 130), Bottom = rgb(205, 78, 44),
-        Bloom = 0.12, BloomSize = 24, BloomThreshold = 1.0,
-        Contrast = 0.16, Saturation = 0.10, Tint = rgb(255, 235, 220),
-        EggGlow = 0.5,
-    },
-    {
-        Name = "Malam Bulan",
-        ClockTime = 0.35, Brightness = 1.30, Exposure = -0.05, ShadowSoftness = 0.22,
-        Density = 0.25, Offset = 0.22, Haze = 0.5, Glare = 0.0,
-        Color = rgb(140, 170, 220), Decay = rgb(76, 92, 135),
-        Ambient = rgb(14, 18, 30), OutdoorAmbient = rgb(54, 65, 92),
-        Top = rgb(150, 175, 230), Bottom = rgb(80, 90, 125),
-        Bloom = 0.06, BloomSize = 20, BloomThreshold = 1.1,
-        Contrast = 0.16, Saturation = 0.025, Tint = rgb(210, 225, 255),
-        EggGlow = 1.0,
-    },
-    {
-        Name = "Malam Gelap",
-        ClockTime = 2.1, Brightness = 0.92, Exposure = -0.08, ShadowSoftness = 0.25,
-        Density = 0.20, Offset = 0.26, Haze = 0.3, Glare = 0.0,
-        Color = rgb(75, 100, 160), Decay = rgb(35, 46, 82),
-        Ambient = rgb(7, 9, 18), OutdoorAmbient = rgb(27, 33, 57),
-        Top = rgb(110, 130, 190), Bottom = rgb(42, 45, 68),
-        Bloom = 0.05, BloomSize = 20, BloomThreshold = 1.0,
-        Contrast = 0.18, Saturation = 0.01, Tint = rgb(190, 210, 255),
-        EggGlow = 1.0,
-    },
-    {
-        Name = "Malam Kota Neon",
-        ClockTime = 22.1, Brightness = 1.15, Exposure = -0.025, ShadowSoftness = 0.22,
-        Density = 0.28, Offset = 0.20, Haze = 0.6, Glare = 0.0,
-        Color = rgb(110, 165, 220), Decay = rgb(70, 75, 150),
-        Ambient = rgb(12, 17, 28), OutdoorAmbient = rgb(42, 54, 84),
-        Top = rgb(120, 150, 210), Bottom = rgb(62, 65, 112),
-        Bloom = 0.15, BloomSize = 24, BloomThreshold = 0.95,
-        Contrast = 0.18, Saturation = 0.09, Tint = rgb(225, 235, 255),
-        EggGlow = 1.0,
-    },
-}
-
-local MoodByName = {}
-for _, mood in ipairs(Moods) do
-    setmetatable(mood, { __index = DEFAULT })
-    MoodByName[mood.Name] = mood
-end
-
--- Menggabungkan beberapa suasana jadi satu (rata-rata halus).
-local NUM_KEYS = {
-    "Brightness", "Exposure", "ShadowSoftness", "Density", "Offset", "Haze", "Glare",
-    "Bloom", "BloomSize", "BloomThreshold", "SunRays", "SunRaySpread",
-    "Contrast", "Saturation", "Shafts", "SunGlow", "Flare", "Sheen", "Overlay",
-}
-
-local COLOR_KEYS = {
-    "Color", "Decay", "Ambient", "OutdoorAmbient", "Top", "Bottom", "Tint",
-    "ShaftColor", "OverlayTop", "OverlayBottom",
-}
-
-local function averageColor(list, key)
-    local acc = list[1][key]
-    for i = 2, #list do
-        acc = acc:Lerp(list[i][key], 1 / i)
-    end
-    return acc
-end
-
-local function mergeMoods(list)
-    if #list == 1 then
-        return list[1]
-    end
-
-    local base = list[1]
-    for _, m in ipairs(list) do
-        if not m.Fx then
-            base = m
-            break
-        end
-    end
-
-    local out = setmetatable({}, { __index = DEFAULT })
-    out.Name = "Gabungan"
-    out.ClockTime = base.ClockTime
-
-    for _, key in ipairs(NUM_KEYS) do
-        local sum = 0
-        for _, m in ipairs(list) do
-            sum += m[key]
-        end
-        out[key] = sum / #list
-    end
-
-    for _, key in ipairs(COLOR_KEYS) do
-        out[key] = averageColor(list, key)
-    end
-
-    local clouds = {}
-    for _, m in ipairs(list) do
-        out.Rain = out.Rain or m.Rain
-        out.Wet = out.Wet or m.Wet
-        out.WarmBody = out.WarmBody or m.WarmBody
-        out.HideSun = out.HideSun or m.HideSun
-        out.EggGlow = math.max(out.EggGlow, m.EggGlow)
-        if m.CloudColor then
-            table.insert(clouds, m)
-        end
-    end
-
-    if #clouds > 0 then
-        out.CloudColor = averageColor(clouds, "CloudColor")
-        local cover, density = 0, 0
-        for _, m in ipairs(clouds) do
-            cover += m.CloudCover or 0.5
-            density += m.CloudDensity or 0.5
-        end
-        out.CloudCover = cover / #clouds
-        out.CloudDensity = density / #clouds
-    end
-
-    return out
-end
 
 ----------------------------------------------------------------
--- STATE
+-- ATMOSPHERE / MOOD LIBRARY (Diperluas untuk variasi yang kaya)
 ----------------------------------------------------------------
+local Atmospheres = {
+    ["REALISTIC CLEAR"] = {
+        ClockTime = 10.2, Brightness = 2.36, Exposure = 0.04, Density = 0.004, Offset = 0.18, Haze = 0.08, Glare = 0.02,
+        Color = Color3.fromRGB(225, 237, 255), Decay = Color3.fromRGB(200, 218, 245), Ambient = Color3.fromRGB(35, 38, 44),
+        OutdoorAmbient = Color3.fromRGB(150, 160, 175), Top = Color3.fromRGB(205, 225, 255), Bottom = Color3.fromRGB(245, 240, 225),
+        Bloom = 0.055, Contrast = 0.08, Saturation = 0.02, Tint = Color3.fromRGB(255, 255, 255),
+    },
+    ["CRISP MORNING"] = {
+        ClockTime = 7.6, Brightness = 2.42, Exposure = 0.045, Density = 0.004, Offset = 0.10, Haze = 0.06, Glare = 0.08,
+        Color = Color3.fromRGB(210, 232, 255), Decay = Color3.fromRGB(188, 210, 240), Ambient = Color3.fromRGB(31, 38, 48),
+        OutdoorAmbient = Color3.fromRGB(150, 166, 190), Top = Color3.fromRGB(190, 220, 255), Bottom = Color3.fromRGB(255, 238, 212),
+        Bloom = 0.075, Contrast = 0.10, Saturation = 0.035, Tint = Color3.fromRGB(248, 252, 255),
+    },
+    ["WARM MORNING"] = {
+        ClockTime = 8.5, Brightness = 2.38, Exposure = 0.04, Density = 0.0045, Offset = 0.12, Haze = 0.09, Glare = 0.10,
+        Color = Color3.fromRGB(226, 235, 255), Decay = Color3.fromRGB(245, 208, 165), Ambient = Color3.fromRGB(43, 39, 34),
+        OutdoorAmbient = Color3.fromRGB(165, 156, 145), Top = Color3.fromRGB(215, 232, 255), Bottom = Color3.fromRGB(255, 225, 190),
+        Bloom = 0.08, Contrast = 0.095, Saturation = 0.045, Tint = Color3.fromRGB(255, 249, 238),
+    },
+    ["CLEAN NOON"] = {
+        ClockTime = 12.1, Brightness = 2.40, Exposure = 0.035, Density = 0.003, Offset = 0.20, Haze = 0.05, Glare = 0.03,
+        Color = Color3.fromRGB(225, 238, 255), Decay = Color3.fromRGB(215, 225, 242), Ambient = Color3.fromRGB(32, 34, 38),
+        OutdoorAmbient = Color3.fromRGB(155, 160, 168), Top = Color3.fromRGB(218, 235, 255), Bottom = Color3.fromRGB(250, 247, 238),
+        Bloom = 0.045, Contrast = 0.12, Saturation = 0.025, Tint = Color3.fromRGB(255, 255, 255),
+    },
+    ["WARM AFTERNOON"] = {
+        ClockTime = 15.3, Brightness = 2.33, Exposure = 0.045, Density = 0.0045, Offset = 0.15, Haze = 0.09, Glare = 0.05,
+        Color = Color3.fromRGB(232, 238, 255), Decay = Color3.fromRGB(238, 205, 168), Ambient = Color3.fromRGB(43, 40, 38),
+        OutdoorAmbient = Color3.fromRGB(164, 153, 142), Top = Color3.fromRGB(224, 233, 255), Bottom = Color3.fromRGB(255, 223, 190),
+        Bloom = 0.07, Contrast = 0.105, Saturation = 0.05, Tint = Color3.fromRGB(255, 249, 240),
+    },
+    ["GOLDEN HOUR"] = {
+        ClockTime = 17.25, Brightness = 2.28, Exposure = 0.03, Density = 0.005, Offset = 0.12, Haze = 0.13, Glare = 0.18,
+        Color = Color3.fromRGB(255, 224, 190), Decay = Color3.fromRGB(220, 150, 92), Ambient = Color3.fromRGB(50, 38, 31),
+        OutdoorAmbient = Color3.fromRGB(176, 139, 111), Top = Color3.fromRGB(255, 205, 155), Bottom = Color3.fromRGB(255, 172, 112),
+        Bloom = 0.11, Contrast = 0.11, Saturation = 0.08, Tint = Color3.fromRGB(255, 244, 225),
+    },
+    ["NOSTALGIC SORE"] = {
+        ClockTime = 17.35, Brightness = 1.85, Exposure = -0.02, ShadowSoftness = 0.10, Density = 0.0065, Offset = 0.08, Haze = 0.20, Glare = 0.36,
+        Color = Color3.fromRGB(255, 176, 100), Decay = Color3.fromRGB(232, 106, 52), Ambient = Color3.fromRGB(46, 30, 22),
+        OutdoorAmbient = Color3.fromRGB(140, 100, 70), Top = Color3.fromRGB(255, 172, 100), Bottom = Color3.fromRGB(240, 128, 72),
+        Bloom = 0.18, BloomSize = 36, BloomThreshold = 0.85, SunRays = 0.10, Contrast = 0.12, Saturation = 0.07, Tint = Color3.fromRGB(255, 222, 180),
+        GradeBrightness = -0.025, DOFFar = 0.14, DOFFocus = 90, DOFRadius = 70,
+        Drift = { Minutes = 14, Clock0 = 17.10, Clock1 = 17.95, Bright0 = 1.95, Bright1 = 1.50, Exp0 = 0.01, Exp1 = -0.06 },
+    },
+    ["SUNSET"] = {
+        ClockTime = 18.05, Brightness = 2.18, Exposure = 0.015, Density = 0.006, Offset = 0.08, Haze = 0.18, Glare = 0.28,
+        Color = Color3.fromRGB(255, 195, 166), Decay = Color3.fromRGB(198, 94, 74), Ambient = Color3.fromRGB(46, 31, 36),
+        OutdoorAmbient = Color3.fromRGB(146, 106, 112), Top = Color3.fromRGB(255, 170, 146), Bottom = Color3.fromRGB(235, 105, 92),
+        Bloom = 0.13, Contrast = 0.12, Saturation = 0.10, Tint = Color3.fromRGB(255, 235, 220),
+    },
+    ["BLUE HOUR"] = {
+        ClockTime = 19.0, Brightness = 1.88, Exposure = -0.015, Density = 0.006, Offset = 0.16, Haze = 0.11, Glare = 0.02,
+        Color = Color3.fromRGB(150, 185, 235), Decay = Color3.fromRGB(90, 125, 185), Ambient = Color3.fromRGB(22, 29, 45),
+        OutdoorAmbient = Color3.fromRGB(72, 94, 132), Top = Color3.fromRGB(90, 125, 190), Bottom = Color3.fromRGB(165, 160, 190),
+        Bloom = 0.06, Contrast = 0.14, Saturation = 0.035, Tint = Color3.fromRGB(225, 235, 255),
+    },
+    ["MOONLIT"] = {
+        ClockTime = 0.35, Brightness = 1.30, Exposure = -0.05, Density = 0.004, Offset = 0.22, Haze = 0.08, Glare = 0,
+        Color = Color3.fromRGB(140, 170, 220), Decay = Color3.fromRGB(76, 92, 135), Ambient = Color3.fromRGB(14, 18, 30),
+        OutdoorAmbient = Color3.fromRGB(54, 65, 92), Top = Color3.fromRGB(55, 75, 125), Bottom = Color3.fromRGB(80, 90, 125),
+        Bloom = 0.045, Contrast = 0.16, Saturation = 0.025, Tint = Color3.fromRGB(210, 225, 255),
+    },
+    ["DEEP NIGHT"] = {
+        ClockTime = 2.1, Brightness = 0.92, Exposure = -0.08, Density = 0.003, Offset = 0.26, Haze = 0.04, Glare = 0,
+        Color = Color3.fromRGB(75, 100, 160), Decay = Color3.fromRGB(35, 46, 82), Ambient = Color3.fromRGB(7, 9, 18),
+        OutdoorAmbient = Color3.fromRGB(27, 33, 57), Top = Color3.fromRGB(25, 35, 70), Bottom = Color3.fromRGB(42, 45, 68),
+        Bloom = 0.035, Contrast = 0.18, Saturation = 0.01, Tint = Color3.fromRGB(190, 210, 255),
+    },
+    ["OVERCAST"] = {
+        ClockTime = 11.2, Brightness = 1.75, Exposure = -0.015, Density = 0.008, Offset = 0.05, Haze = 0.20, Glare = 0.01,
+        Color = Color3.fromRGB(205, 214, 224), Decay = Color3.fromRGB(170, 180, 194), Ambient = Color3.fromRGB(48, 50, 54),
+        OutdoorAmbient = Color3.fromRGB(112, 118, 126), Top = Color3.fromRGB(188, 198, 210), Bottom = Color3.fromRGB(198, 202, 204),
+        Bloom = 0.025, Contrast = 0.055, Saturation = -0.025, Tint = Color3.fromRGB(238, 241, 244),
+    },
+    ["RAIN MOOD"] = {
+        ClockTime = 15.8, Brightness = 1.62, Exposure = -0.02, Density = 0.010, Offset = 0.02, Haze = 0.24, Glare = 0.01,
+        Color = Color3.fromRGB(174, 194, 218), Decay = Color3.fromRGB(112, 132, 164), Ambient = Color3.fromRGB(35, 41, 51),
+        OutdoorAmbient = Color3.fromRGB(90, 105, 125), Top = Color3.fromRGB(130, 155, 188), Bottom = Color3.fromRGB(150, 160, 175),
+        Bloom = 0.02, Contrast = 0.10, Saturation = -0.02, Tint = Color3.fromRGB(225, 235, 250),
+    },
+    ["MISTY"] = {
+        ClockTime = 8.2, Brightness = 1.98, Exposure = 0, Density = 0.014, Offset = 0.01, Haze = 0.36, Glare = 0.08,
+        Color = Color3.fromRGB(215, 225, 236), Decay = Color3.fromRGB(165, 180, 205), Ambient = Color3.fromRGB(47, 50, 54),
+        OutdoorAmbient = Color3.fromRGB(120, 128, 140), Top = Color3.fromRGB(185, 205, 228), Bottom = Color3.fromRGB(205, 207, 210),
+        Bloom = 0.045, Contrast = 0.035, Saturation = -0.01, Tint = Color3.fromRGB(245, 248, 252),
+    },
+    ["TROPICAL"] = {
+        ClockTime = 10.6, Brightness = 2.34, Exposure = 0.035, Density = 0.005, Offset = 0.14, Haze = 0.10, Glare = 0.06,
+        Color = Color3.fromRGB(190, 225, 225), Decay = Color3.fromRGB(116, 185, 170), Ambient = Color3.fromRGB(27, 43, 37),
+        OutdoorAmbient = Color3.fromRGB(125, 158, 143), Top = Color3.fromRGB(175, 225, 238), Bottom = Color3.fromRGB(218, 242, 206),
+        Bloom = 0.065, Contrast = 0.09, Saturation = 0.08, Tint = Color3.fromRGB(244, 255, 245),
+    },
+    ["FOREST"] = {
+        ClockTime = 9.3, Brightness = 2.18, Exposure = 0.015, Density = 0.007, Offset = 0.10, Haze = 0.17, Glare = 0.04,
+        Color = Color3.fromRGB(185, 215, 190), Decay = Color3.fromRGB(105, 155, 115), Ambient = Color3.fromRGB(24, 38, 27),
+        OutdoorAmbient = Color3.fromRGB(90, 125, 96), Top = Color3.fromRGB(160, 205, 175), Bottom = Color3.fromRGB(205, 225, 185),
+        Bloom = 0.04, Contrast = 0.10, Saturation = 0.07, Tint = Color3.fromRGB(238, 250, 236),
+    },
+    ["DESERT"] = {
+        ClockTime = 15.5, Brightness = 2.30, Exposure = 0.04, Density = 0.005, Offset = 0.16, Haze = 0.13, Glare = 0.09,
+        Color = Color3.fromRGB(238, 220, 188), Decay = Color3.fromRGB(202, 166, 113), Ambient = Color3.fromRGB(52, 43, 32),
+        OutdoorAmbient = Color3.fromRGB(167, 145, 115), Top = Color3.fromRGB(235, 215, 180), Bottom = Color3.fromRGB(255, 213, 158),
+        Bloom = 0.065, Contrast = 0.10, Saturation = 0.065, Tint = Color3.fromRGB(255, 248, 232),
+    },
+    ["ARCTIC"] = {
+        ClockTime = 12.0, Brightness = 2.42, Exposure = 0.04, Density = 0.004, Offset = 0.18, Haze = 0.07, Glare = 0.03,
+        Color = Color3.fromRGB(202, 230, 255), Decay = Color3.fromRGB(135, 185, 235), Ambient = Color3.fromRGB(27, 37, 49),
+        OutdoorAmbient = Color3.fromRGB(122, 150, 180), Top = Color3.fromRGB(190, 225, 255), Bottom = Color3.fromRGB(225, 240, 255),
+        Bloom = 0.055, Contrast = 0.10, Saturation = 0.02, Tint = Color3.fromRGB(236, 248, 255),
+    },
+    ["MYSTIC"] = {
+        ClockTime = 20.2, Brightness = 1.55, Exposure = -0.02, Density = 0.006, Offset = 0.16, Haze = 0.12, Glare = 0.05,
+        Color = Color3.fromRGB(175, 160, 225), Decay = Color3.fromRGB(90, 70, 160), Ambient = Color3.fromRGB(29, 23, 48),
+        OutdoorAmbient = Color3.fromRGB(76, 65, 118), Top = Color3.fromRGB(90, 78, 160), Bottom = Color3.fromRGB(140, 100, 180),
+        Bloom = 0.085, Contrast = 0.13, Saturation = 0.055, Tint = Color3.fromRGB(240, 230, 255),
+    },
+    ["NEON NIGHT"] = {
+        ClockTime = 22.1, Brightness = 1.15, Exposure = -0.025, Density = 0.004, Offset = 0.20, Haze = 0.07, Glare = 0.02,
+        Color = Color3.fromRGB(110, 165, 220), Decay = Color3.fromRGB(70, 75, 150), Ambient = Color3.fromRGB(12, 17, 28),
+        OutdoorAmbient = Color3.fromRGB(42, 54, 84), Top = Color3.fromRGB(35, 55, 105), Bottom = Color3.fromRGB(62, 65, 112),
+        Bloom = 0.15, Contrast = 0.18, Saturation = 0.09, Tint = Color3.fromRGB(225, 235, 255),
+    },
+    ["VOLCANIC"] = {
+        ClockTime = 19.4, Brightness = 1.70, Exposure = 0, Density = 0.009, Offset = 0.06, Haze = 0.24, Glare = 0.11,
+        Color = Color3.fromRGB(235, 150, 120), Decay = Color3.fromRGB(150, 52, 38), Ambient = Color3.fromRGB(42, 20, 18),
+        OutdoorAmbient = Color3.fromRGB(110, 53, 45), Top = Color3.fromRGB(125, 57, 48), Bottom = Color3.fromRGB(205, 78, 44),
+        Bloom = 0.12, Contrast = 0.16, Saturation = 0.10, Tint = Color3.fromRGB(255, 235, 220),
+    },
+    ["DREAM"] = {
+        ClockTime = 16.8, Brightness = 2.16, Exposure = 0.02, Density = 0.007, Offset = 0.10, Haze = 0.15, Glare = 0.10,
+        Color = Color3.fromRGB(220, 205, 240), Decay = Color3.fromRGB(190, 150, 215), Ambient = Color3.fromRGB(42, 33, 50),
+        OutdoorAmbient = Color3.fromRGB(135, 112, 150), Top = Color3.fromRGB(210, 190, 245), Bottom = Color3.fromRGB(255, 190, 205),
+        Bloom = 0.10, Contrast = 0.08, Saturation = 0.075, Tint = Color3.fromRGB(255, 242, 250),
+    },
+}
 
-local function qualityScale(level)
-    return 0.35 + 0.65 * (level - 1) / 9
-end
-
+----------------------------------------------------------------
+-- ACTIVE STATE & MOOD SETTINGS
+----------------------------------------------------------------
 local State = {
-    Quality = Settings.Quality,
-    Scale = qualityScale(Settings.Quality),
-    Selected = {},
-    Mood = nil,
-
-    Instances = { Atmosphere = nil, Bloom = nil, Color = nil, SunRays = nil },
-    Base = { Bloom = 0, SunRays = 0, Glare = 0, Tint = Color3.new(1, 1, 1), Saturation = 0 },
-
+    Quality = Config.Quality,
+    SelectedMoods = {}, -- Maksimal 2
+    Instances = {
+        Atmosphere = nil, Bloom = nil, ColorCorrection = nil, SunRays = nil, DOF = nil,
+    },
     AccentLights = {},
     Connections = {},
-    UI = nil,
+    OriginalCameraFOV = nil,
     Restored = false,
-    Stats = { Parts = 0, Ground = 0, Lights = 0, Eggs = 0, FPS = 0 },
+    Stats = {
+        Parts = 0, MeshParts = 0, SurfaceAppearances = 0, LightsFound = 0,
+        LightsCreated = 0, MaterialsEnhanced = 0, SurfaceColorsEnhanced = 0, LastFPS = 0,
+    },
 }
 
-for _, name in ipairs(Settings.StartMoods) do
-    if MoodByName[name] then
-        table.insert(State.Selected, name)
-    end
-end
-if #State.Selected == 0 then
-    table.insert(State.Selected, Moods[1].Name)
-end
-
-local PartList = {}
-local PartInfo = setmetatable({}, weakKeys)
-local ScanDone = false
-
-local function selectedLabel()
-    return table.concat(State.Selected, " + ")
+-- Tabel untuk menyimpan override pengaturan per mood
+local MoodSettings = {}
+for name, _ in pairs(Atmospheres) do
+    MoodSettings[name] = {
+        BrightnessMultiplier = 1.0, -- 1.0 = Sedang, 1.2 = Lumayan Terang, 0.8 = Gelap
+        ExposureOffset = 0,
+        ContrastOffset = 0,
+        SaturationOffset = 0,
+        BloomOffset = 0,
+        SunRaysOffset = 0,
+    }
 end
 
 ----------------------------------------------------------------
--- MATAHARI DIAM (dipakai World & Lensa)
+-- INSTANCE MANAGEMENT
 ----------------------------------------------------------------
-
-local Sun = {
-    Anchor = nil,
-    Dir = Vector3.new(0, 1, 0),
-    Pos = Vector3.zero,
-    Dist = 1,
-    Look = 0,
-    Facing = 0,
-    Scale = 1,
-    Elev = 0,
-    Open = 0,
-    Timer = 0,
-    OpenTarget = 0,
-}
-
-local sunRay = RaycastParams.new()
-sunRay.FilterType = Enum.RaycastFilterType.Exclude
-sunRay.RespectCanCollide = false
-
-local function updateSunRay()
-    local list = { WorldFolder }
-    if Player.Character then
-        table.insert(list, Player.Character)
-    end
-    sunRay.FilterDescendantsInstances = list
-end
-
-local function updateSun(dt)
-    local cam = Workspace.CurrentCamera
-    if not cam then
-        return
-    end
-
-    local cf = cam.CFrame
-    local camPos = cf.Position
-
-    if not Sun.Anchor then
-        local char = Player.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        Sun.Anchor = root and root.Position or camPos
-        updateSunRay()
-    end
-
-    local sunDir = Lighting:GetSunDirection()
-    Sun.Dir = sunDir
-    Sun.Pos = Sun.Anchor + sunDir * Settings.SunDistance
-
-    local toSun = Sun.Pos - camPos
-    local dist = math.max(toSun.Magnitude, 1)
-    local dir = toSun / dist
-
-    Sun.Dist = dist
-    Sun.Look = cf.LookVector:Dot(dir)
-    Sun.Facing = clamp01(Sun.Look)
-    Sun.Scale = math.clamp((Settings.SunDistance / dist) ^ Settings.SunFalloff, 0.1, 1.4)
-    Sun.Elev = clamp01((sunDir.Y + 0.05) / 0.12)
-
-    -- Apakah matahari terhalang bangunan/pohon (dicek berkala)
-    Sun.Timer += dt
-    if Sun.Timer >= 0.08 then
-        Sun.Timer = 0
-
-        local offsets = {
-            Vector3.zero, cf.RightVector * 0.04, -cf.RightVector * 0.04,
-            cf.UpVector * 0.04, -cf.UpVector * 0.04,
-        }
-        local open = 0
-        for _, offset in ipairs(offsets) do
-            if not Workspace:Raycast(camPos, (dir + offset).Unit * dist, sunRay) then
-                open += 1
-            end
-        end
-        Sun.OpenTarget = open / #offsets
-    end
-
-    Sun.Open = lerp(Sun.Open, Sun.OpenTarget, math.min(1, dt * 5))
-end
-
-----------------------------------------------------------------
--- EFEK LIGHTING
-----------------------------------------------------------------
-
 local function createEffect(className, name)
     local existing = Lighting:FindFirstChild(name)
-
     if existing and existing:IsA(className) then
-        return existing
+        return existing, false
     end
     if existing then
         existing:Destroy()
     end
-
     local effect = Instance.new(className)
     effect.Name = name
     effect.Parent = Lighting
     table.insert(Original.Created, effect)
-
-    return effect
+    return effect, true
 end
 
+----------------------------------------------------------------
+-- LIGHTING CORE
+----------------------------------------------------------------
 local function configureLightingBase()
-    for _, property in ipairs({
-        "Brightness", "ExposureCompensation", "GlobalShadows", "ShadowSoftness",
-        "EnvironmentDiffuseScale", "EnvironmentSpecularScale",
-        "Ambient", "OutdoorAmbient", "ColorShift_Top", "ColorShift_Bottom", "ClockTime",
-    }) do
-        rememberLighting(property)
-    end
+    rememberLighting("Brightness")
+    rememberLighting("ExposureCompensation")
+    rememberLighting("GlobalShadows")
+    rememberLighting("ShadowSoftness")
+    rememberLighting("EnvironmentDiffuseScale")
+    rememberLighting("EnvironmentSpecularScale")
+    rememberLighting("Ambient")
+    rememberLighting("OutdoorAmbient")
+    rememberLighting("ColorShift_Top")
+    rememberLighting("ColorShift_Bottom")
+    rememberLighting("GeographicLatitude")
+    rememberLighting("ClockTime")
 
     safe(function()
         Lighting.LightingStyle = Enum.LightingStyle.Realistic
     end)
 
     setProperty(Lighting, "GlobalShadows", true)
-    setProperty(Lighting, "EnvironmentDiffuseScale", 1)
-    setProperty(Lighting, "EnvironmentSpecularScale", 1)
+    setProperty(Lighting, "Brightness", Config.Brightness)
+    setProperty(Lighting, "ExposureCompensation", Config.Exposure)
+    setProperty(Lighting, "ShadowSoftness", Config.ShadowSoftness)
+    setProperty(Lighting, "EnvironmentDiffuseScale", Config.DiffuseScale)
+    setProperty(Lighting, "EnvironmentSpecularScale", Config.SpecularScale)
+    setProperty(Lighting, "Ambient", Color3.fromRGB(24, 27, 31))
+    setProperty(Lighting, "OutdoorAmbient", Color3.fromRGB(132, 140, 151))
 
     if hasProperty(Lighting, "PrioritizeLightingQuality") then
         setProperty(Lighting, "PrioritizeLightingQuality", true)
     end
 end
 
-local function configureAtmosphere(mood)
+----------------------------------------------------------------
+-- MOOD BLENDING LOGIC (Maksimal 2 Shaders)
+----------------------------------------------------------------
+local function GetActiveMood()
+    local selected = State.SelectedMoods
+    if #selected == 0 then
+        return Atmospheres["REALISTIC CLEAR"]
+    elseif #selected == 1 then
+        local base = Atmospheres[selected[1]]
+        local settings = MoodSettings[selected[1]]
+        
+        -- Apply settings override
+        local mood = {}
+        for k, v in pairs(base) do mood[k] = v end
+        mood.Brightness = base.Brightness * settings.BrightnessMultiplier
+        mood.Exposure = base.Exposure + settings.ExposureOffset
+        mood.Contrast = base.Contrast + settings.ContrastOffset
+        mood.Saturation = base.Saturation + settings.SaturationOffset
+        mood.Bloom = base.Bloom + settings.BloomOffset
+        mood.SunRays = (base.SunRays or Config.SunRayIntensity) + settings.SunRaysOffset
+        return mood
+    else
+        -- Blend 2 moods
+        local moodA = Atmospheres[selected[1]]
+        local moodB = Atmospheres[selected[2]]
+        local settingsA = MoodSettings[selected[1]]
+        local settingsB = MoodSettings[selected[2]]
+        
+        local blended = {}
+        blended.Name = selected[1] .. " + " .. selected[2]
+        
+        -- Blend numeric values (average) then apply average settings
+        for key, value in pairs(moodA) do
+            if moodB[key] ~= nil then
+                if typeof(value) == "number" then
+                    local avg = (value + moodB[key]) / 2
+                    if key == "Brightness" then
+                        local multAvg = (settingsA.BrightnessMultiplier + settingsB.BrightnessMultiplier) / 2
+                        blended[key] = avg * multAvg
+                    elseif key == "Exposure" then
+                        blended[key] = avg + ((settingsA.ExposureOffset + settingsB.ExposureOffset) / 2)
+                    elseif key == "Contrast" then
+                        blended[key] = avg + ((settingsA.ContrastOffset + settingsB.ContrastOffset) / 2)
+                    elseif key == "Saturation" then
+                        blended[key] = avg + ((settingsA.SaturationOffset + settingsB.SaturationOffset) / 2)
+                    elseif key == "Bloom" then
+                        blended[key] = avg + ((settingsA.BloomOffset + settingsB.BloomOffset) / 2)
+                    elseif key == "SunRays" then
+                        blended[key] = avg + ((settingsA.SunRaysOffset + settingsB.SunRaysOffset) / 2)
+                    else
+                        blended[key] = avg
+                    end
+                elseif typeof(value) == "Color3" then
+                    blended[key] = value:Lerp(moodB[key], 0.5)
+                elseif typeof(value) == "boolean" then
+                    blended[key] = value or moodB[key]
+                elseif typeof(value) == "table" then
+                    blended[key] = value -- Fallback to moodA's table (e.g., Drift)
+                else
+                    blended[key] = value
+                end
+            else
+                blended[key] = value
+            end
+        end
+        return blended
+    end
+end
+
+----------------------------------------------------------------
+-- ATMOSPHERE & SHADER CORE
+----------------------------------------------------------------
+local function configureAtmosphere()
+    if not Config.Atmosphere then
+        if State.Instances.Atmosphere then
+            State.Instances.Atmosphere.Enabled = false
+        end
+        return
+    end
+
     local atmosphere = State.Instances.Atmosphere
     if not atmosphere then
-        atmosphere = createEffect("Atmosphere", PREFIX .. "Atmosphere")
+        atmosphere = createEffect("Atmosphere", "URV4_Atmosphere")
         State.Instances.Atmosphere = atmosphere
     end
 
-    for _, child in ipairs(Lighting:GetChildren()) do
-        if child:IsA("Atmosphere") and child ~= atmosphere then
-            table.insert(Original.HiddenAtmospheres, child)
-            child.Parent = nil
-        end
-    end
-
+    local mood = GetActiveMood()
     setProperty(atmosphere, "Density", mood.Density)
     setProperty(atmosphere, "Offset", mood.Offset)
     setProperty(atmosphere, "Haze", mood.Haze)
     setProperty(atmosphere, "Glare", mood.Glare)
     setProperty(atmosphere, "Color", mood.Color)
     setProperty(atmosphere, "Decay", mood.Decay)
-
-    State.Base.Glare = mood.Glare
+    setProperty(atmosphere, "Enabled", true)
 end
 
-local function configureShaders(mood)
-    local scale = State.Scale
+local function configureShaders()
+    if not Config.Shaders then
+        for _, effect in pairs(State.Instances) do
+            if effect and effect:IsA("PostEffect") then
+                effect.Enabled = false
+            end
+        end
+        return
+    end
+
+    local mood = GetActiveMood()
 
     local bloom = State.Instances.Bloom
     if not bloom then
-        bloom = createEffect("BloomEffect", PREFIX .. "Bloom")
+        bloom = createEffect("BloomEffect", "URV4_Bloom")
         State.Instances.Bloom = bloom
     end
-    State.Base.Bloom = mood.Bloom * (0.6 + 0.4 * scale)
-    setProperty(bloom, "Intensity", State.Base.Bloom)
-    setProperty(bloom, "Size", mood.BloomSize)
-    setProperty(bloom, "Threshold", mood.BloomThreshold)
+    setProperty(bloom, "Intensity", mood.Bloom)
+    setProperty(bloom, "Size", mood.BloomSize or Config.BloomSize)
+    setProperty(bloom, "Threshold", mood.BloomThreshold or Config.BloomThreshold)
     setProperty(bloom, "Enabled", true)
 
-    local color = State.Instances.Color
+    local color = State.Instances.ColorCorrection
     if not color then
-        color = createEffect("ColorCorrectionEffect", PREFIX .. "Warna")
-        State.Instances.Color = color
+        color = createEffect("ColorCorrectionEffect", "URV4_ColorGrade")
+        State.Instances.ColorCorrection = color
     end
-    State.Base.Tint = mood.Tint
-    State.Base.Saturation = mood.Saturation
-    setProperty(color, "Brightness", 0)
+    setProperty(color, "Brightness", mood.GradeBrightness or 0)
     setProperty(color, "Contrast", mood.Contrast)
     setProperty(color, "Saturation", mood.Saturation)
     setProperty(color, "TintColor", mood.Tint)
     setProperty(color, "Enabled", true)
 
-    local rays = State.Instances.SunRays
-    if not rays then
-        rays = createEffect("SunRaysEffect", PREFIX .. "SunRays")
-        State.Instances.SunRays = rays
+    local sun = State.Instances.SunRays
+    if not sun then
+        sun = createEffect("SunRaysEffect", "URV4_SunRays")
+        State.Instances.SunRays = sun
     end
-    State.Base.SunRays = mood.SunRays * (0.5 + 0.5 * scale)
-    setProperty(rays, "Intensity", State.Base.SunRays)
-    setProperty(rays, "Spread", mood.SunRaySpread)
-    setProperty(rays, "Enabled", true)
+    setProperty(sun, "Intensity", mood.SunRays or Config.SunRayIntensity)
+    setProperty(sun, "Spread", Config.SunRaySpread)
+    setProperty(sun, "Enabled", true)
+
+    local dof = State.Instances.DOF
+    if not dof then
+        dof = createEffect("DepthOfFieldEffect", "URV4_DepthOfField")
+        State.Instances.DOF = dof
+    end
+    setProperty(dof, "FocusDistance", mood.DOFFocus or Config.DOFFocus)
+    setProperty(dof, "InFocusRadius", mood.DOFRadius or Config.DOFNear)
+    setProperty(dof, "NearIntensity", Config.DOFStrength)
+    setProperty(dof, "FarIntensity", mood.DOFFar or Config.DOFStrength)
+    setProperty(dof, "Enabled", mood.DOFFar ~= nil or Config.DOFEnabled)
 end
 
-local function configureMoodLighting(mood)
+local function configureMoodLighting()
+    local mood = GetActiveMood()
     setProperty(Lighting, "ClockTime", mood.ClockTime)
     setProperty(Lighting, "Brightness", mood.Brightness)
     setProperty(Lighting, "ExposureCompensation", mood.Exposure)
-    setProperty(Lighting, "ShadowSoftness", mood.ShadowSoftness)
-
+    setProperty(Lighting, "ShadowSoftness", mood.ShadowSoftness or Config.ShadowSoftness)
     setProperty(Lighting, "Ambient", mood.Ambient)
     setProperty(Lighting, "OutdoorAmbient", mood.OutdoorAmbient)
     setProperty(Lighting, "ColorShift_Top", mood.Top)
     setProperty(Lighting, "ColorShift_Bottom", mood.Bottom)
-
-    configureAtmosphere(mood)
-    configureShaders(mood)
+    configureAtmosphere()
+    configureShaders()
 end
 
 ----------------------------------------------------------------
--- SKY: sembunyikan piringan matahari bawaan
--- (matahari kita sendiri digambar diam di satu titik dunia)
+-- MATERIAL CLASSIFICATION & ENHANCEMENT
 ----------------------------------------------------------------
+local function classifyPart(part)
+    local name = string.lower(part.Name)
+    local material = getProperty(part, "Material", nil)
+    local result = { Type = "DEFAULT", Reflectance = nil, ColorBias = nil, Preserve = false }
 
-local SkyState = { Object = nil, Owned = false, Saved = nil }
+    if not material then return result end
 
-local function restoreSky()
-    if SkyState.Object then
-        if SkyState.Owned then
-            if SkyState.Object.Parent then
-                SkyState.Object:Destroy()
-            end
-        elseif SkyState.Saved and SkyState.Object.Parent then
-            for property, value in pairs(SkyState.Saved) do
-                setProperty(SkyState.Object, property, value)
-            end
-        end
+    if material == Enum.Material.Metal then result.Type = "METAL"; result.Reflectance = 0.14; return result end
+    if material == Enum.Material.Glass then result.Type = "GLASS"; result.Reflectance = 0.08; result.Preserve = true; return result end
+    if material == Enum.Material.Neon then result.Type = "EMISSIVE"; result.Reflectance = 0; result.Preserve = true; return result end
+    if material == Enum.Material.Wood or material == Enum.Material.WoodPlanks then result.Type = "WOOD"; return result end
+    if material == Enum.Material.Grass or material == Enum.Material.LeafyGrass then result.Type = "VEGETATION"; return result end
+    if material == Enum.Material.Sand then result.Type = "SAND"; return result end
+    if material == Enum.Material.Snow or material == Enum.Material.Ice then result.Type = "COLD"; return result end
+    if material == Enum.Material.Rock or material == Enum.Material.Slate or material == Enum.Material.Basalt then result.Type = "ROCK"; return result end
+    if material == Enum.Material.Concrete or material == Enum.Material.Asphalt then result.Type = "ARCHITECTURE"; return result end
+    if material == Enum.Material.CrackedLava or material == Enum.Material.Lava then result.Type = "VOLCANIC"; return result end
+
+    if name:find("gold") or name:find("coin") or name:find("treasure") or name:find("bronze") or name:find("brass") then
+        result.Type = "GOLD"; result.Reflectance = 0.16; return result
     end
-    SkyState.Object = nil
-    SkyState.Owned = false
-    SkyState.Saved = nil
+    if name:find("steel") or name:find("iron") or name:find("blade") or name:find("machine") or name:find("metal") then
+        result.Type = "METAL"; result.Reflectance = 0.14; return result
+    end
+    if name:find("crystal") or name:find("gem") or name:find("diamond") then
+        result.Type = "CRYSTAL"; result.Reflectance = 0.12; return result
+    end
+    if name:find("egg") then result.Type = "EGG"; return result end
+    if name:find("water") or name:find("ocean") or name:find("river") or name:find("pool") then
+        result.Type = "WATER"; result.Reflectance = 0.10; result.Preserve = true; return result
+    end
+
+    return result
 end
-
-local function applySky(mood)
-    if not (mood.HideSun or mood.SunGlow > 0.05) then
-        restoreSky()
-        return
-    end
-
-    if not SkyState.Object then
-        local existing = Lighting:FindFirstChildOfClass("Sky")
-        if existing then
-            SkyState.Object = existing
-            SkyState.Owned = false
-            SkyState.Saved = { SunAngularSize = existing.SunAngularSize }
-        else
-            local sky = Instance.new("Sky")
-            sky.Name = PREFIX .. "Sky"
-            sky.Parent = Lighting
-            SkyState.Object = sky
-            SkyState.Owned = true
-        end
-    end
-
-    setProperty(SkyState.Object, "SunAngularSize", 0)
-end
-
-----------------------------------------------------------------
--- OVERLAY ATMOSFER (oranye halus + sedikit hitam di tepi)
-----------------------------------------------------------------
-
-local Atmos = {}
-
-function Atmos.Set(mood) end
-
-function Atmos.Destroy() end
-
-----------------------------------------------------------------
--- KLASIFIKASI MATERIAL
-----------------------------------------------------------------
-
-local GROUND_MATERIALS = {
-    [Enum.Material.Grass] = true, [Enum.Material.LeafyGrass] = true,
-    [Enum.Material.Ground] = true, [Enum.Material.Mud] = true,
-    [Enum.Material.Sand] = true, [Enum.Material.Sandstone] = true,
-    [Enum.Material.Asphalt] = true, [Enum.Material.Pavement] = true,
-    [Enum.Material.Concrete] = true, [Enum.Material.Cobblestone] = true,
-    [Enum.Material.Brick] = true, [Enum.Material.Slate] = true,
-    [Enum.Material.Rock] = true, [Enum.Material.Basalt] = true,
-    [Enum.Material.Limestone] = true, [Enum.Material.Granite] = true,
-    [Enum.Material.Pebble] = true, [Enum.Material.WoodPlanks] = true,
-}
-
-local BLOCKED_NAMES = {
-    "hitbox", "hurtbox", "trigger", "zoneprobe", "collider", "collision",
-    "invisible", "interactionbox", "promptpart", "clickdetector", "raycast",
-}
 
 local function isVisualPart(part)
-    if not part:IsA("BasePart") or part:IsA("Terrain") then
-        return false
-    end
-    if part.Transparency >= 0.98 then
-        return false
-    end
-    if part:IsDescendantOf(WorldFolder) then
-        return false
-    end
-
+    if not part:IsA("BasePart") or part.Transparency >= 0.98 then return false end
     local name = string.lower(part.Name)
-    for _, token in ipairs(BLOCKED_NAMES) do
-        if name:find(token, 1, true) then
-            return false
-        end
+    local blocked = {"hitbox", "hurtbox", "trigger", "zoneprobe", "collider", "collision", "invisible", "interactionbox", "promptpart", "clickdetector", "raycast"}
+    for _, token in ipairs(blocked) do
+        if name:find(token, 1, true) then return false end
     end
-
-    local model = part:FindFirstAncestorOfClass("Model")
-    if model and model:FindFirstChildOfClass("Humanoid") then
-        return false
-    end
-
     return true
 end
 
-local function classifyPart(part)
-    local name = string.lower(part.Name)
-    local material = part.Material
-
-    local info = {
-        Type = "DEFAULT", Base = 0, Factor = 0.25, Ground = false,
-        SA = part:FindFirstChildOfClass("SurfaceAppearance"),
-    }
-
-    if material == Enum.Material.Neon then
-        info.Type = "EMISSIVE"
-        info.Factor = 0
-        return info
-    end
-
-    if material == Enum.Material.Metal then
-        info.Type, info.Base, info.Factor = "METAL", 0.14, 1.2
-    elseif material == Enum.Material.Glass then
-        info.Type, info.Base, info.Factor = "GLASS", 0.08, 1.0
-    elseif name:find("gold") or name:find("coin") or name:find("treasure")
-        or name:find("bronze") or name:find("brass") then
-        info.Type, info.Base, info.Factor = "GOLD", 0.16, 1.2
-    elseif name:find("steel") or name:find("iron") or name:find("blade")
-        or name:find("machine") or name:find("metal") then
-        info.Type, info.Base, info.Factor = "METAL", 0.14, 1.2
-    elseif name:find("crystal") or name:find("gem") or name:find("diamond") then
-        info.Type, info.Base, info.Factor = "CRYSTAL", 0.12, 1.0
-    elseif name:find("water") or name:find("ocean") or name:find("river") or name:find("pool") then
-        info.Type, info.Base, info.Factor = "WATER", 0.10, 0.6
-    end
-
-    if info.Type == "DEFAULT" then
-        if material == Enum.Material.Wood or material == Enum.Material.WoodPlanks then
-            info.Factor = 0.5
-        end
-
-        local size = part.Size
-        local up = part.CFrame.UpVector.Y
-        local area = size.X * size.Z
-
-        local flatLarge = up > 0.9 and area >= 300
-        local groundMaterial = GROUND_MATERIALS[material] and up > 0.85 and size.Y <= 8 and area >= 60
-
-        if flatLarge or groundMaterial then
-            info.Ground = true
-            info.Factor = 0.4
-        end
-    end
-
-    return info
-end
-
-----------------------------------------------------------------
--- CAHAYA TELUR (malam)
--- Dicari otomatis sesuai struktur workspace di file:
---   Workspace.World.Areas.GuardAreas.<Area>.Nests.NestModel.EggSpotBottom
---   Workspace.World.Areas.GuardAreas.<Area>.Guard.EggPoint
---   Workspace.PlacedEggRenders.<telur pemain>
--- (12 area x 5 nest = 60 tempat telur + titik telur guard)
-----------------------------------------------------------------
-
-local Eggs = {
-    Records = {},
-    Keys = setmetatable({}, weakKeys),
-    Timer = 0,
-}
-
-local eggRng = Random.new(77)
-
-local GLOW_LAYERS = {
-    { size = 1.00, alpha = 0.10 },
-    { size = 0.62, alpha = 0.16 },
-    { size = 0.30, alpha = 0.26 },
-}
-
-local function eggTarget(part)
-    local name = part.Name
-
-    if name == "EggSpotBottom" or name == "EggPoint" then
-        return part, part, "spot"
-    end
-
-    local placed = Workspace:FindFirstChild("PlacedEggRenders")
-    if placed and part:IsDescendantOf(placed) then
-        local top = part
-        while top.Parent and top.Parent ~= placed do
-            top = top.Parent
-        end
-        return top, part, "placed"
-    end
-
-    return nil
-end
-
-local function registerEgg(part)
-    local key, lightPart, kind = eggTarget(part)
-    if not key or Eggs.Keys[key] then
-        return
-    end
-    Eggs.Keys[key] = true
-
-    local attachment = Instance.new("Attachment")
-    attachment.Name = PREFIX .. "EggAttachment"
-    attachment.Parent = lightPart
-    attachment.WorldPosition = lightPart.Position + Vector3.new(0, kind == "spot" and 2.4 or 1.2, 0)
-
-    local light = Instance.new("PointLight")
-    light.Name = PREFIX .. "EggLight"
-    light.Color = Settings.EggColor
-    light.Range = Settings.EggRange
-    light.Brightness = 0
-    light.Shadows = false
-    light.Enabled = false
-    light.Parent = attachment
-
-    local record = {
-        Part = lightPart,
-        Attachment = attachment,
-        Light = light,
-        Frames = {},
-        Phase = eggRng:NextNumber() * math.pi * 2,
-        Level = 0,
-        Wanted = false,
-        Dist = math.huge,
-    }
-
-    if kind == "spot" then
-        local glow = Instance.new("BillboardGui")
-        glow.Name = PREFIX .. "EggGlow"
-        glow.Adornee = attachment
-        glow.Size = UDim2.fromScale(8, 8)
-        glow.AlwaysOnTop = false
-        glow.LightInfluence = 0
-        glow.MaxDistance = 220
-        glow.Enabled = false
-        glow.Parent = lightPart
-
-        for _, layer in ipairs(GLOW_LAYERS) do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.Position = UDim2.fromScale(0.5, 0.5)
-            f.Size = UDim2.fromScale(layer.size, layer.size)
-            f.BackgroundColor3 = Settings.EggColor
-            f.BackgroundTransparency = 1
-            f.Parent = glow
-
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(1, 0)
-            corner.Parent = f
-
-            table.insert(record.Frames, { Frame = f, Alpha = layer.alpha })
-        end
-
-        record.Glow = glow
-    end
-
-    table.insert(Eggs.Records, record)
-    State.Stats.Eggs = #Eggs.Records
-end
-
-local function destroyEgg(record)
-    if record.Light then
-        record.Light:Destroy()
-    end
-    if record.Glow then
-        record.Glow:Destroy()
-    end
-    if record.Attachment then
-        record.Attachment:Destroy()
-    end
-end
-
-local function updateEggs(dt)
-    local mood = State.Mood
-    local glow = mood and mood.EggGlow or 0
-    local now = os.clock()
-
-    Eggs.Timer += dt
-    if Eggs.Timer >= 0.5 then
-        Eggs.Timer = 0
-
-        local cam = Workspace.CurrentCamera
-        local camPos = cam and cam.CFrame.Position
-
-        for i = #Eggs.Records, 1, -1 do
-            local record = Eggs.Records[i]
-            if not record.Part.Parent then
-                destroyEgg(record)
-                table.remove(Eggs.Records, i)
-            else
-                record.Dist = camPos and (record.Part.Position - camPos).Magnitude or math.huge
-            end
-        end
-
-        local sorted = table.clone(Eggs.Records)
-        table.sort(sorted, function(a, b)
-            return a.Dist < b.Dist
-        end)
-
-        local maxLights = math.floor(Settings.EggMaxLights * (0.5 + 0.5 * State.Scale))
-        for index, record in ipairs(sorted) do
-            record.Wanted = index <= maxLights and record.Dist <= Settings.EggDistance
-        end
-
-        State.Stats.Eggs = #Eggs.Records
-    end
-
-    local speed = math.min(1, dt * 2)
-
-    for _, record in ipairs(Eggs.Records) do
-        local target = (glow > 0 and record.Wanted) and 1 or 0
-        record.Level = lerp(record.Level, target, speed)
-
-        if record.Level > 0.02 then
-            local breathing = 1 + 0.05 * math.sin(now * 1.3 + record.Phase)
-            local strength = record.Level * math.min(1, glow)
-
-            record.Light.Brightness = strength * Settings.EggBrightness * breathing
-            record.Light.Enabled = true
-
-            if record.Glow then
-                record.Glow.Enabled = true
-                for _, item in ipairs(record.Frames) do
-                    item.Frame.BackgroundTransparency = 1 - item.Alpha * strength * breathing
-                end
-            end
-        else
-            record.Light.Enabled = false
-            if record.Glow then
-                record.Glow.Enabled = false
-            end
-        end
-    end
-end
-
-----------------------------------------------------------------
--- PROSES PART (material + pantulan + becek)
-----------------------------------------------------------------
-
-local function processPart(part)
-    if PartInfo[part] then
-        return PartInfo[part]
-    end
-    if not isVisualPart(part) then
-        return nil
-    end
-
+local function enhancePartMaterial(part)
+    if not isVisualPart(part) then return end
     rememberPart(part)
-    local info = classifyPart(part)
-
-    if info.Type == "DEFAULT" and not info.Ground and part.Material == Enum.Material.Plastic then
-        local variant = getProperty(part, "MaterialVariant", "")
-        if not variant or variant == "" then
-            setProperty(part, "Material", Enum.Material.SmoothPlastic)
-        end
-    end
-
-    setProperty(part, "CastShadow", true)
-
-    if info.SA then
-        rememberSurfaceAppearance(info.SA)
-    end
-
-    PartInfo[part] = info
-    table.insert(PartList, part)
-
     State.Stats.Parts += 1
-    if info.Ground then
-        State.Stats.Ground += 1
-    end
+    if part:IsA("MeshPart") then State.Stats.MeshParts += 1 end
 
-    return info
-end
+    local info = classifyPart(part)
+    local materialVariant = getProperty(part, "MaterialVariant", "")
+    local hasVariant = materialVariant and materialVariant ~= ""
 
-local SLICK_MATERIALS = {
-    [Enum.Material.Concrete] = true, [Enum.Material.Asphalt] = true,
-    [Enum.Material.Pavement] = true, [Enum.Material.Cobblestone] = true,
-    [Enum.Material.Brick] = true, [Enum.Material.Slate] = true,
-    [Enum.Material.Granite] = true, [Enum.Material.Limestone] = true,
-    [Enum.Material.WoodPlanks] = true, [Enum.Material.Plastic] = true,
-}
-
-local function stylePart(part, mood)
-    local info = PartInfo[part]
-    local original = Original.Parts[part]
-
-    if not info or not original or not part.Parent then
-        return
-    end
-
-    local sheen = mood.Sheen * State.Scale
-    local wet = mood.Wet == true and info.Ground
-
-    local add = 0
-    if info.Type ~= "EMISSIVE" then
-        add = info.Base + sheen * info.Factor
-    end
-    if wet then
-        add = math.max(add, 0.5)
-    end
-
-    local originalReflectance = original.Reflectance or 0
-    setProperty(part, "Reflectance", math.clamp(math.max(originalReflectance, add), 0, 0.6))
-
-    local variant = getProperty(part, "MaterialVariant", "")
-    if wet and not info.SA and SLICK_MATERIALS[original.Material] and (not variant or variant == "") then
-        if part.Material ~= Enum.Material.SmoothPlastic then
+    if not hasVariant and info.Type == "DEFAULT" then
+        local current = getProperty(part, "Material", nil)
+        if current == Enum.Material.Plastic then
             setProperty(part, "Material", Enum.Material.SmoothPlastic)
-            info.Slick = true
-        end
-    elseif info.Slick then
-        setProperty(part, "Material", original.Material)
-        info.Slick = false
-    end
-
-    if original.Color then
-        local wanted = wet and wetColor(original.Color) or original.Color
-        if part.Color ~= wanted then
-            setProperty(part, "Color", wanted)
+            State.Stats.MaterialsEnhanced += 1
         end
     end
 
-    if info.SA and info.SA.Parent then
-        local saOriginal = Original.SurfaceAppearances[info.SA]
-        if saOriginal and saOriginal.Color then
-            local wanted = wet and wetColor(saOriginal.Color) or saOriginal.Color
-            if info.SA.Color ~= wanted then
-                setProperty(info.SA, "Color", wanted)
-            end
+    if info.Reflectance ~= nil then
+        local currentReflectance = getProperty(part, "Reflectance", 0)
+        if currentReflectance < info.Reflectance then
+            setProperty(part, "Reflectance", info.Reflectance)
+            State.Stats.MaterialsEnhanced += 1
+        end
+    end
+
+    if hasProperty(part, "CastShadow") then
+        setProperty(part, "CastShadow", true)
+    end
+end
+
+local function enhanceSurfaceAppearance(surface)
+    if not surface:IsA("SurfaceAppearance") then return end
+    rememberSurfaceAppearance(surface)
+    State.Stats.SurfaceAppearances += 1
+
+    local currentColor = getProperty(surface, "Color", Color3.new(1, 1, 1))
+    if Config.PreserveOriginalColors then
+        local lift = Config.ColorInfluence
+        local neutral = Color3.fromRGB(255, 255, 255)
+        local result = currentColor:Lerp(neutral, lift)
+        if result ~= currentColor then
+            setProperty(surface, "Color", result)
+            State.Stats.SurfaceColorsEnhanced += 1
+        end
+    end
+
+    if hasProperty(surface, "EmissiveStrength") then
+        local emissive = getProperty(surface, "EmissiveStrength", 0)
+        if emissive > 0 then
+            setProperty(surface, "EmissiveStrength", math.clamp(emissive, 0, 8))
         end
     end
 end
 
-local styleJob = 0
-
-local function styleParts(mood)
-    styleJob += 1
-    local myJob = styleJob
-
-    local count = 0
-    for i = #PartList, 1, -1 do
-        if not PartList[i].Parent then
-            table.remove(PartList, i)
-        end
-    end
-
-    for _, part in ipairs(PartList) do
-        if myJob ~= styleJob or State.Restored then
-            return
-        end
-        stylePart(part, mood)
-
-        count += 1
-        if count % 300 == 0 then
-            task.wait()
-        end
-    end
-end
-
-local TERRAIN_MATERIALS = {
-    Enum.Material.Grass, Enum.Material.LeafyGrass, Enum.Material.Ground, Enum.Material.Mud,
-    Enum.Material.Sand, Enum.Material.Sandstone, Enum.Material.Asphalt, Enum.Material.Pavement,
-    Enum.Material.Concrete, Enum.Material.Cobblestone, Enum.Material.Rock, Enum.Material.Slate,
-    Enum.Material.Limestone, Enum.Material.Basalt,
-}
-
-local function setTerrainWet(on)
-    for _, material in ipairs(TERRAIN_MATERIALS) do
-        if Original.TerrainColors[material] == nil then
-            Original.TerrainColors[material] = safe(function()
-                return Terrain:GetMaterialColor(material)
-            end, false)
-        end
-
-        local original = Original.TerrainColors[material]
-        if original then
-            local wanted = on and wetColor(original) or original
-            safe(function()
-                Terrain:SetMaterialColor(material, wanted)
-            end)
-        end
-    end
-end
-
-local function scanWorld()
+local function scanVisualAssets()
+    State.Stats.Parts = 0; State.Stats.MeshParts = 0; State.Stats.SurfaceAppearances = 0
+    State.Stats.MaterialsEnhanced = 0; State.Stats.SurfaceColorsEnhanced = 0
     local descendants = Workspace:GetDescendants()
-
     for i, object in ipairs(descendants) do
-        if object:IsA("BasePart") then
-            registerEgg(object)
-            processPart(object)
+        if object:IsA("SurfaceAppearance") then
+            enhanceSurfaceAppearance(object)
+        elseif object:IsA("BasePart") then
+            enhancePartMaterial(object)
         end
-
-        if i % 500 == 0 then
-            task.wait()
-        end
+        if i % 500 == 0 then task.wait() end
     end
-
-    ScanDone = true
 end
 
 ----------------------------------------------------------------
--- LAMPU AKSEN (lampu, obor, neon, dll)
+-- LIGHT SEMANTICS & ACCENT LIGHTS
 ----------------------------------------------------------------
-
-local LIGHT_TOKENS = {
-    "lamp", "light", "lantern", "torch", "fire", "flame", "bulb", "neon",
-    "screen", "monitor", "sign", "crystal", "portal", "glow", "energy", "lava",
-}
-
 local function isLightSourcePart(part)
+    if not isVisualPart(part) then return false end
     local name = string.lower(part.Name)
-    for _, token in ipairs(LIGHT_TOKENS) do
-        if name:find(token, 1, true) then
-            return true
-        end
+    local tokens = {"lamp", "light", "lantern", "torch", "fire", "flame", "bulb", "neon", "screen", "monitor", "sign", "crystal", "portal", "glow", "energy", "lava"}
+    for _, token in ipairs(tokens) do
+        if name:find(token, 1, true) then return true end
     end
-    return part.Material == Enum.Material.Neon
+    if getProperty(part, "Material", nil) == Enum.Material.Neon then return true end
+    return false
 end
 
 local function getLightColor(part)
-    if part.Material == Enum.Material.Neon then
-        return part.Color
-    end
-
+    local material = getProperty(part, "Material", nil)
+    if material == Enum.Material.Neon then return getProperty(part, "Color", Color3.new(1, 1, 1)) end
     local name = string.lower(part.Name)
-    if name:find("fire") or name:find("flame") or name:find("torch") or name:find("lava") then
-        return rgb(255, 170, 90)
-    end
-    if name:find("crystal") or name:find("ice") then
-        return rgb(150, 210, 255)
-    end
-    return part.Color
+    if name:find("fire") or name:find("flame") or name:find("torch") or name:find("lava") then return Color3.fromRGB(255, 170, 90) end
+    if name:find("crystal") or name:find("ice") then return Color3.fromRGB(150, 210, 255) end
+    if name:find("neon") or name:find("energy") or name:find("portal") then return getProperty(part, "Color", Color3.fromRGB(120, 180, 255)) end
+    return getProperty(part, "Color", Color3.fromRGB(255, 225, 180))
 end
 
 local function clearAccentLights()
     for _, record in ipairs(State.AccentLights) do
-        if record.Light and record.Light.Parent then
-            record.Light:Destroy()
-        end
-        if record.Attachment and record.Attachment.Parent then
-            record.Attachment:Destroy()
-        end
+        if record.Light and record.Light.Parent then record.Light:Destroy() end
+        if record.Attachment and record.Attachment.Parent then record.Attachment:Destroy() end
     end
     table.clear(State.AccentLights)
 end
 
+local function createAccentLight(part)
+    if #State.AccentLights >= Config.MaxAccentLights then return end
+    if not isLightSourcePart(part) then return end
+    local existingLight = part:FindFirstChild("URV4_AccentLight")
+    if existingLight and existingLight:IsA("PointLight") then return end
+
+    local attachment = Instance.new("Attachment")
+    attachment.Name = "URV4_AccentAttachment"
+    attachment.Parent = part
+
+    local light = Instance.new("PointLight")
+    light.Name = "URV4_AccentLight"
+    light.Color = getLightColor(part)
+    light.Brightness = 0.65
+    light.Range = 12
+    light.Shadows = true
+    light.Enabled = true
+    light.Parent = attachment
+
+    table.insert(State.AccentLights, { Source = part, Attachment = attachment, Light = light })
+    State.Stats.LightsCreated += 1
+end
+
+local function enhanceExistingLights()
+    State.Stats.LightsFound = 0
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("PointLight") or object:IsA("SpotLight") or object:IsA("SurfaceLight") then
+            State.Stats.LightsFound += 1
+            setProperty(object, "Shadows", true)
+            local brightness = getProperty(object, "Brightness", 1)
+            if brightness > 0 then setProperty(object, "Brightness", math.max(brightness, 0.1)) end
+        end
+    end
+end
+
 local function scanAccentLights()
     clearAccentLights()
-
-    local cam = Workspace.CurrentCamera
-    if not cam then
-        return
-    end
-
-    local camPos = cam.CFrame.Position
+    State.Stats.LightsCreated = 0
     local candidates = {}
-
-    for _, part in ipairs(PartList) do
-        if part.Parent and isLightSourcePart(part) then
-            local distance = (part.Position - camPos).Magnitude
-            if distance <= Settings.LightDistance then
-                table.insert(candidates, { Part = part, Dist = distance })
-            end
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("BasePart") and isLightSourcePart(object) then
+            table.insert(candidates, object)
         end
     end
-
+    Camera = Workspace.CurrentCamera
+    if not Camera then return end
     table.sort(candidates, function(a, b)
-        return a.Dist < b.Dist
+        local da = (a.Position - Camera.CFrame.Position).Magnitude
+        local db = (b.Position - Camera.CFrame.Position).Magnitude
+        return da < db
     end)
+    for _, part in ipairs(candidates) do
+        local distance = (part.Position - Camera.CFrame.Position).Magnitude
+        if distance <= Config.LightDistance then createAccentLight(part) end
+        if #State.AccentLights >= Config.MaxAccentLights then break end
+    end
+end
 
-    local maxLights = math.floor(Settings.MaxAccentLights * State.Scale)
-
-    for _, candidate in ipairs(candidates) do
-        if #State.AccentLights >= maxLights then
-            break
-        end
-
-        local part = candidate.Part
-        if not part:FindFirstChild(PREFIX .. "AccentAttachment") then
-            local attachment = Instance.new("Attachment")
-            attachment.Name = PREFIX .. "AccentAttachment"
-            attachment.Parent = part
-
-            local light = Instance.new("PointLight")
-            light.Name = PREFIX .. "AccentLight"
-            light.Color = getLightColor(part)
-            light.Brightness = 0.65
-            light.Range = 12
-            light.Shadows = true
-            light.Parent = attachment
-
-            table.insert(State.AccentLights, { Source = part, Attachment = attachment, Light = light })
+local function preserveDetailGeometry()
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("MeshPart") and isVisualPart(object) then
+            setProperty(object, "CastShadow", true)
         end
     end
-
-    State.Stats.Lights = #State.AccentLights
 end
 
 ----------------------------------------------------------------
--- DUNIA 3D: sun rays, glow matahari, hujan, genangan kaca
+-- QUALITY APPLICATION
 ----------------------------------------------------------------
+local function applyQuality(level)
+    level = math.clamp(math.floor(level or 10), 1, 10)
+    local q = QualityLevels[level]
+    if not q then return end
+    State.Quality = level
+    Config.Brightness = q.Brightness; Config.Exposure = q.Exposure; Config.ShadowSoftness = q.ShadowSoftness
+    Config.DiffuseScale = q.Diffuse; Config.SpecularScale = q.Specular
+    Config.AtmosphereDensity = q.AtmosphereDensity; Config.AtmosphereHaze = q.AtmosphereHaze
+    Config.BloomIntensity = q.Bloom; Config.Contrast = q.Contrast; Config.Saturation = q.Saturation
+    Config.SunRayIntensity = q.SunRays; Config.DetailDistance = q.DetailDistance
+    Config.LightDistance = q.LightDistance; Config.MaxAccentLights = q.MaxLights
+    configureLightingBase()
+    configureMoodLighting()
+    task.spawn(scanAccentLights)
+end
 
-local World = {}
-
+----------------------------------------------------------------
+-- NOSTALGIA FX (Flare, Light Leak, Vignette)
+----------------------------------------------------------------
+local NostalgiaFX = {}
 do
-    local MAX_SHAFTS = 36
-    local MAX_PUDDLES = 70
-    local RAIN_TEXTURE = ""         -- opsional: asset id tekstur garis hujan
-    local RAIN_SOUND_ID = ""        -- opsional: asset id suara hujan
-    local RAIN_SOUND_VOLUME = 0.5
+    local SoundService = game:GetService("SoundService")
+    local MOOD_NAME = "NOSTALGIC SORE"
+    local GLOW_IMAGE = ""
+    local AMBIENCE_SOUND_ID = ""
+    local AMBIENCE_VOLUME = 0.22
+    local MOTE_COUNT = 28
 
-    local rng = Random.new(1987)
-
-    local anchor, sunPart, sunGui, sunStreak
-    local sunLayers = {}
-    local sunExtras = {}
-    local bokehPart, bokehEmitter
-    local shafts = {}
-    local puddles = {}
-    local rainPart, rainEmitter, rainSound
-
-    local mood
-    local built = false
-    local rayParams
-
-    local rainLevel = 0
-    local coverLevel = 1
-    local coverTarget = 1
-
-    local lastSeedPos, lastSeedSun, lastPuddlePos
-    local timers = { Shaft = 0, Rain = 0 }
-
-    local cloudsState
-    local bodyAttachment, bodyLight
-    local bodyBrightness = 0
-
-    local function updateRayParams()
-        rayParams = RaycastParams.new()
-        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-        rayParams.RespectCanCollide = false
-
-        local list = { WorldFolder }
-        if Player.Character then
-            table.insert(list, Player.Character)
-        end
-        rayParams.FilterDescendantsInstances = list
-
-        updateSunRay()
-    end
-
-    World.UpdateRayParams = updateRayParams
-
-    local SUN_LAYERS = {
-        { size = 0.86, alpha = 0.960, color = rgb(255, 128, 52) },
-        { size = 0.54, alpha = 0.920, color = rgb(255, 156, 62) },
-        { size = 0.31, alpha = 0.850, color = rgb(255, 190, 92) },
-        { size = 0.15, alpha = 0.680, color = rgb(255, 222, 128) },
-        { size = 0.065, alpha = 0.320, color = rgb(255, 245, 200) },
+    local FLARE_DEFS = {
+        { pos = 0.00, size = 0.36, color = Color3.fromRGB(255, 196, 112), alpha = 0.90 },
+        { pos = 0.00, size = 0.15, color = Color3.fromRGB(255, 232, 170), alpha = 0.76 },
+        { pos = 0.55, size = 0.07, color = Color3.fromRGB(255, 170, 90),  alpha = 0.88 },
+        { pos = 1.00, size = 0.12, color = Color3.fromRGB(255, 190, 110), alpha = 0.92 },
+        { pos = 1.45, size = 0.05, color = Color3.fromRGB(255, 215, 150), alpha = 0.86 },
+        { pos = 1.85, size = 0.20, color = Color3.fromRGB(255, 160, 85),  alpha = 0.94 },
     }
 
-    local function makeInvisiblePart(name)
-        local p = Instance.new("Part")
-        p.Name = name
-        p.Anchored = true
-        p.CanCollide = false
-        p.CanQuery = false
-        p.CanTouch = false
-        p.CastShadow = false
-        p.Transparency = 1
-        p.Size = Vector3.new(0.2, 0.2, 0.2)
-        p.Parent = WorldFolder
-        return p
+    local gui, vignetteGroup, leakGroup, flareGroup, moteGroup
+    local streakMain, streakSoft, halo
+    local flares, motes = {}, {}
+    local connection, active = false, false
+    local intensity, sunVisible, driftClock = 0, 0, 0
+    local sound, cloudsState
+    local rng = Random.new(1987)
+    local washGroup, washGradient, whiteout
+    local windowGroup, windowBox, windowPanes = {}, {}, {}
+    local windowX, windowY, bodyAttachment, bodyLight, bodyBrightness, castTimer = 0, 0, nil, nil, 0, 0
+
+    local function makeGroup(parent)
+        local g = Instance.new("CanvasGroup")
+        g.BackgroundTransparency = 1; g.Size = UDim2.fromScale(1, 1); g.GroupTransparency = 1
+        g.Active = false; g.Parent = parent
+        return g
+    end
+
+    local function edge(parent, pos, size, rotation, alpha)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0; f.BackgroundColor3 = Color3.fromRGB(38, 16, 6); f.Position = pos; f.Size = size; f.Parent = parent
+        local g = Instance.new("UIGradient")
+        g.Rotation = rotation
+        g.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, alpha), NumberSequenceKeypoint.new(1, 1) })
+        g.Parent = f
+    end
+
+    local function fullGradientFrame(parent, color, rotation, sequence)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0; f.BackgroundColor3 = color; f.Size = UDim2.fromScale(1, 1); f.Parent = parent
+        local g = Instance.new("UIGradient")
+        g.Rotation = rotation; g.Transparency = sequence; g.Parent = f
+        return f, g
+    end
+
+    local function makeStreak(parent, color, alpha)
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0; f.AnchorPoint = Vector2.new(0.5, 0.5); f.BackgroundColor3 = color; f.Parent = parent
+        local g = Instance.new("UIGradient")
+        g.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, alpha), NumberSequenceKeypoint.new(1, 1) })
+        g.Parent = f
+        return f
     end
 
     local function build()
-        if built then
-            return
-        end
-        built = true
+        gui = Instance.new("ScreenGui")
+        gui.Name = ROOT_NAME .. "_Nostalgia"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 5; gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; gui.Parent = PlayerGui
 
-        updateRayParams()
+        vignetteGroup = makeGroup(gui)
+        edge(vignetteGroup, UDim2.fromScale(0, 0), UDim2.fromScale(1, 0.34), 90, 0.52)
+        edge(vignetteGroup, UDim2.fromScale(0, 0.66), UDim2.fromScale(1, 0.34), 270, 0.42)
+        edge(vignetteGroup, UDim2.fromScale(0, 0), UDim2.fromScale(0.24, 1), 0, 0.60)
+        edge(vignetteGroup, UDim2.fromScale(0.76, 0), UDim2.fromScale(0.24, 1), 180, 0.60)
 
-        anchor = makeInvisiblePart(PREFIX .. "Anchor")
-        anchor.CFrame = CFrame.new(0, 0, 0)
+        leakGroup = makeGroup(gui)
+        fullGradientFrame(leakGroup, Color3.fromRGB(255, 190, 100), 145, NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.78), NumberSequenceKeypoint.new(0.55, 0.94), NumberSequenceKeypoint.new(1, 1) }))
+        fullGradientFrame(leakGroup, Color3.fromRGB(70, 100, 140), 325, NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.90), NumberSequenceKeypoint.new(0.5, 1), NumberSequenceKeypoint.new(1, 1) }))
 
-        -- Glow matahari 3D: diam di satu titik dunia (ukuran dalam stud,
-        -- jadi otomatis mengecil saat kamu menjauh)
-        sunPart = makeInvisiblePart(PREFIX .. "Matahari")
-
-        sunGui = Instance.new("BillboardGui")
-        sunGui.Name = PREFIX .. "GlowMatahari"
-        sunGui.Adornee = sunPart
-        sunGui.AlwaysOnTop = false
-        sunGui.LightInfluence = 0
-        sunGui.MaxDistance = math.huge
-        sunGui.Size = UDim2.fromScale(Settings.SunSize, Settings.SunSize)
-        sunGui.Enabled = false
-        sunGui.Parent = sunPart
-
-        for _, def in ipairs(SUN_LAYERS) do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.Position = UDim2.fromScale(0.5, 0.5)
-            f.Size = UDim2.fromScale(def.size, def.size)
-            f.BackgroundColor3 = def.color
-            f.BackgroundTransparency = 1
-            f.Parent = sunGui
-
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(1, 0)
-            corner.Parent = f
-
-            table.insert(sunLayers, { Frame = f, Alpha = def.alpha })
+        flareGroup = makeGroup(gui)
+        for i, def in ipairs(FLARE_DEFS) do
+            local f
+            if GLOW_IMAGE ~= "" then
+                f = Instance.new("ImageLabel"); f.BackgroundTransparency = 1; f.Image = GLOW_IMAGE
+                f.ImageColor3 = def.color; f.ImageTransparency = def.alpha - 0.25
+            else
+                f = Instance.new("Frame"); f.BorderSizePixel = 0; f.BackgroundColor3 = def.color; f.BackgroundTransparency = def.alpha
+                local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = f
+            end
+            f.AnchorPoint = Vector2.new(0.5, 0.5); f.Parent = flareGroup
+            flares[i] = { Object = f, Def = def }
         end
 
-        sunStreak = Instance.new("Frame")
-        sunStreak.BorderSizePixel = 0
-        sunStreak.AnchorPoint = Vector2.new(0.5, 0.5)
-        sunStreak.Position = UDim2.fromScale(0.5, 0.5)
-        sunStreak.Size = UDim2.fromScale(1.5, 0.01)
-        sunStreak.BackgroundColor3 = rgb(255, 205, 140)
-        sunStreak.BackgroundTransparency = 1
-        sunStreak.Parent = sunGui
+        streakSoft = makeStreak(flareGroup, Color3.fromRGB(255, 170, 90), 0.84)
+        streakMain = makeStreak(flareGroup, Color3.fromRGB(255, 225, 160), 0.40)
 
-        local streakGradient = Instance.new("UIGradient")
-        streakGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.5, 0.3),
-            NumberSequenceKeypoint.new(1, 1),
-        })
-        streakGradient.Parent = sunStreak
+        halo = Instance.new("Frame"); halo.BackgroundTransparency = 1; halo.AnchorPoint = Vector2.new(0.5, 0.5); halo.Parent = flareGroup
+        local haloCorner = Instance.new("UICorner"); haloCorner.CornerRadius = UDim.new(1, 0); haloCorner.Parent = halo
+        local haloStroke = Instance.new("UIStroke"); haloStroke.Color = Color3.fromRGB(255, 190, 110); haloStroke.Thickness = 2; haloStroke.Transparency = 0.82; haloStroke.Parent = halo
 
-        -- Sinar bintang + balok cahaya miring, semuanya objek 3D di langit
-        for i = 1, 10 do
-            local f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.Position = UDim2.fromScale(0.5, 0.5)
-            f.Size = UDim2.fromScale(i % 2 == 0 and 1.5 or 1.0, 0.012)
-            f.Rotation = (i - 1) * 18
-            f.BackgroundColor3 = rgb(255, 196, 96)
-            f.BackgroundTransparency = 1
-            f.Parent = sunGui
-
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(1, 0)
-            c.Parent = f
-
-            local g = Instance.new("UIGradient")
-            g.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.5, 0.2),
-                NumberSequenceKeypoint.new(1, 1),
-            })
-            g.Parent = f
-
-            table.insert(sunExtras, { Frame = f, Alpha = 0.5 })
+        moteGroup = makeGroup(gui)
+        for i = 1, MOTE_COUNT do
+            local d = rng:NextInteger(2, 6)
+            local f = Instance.new("Frame"); f.BorderSizePixel = 0; f.Size = UDim2.fromOffset(d, d)
+            f.BackgroundColor3 = Color3.fromRGB(255, 210, 140):Lerp(Color3.fromRGB(255, 238, 195), rng:NextNumber()); f.Parent = moteGroup
+            local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = f
+            motes[i] = { Object = f, x = rng:NextNumber(), y = rng:NextNumber(), vx = rng:NextNumber(-0.004, 0.010), vy = -rng:NextNumber(0.003, 0.012), phase = rng:NextNumber(0, math.pi * 2), speed = rng:NextNumber(0.6, 1.8) }
         end
 
-        local column = Instance.new("Frame")
-        column.BorderSizePixel = 0
-        column.AnchorPoint = Vector2.new(0.5, 0.5)
-        column.Position = UDim2.fromScale(0.5, 0.5)
-        column.Size = UDim2.fromScale(0.10, 1.7)
-        column.Rotation = -22
-        column.BackgroundColor3 = rgb(255, 170, 70)
-        column.BackgroundTransparency = 1
-        column.Parent = sunGui
+        washGroup = makeGroup(gui)
+        local washFrame
+        washFrame, washGradient = fullGradientFrame(washGroup, Color3.fromRGB(255, 255, 255), 0, NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.38), NumberSequenceKeypoint.new(0.45, 0.70), NumberSequenceKeypoint.new(1, 0.93) }))
+        washGradient.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 218, 125)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 150, 58)), ColorSequenceKeypoint.new(1, Color3.fromRGB(235, 100, 38)) })
 
-        local columnGradient = Instance.new("UIGradient")
-        columnGradient.Rotation = 90
-        columnGradient.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.5, 0.35),
-            NumberSequenceKeypoint.new(1, 1),
-        })
-        columnGradient.Parent = column
+        whiteout = Instance.new("Frame"); whiteout.BorderSizePixel = 0; whiteout.BackgroundColor3 = Color3.fromRGB(255, 226, 160)
+        whiteout.BackgroundTransparency = 1; whiteout.Size = UDim2.fromScale(1, 1); whiteout.Parent = washGroup
 
-        table.insert(sunExtras, { Frame = column, Alpha = 0.45 })
-
-        -- Bokeh hangat: partikel cahaya melayang di udara sekitar kamu
-        bokehPart = makeInvisiblePart(PREFIX .. "Bokeh")
-        bokehPart.Size = Vector3.new(90, 40, 90)
-
-        bokehEmitter = Instance.new("ParticleEmitter")
-        bokehEmitter.Rate = 0
-        bokehEmitter.Lifetime = NumberRange.new(4, 7)
-        bokehEmitter.Speed = NumberRange.new(0.3, 1.2)
-        bokehEmitter.SpreadAngle = Vector2.new(180, 180)
-        bokehEmitter.Size = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(0.3, 1.1),
-            NumberSequenceKeypoint.new(1, 0.4),
-        })
-        bokehEmitter.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(0.25, 0.55),
-            NumberSequenceKeypoint.new(0.75, 0.65),
-            NumberSequenceKeypoint.new(1, 1),
-        })
-        bokehEmitter.Color = ColorSequence.new(rgb(255, 150, 50), rgb(255, 205, 100))
-        bokehEmitter.LightEmission = 1
-        bokehEmitter.LightInfluence = 0
-        bokehEmitter.LockedToPart = false
-        bokehEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-        bokehEmitter.Parent = bokehPart
-
-        -- Sun rays 3D (Beam)
-        for _ = 1, MAX_SHAFTS do
-            local a0 = Instance.new("Attachment")
-            a0.Parent = anchor
-            local a1 = Instance.new("Attachment")
-            a1.Parent = anchor
-
-            local beam = Instance.new("Beam")
-            beam.Attachment0 = a0
-            beam.Attachment1 = a1
-            beam.FaceCamera = true
-            beam.LightEmission = 1
-            beam.LightInfluence = 0
-            beam.Segments = 1
-            beam.Transparency = NumberSequence.new(1)
-            beam.Enabled = false
-            beam.Parent = anchor
-
-            table.insert(shafts, { Beam = beam, A0 = a0, A1 = a1, Active = false, Pos = Vector3.zero, Rand = 1 })
-        end
-
-        -- Hujan
-        rainPart = makeInvisiblePart(PREFIX .. "Hujan")
-        rainPart.Size = Vector3.new(100, 1, 100)
-        rainEmitter = {}
-
-        local texture = RAIN_TEXTURE ~= "" and RAIN_TEXTURE or "rbxasset://textures/particles/sparkles_main.dds"
-        local rainLayers = {
-            { weight = 0.40, size = 0.70, squash = -0.88, transparency = 0.45, speed = NumberRange.new(100, 125), life = NumberRange.new(0.7, 0.9) },
-            { weight = 0.35, size = 0.50, squash = -0.85, transparency = 0.60, speed = NumberRange.new(85, 105), life = NumberRange.new(0.75, 0.95) },
-            { weight = 0.25, size = 0.35, squash = -0.80, transparency = 0.70, speed = NumberRange.new(70, 90), life = NumberRange.new(0.8, 1.0) },
-        }
-
-        for _, layer in ipairs(rainLayers) do
-            local e = Instance.new("ParticleEmitter")
-            e.Rate = 0
-            e.Lifetime = layer.life
-            e.Speed = layer.speed
-            e.EmissionDirection = Enum.NormalId.Bottom
-            e.SpreadAngle = Vector2.new(2, 2)
-            e.Size = NumberSequence.new(layer.size)
-            e.Squash = NumberSequence.new(layer.squash)
-            e.Transparency = NumberSequence.new(layer.transparency)
-            e.Color = ColorSequence.new(rgb(205, 220, 238))
-            e.LightEmission = 0.25
-            e.LightInfluence = 0.5
-            e.Acceleration = Vector3.new(6, 0, 3)
-            e.LockedToPart = false
-            e.Orientation = Enum.ParticleOrientation.VelocityParallel
-            e.Texture = texture
-            e.Parent = rainPart
-            table.insert(rainEmitter, { Emitter = e, Weight = layer.weight })
-        end
-
-        if RAIN_SOUND_ID ~= "" then
-            rainSound = Instance.new("Sound")
-            rainSound.Name = PREFIX .. "SuaraHujan"
-            rainSound.SoundId = RAIN_SOUND_ID
-            rainSound.Looped = true
-            rainSound.Volume = 0
-            rainSound.Parent = SoundService
-            rainSound:Play()
+        windowGroup = makeGroup(gui)
+        windowBox = Instance.new("Frame"); windowBox.BackgroundTransparency = 1; windowBox.AnchorPoint = Vector2.new(0.5, 0.5); windowBox.Rotation = -12; windowBox.Parent = windowGroup
+        for row = 0, 1 do
+            for col = 0, 1 do
+                local pane = Instance.new("Frame"); pane.BorderSizePixel = 0; pane.BackgroundColor3 = Color3.fromRGB(255, 196, 108)
+                pane.Size = UDim2.fromScale(0.47, 0.47); pane.Position = UDim2.fromScale(col * 0.53, row * 0.53); pane.Parent = windowBox
+                local g = Instance.new("UIGradient"); g.Rotation = 90; g.Transparency = NumberSequence.new(0.72, 0.90); g.Parent = pane
+                local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(255, 186, 104); stroke.Thickness = 7; stroke.Transparency = 0.92; stroke.Parent = pane
+                table.insert(windowPanes, { Object = pane, Gradient = g })
+            end
         end
     end
 
-    ------------------------------------------------------------
-    -- Awan
-    ------------------------------------------------------------
-
-    local function applyClouds(m)
-        if m and m.CloudColor ~= nil then
+    local function applyClouds(on)
+        local terrain = Workspace:FindFirstChildOfClass("Terrain")
+        if not terrain then return end
+        if on then
             if not cloudsState then
-                local existing = Terrain:FindFirstChildOfClass("Clouds")
+                local existing = terrain:FindFirstChildOfClass("Clouds")
                 if existing then
-                    cloudsState = {
-                        Object = existing,
-                        Owned = false,
-                        Saved = {
-                            Color = existing.Color, Cover = existing.Cover,
-                            Density = existing.Density, Enabled = existing.Enabled,
-                        },
-                    }
+                    cloudsState = { Object = existing, Owned = false, Saved = { Color = existing.Color, Cover = existing.Cover, Density = existing.Density, Enabled = existing.Enabled } }
                 else
-                    local c = Instance.new("Clouds")
-                    c.Name = PREFIX .. "Awan"
-                    c.Parent = Terrain
+                    local c = Instance.new("Clouds"); c.Name = "URV4_Clouds"; c.Parent = terrain
                     cloudsState = { Object = c, Owned = true }
                 end
             end
-
             local c = cloudsState.Object
-            setProperty(c, "Color", m.CloudColor)
-            setProperty(c, "Cover", m.CloudCover or 0.5)
-            setProperty(c, "Density", m.CloudDensity or 0.5)
-            setProperty(c, "Enabled", true)
+            setProperty(c, "Color", Color3.fromRGB(255, 176, 120)); setProperty(c, "Cover", 0.55); setProperty(c, "Density", 0.55); setProperty(c, "Enabled", true)
         elseif cloudsState then
             if cloudsState.Owned then
-                if cloudsState.Object.Parent then
-                    cloudsState.Object:Destroy()
-                end
+                if cloudsState.Object.Parent then cloudsState.Object:Destroy() end
             else
-                for property, value in pairs(cloudsState.Saved) do
-                    setProperty(cloudsState.Object, property, value)
-                end
+                for property, value in pairs(cloudsState.Saved) do setProperty(cloudsState.Object, property, value) end
             end
             cloudsState = nil
         end
     end
 
-    ------------------------------------------------------------
-    -- Sun rays 3D: penempatan
-    ------------------------------------------------------------
-
-    local function seedShafts(camPos)
-        local sunDir = Sun.Dir
-        local count = math.floor(MAX_SHAFTS * State.Scale)
-        local color = mood.ShaftColor
-
-        local flat = Vector3.new(sunDir.X, 0, sunDir.Z)
-        local azimuth = rng:NextNumber(0, math.pi * 2)
-        if flat.Magnitude > 0.01 then
-            azimuth = math.atan2(flat.Z, flat.X)
-        end
-
-        local maxLen = 140
-
-        for index, shaft in ipairs(shafts) do
-            shaft.Active = false
-
-            if index <= count then
-                local angle
-                if rng:NextNumber() < 0.7 then
-                    angle = azimuth + rng:NextNumber(-1.2, 1.2)
-                else
-                    angle = rng:NextNumber(0, math.pi * 2)
-                end
-
-                local radius = 20 + 150 * math.sqrt(rng:NextNumber())
-                local origin = camPos + Vector3.new(math.cos(angle) * radius, 150, math.sin(angle) * radius)
-                local hit = Workspace:Raycast(origin, Vector3.new(0, -400, 0), rayParams)
-
-                if hit and hit.Normal.Y > 0.3 then
-                    local ground = hit.Position + Vector3.new(0, 0.5 + rng:NextNumber(0, 2), 0)
-                    local blocked = Workspace:Raycast(ground, sunDir * maxLen, rayParams)
-                    local length = blocked and (blocked.Position - ground).Magnitude or maxLen
-
-                    if length > 12 then
-                        local width = rng:NextNumber(6, 14)
-                        shaft.A0.Position = ground
-                        shaft.A1.Position = ground + sunDir * length
-                        shaft.Beam.Width0 = width
-                        shaft.Beam.Width1 = width * 1.3
-                        shaft.Beam.Color = ColorSequence.new(color)
-                        shaft.Pos = ground
-                        shaft.Rand = rng:NextNumber(0.6, 1.0)
-                        shaft.Active = true
-                    end
-                end
-            end
-        end
-
-        lastSeedPos = camPos
-        lastSeedSun = sunDir
+    local function startAmbience()
+        if AMBIENCE_SOUND_ID == "" or sound then return end
+        sound = Instance.new("Sound"); sound.Name = "URV4_NostalgiaAmbience"; sound.SoundId = AMBIENCE_SOUND_ID
+        sound.Looped = true; sound.Volume = 0; sound.Parent = SoundService; sound:Play()
     end
 
-    ------------------------------------------------------------
-    -- Genangan: lapisan kaca bening, bentuk tidak bulat
-    -- (3 pecahan persegi panjang tipis yang diputar & ditumpuk,
-    -- bagian tengah terlihat lebih "dalam")
-    ------------------------------------------------------------
-
-    local function newGlassBlock()
-        local p = Instance.new("Part")
-        p.Name = PREFIX .. "GenanganKaca"
-        p.Anchored = true
-        p.CanCollide = false
-        p.CanQuery = false
-        p.CanTouch = false
-        p.CastShadow = false
-        p.Material = Enum.Material.Glass
-        p.Color = rgb(214, 232, 246)
-        p.Reflectance = 0.7
-        p.Transparency = 1
-        return p
-    end
-
-    local function setPuddlesTransparency(t)
-        for _, puddle in ipairs(puddles) do
-            for _, block in ipairs(puddle) do
-                block.Transparency = t
-            end
-        end
-    end
-
-    local function hidePuddle(puddle)
-        for _, block in ipairs(puddle) do
-            block.Parent = nil
-        end
-    end
-
-    local function placePuddles(center)
-        local count = math.floor(MAX_PUDDLES * State.Scale)
-
-        local below = Workspace:Raycast(center, Vector3.new(0, -300, 0), rayParams)
-        local refY = below and below.Position.Y or (center.Y - 3)
-
-        for index = 1, MAX_PUDDLES do
-            local puddle = puddles[index]
-
-            if index > count then
-                if puddle then
-                    hidePuddle(puddle)
-                end
-            else
-                if not puddle then
-                    puddle = { newGlassBlock(), newGlassBlock(), newGlassBlock() }
-                    puddles[index] = puddle
-                end
-
-                local angle = rng:NextNumber(0, math.pi * 2)
-                local radius = 4 + 100 * math.sqrt(rng:NextNumber())
-                local origin = center + Vector3.new(math.cos(angle) * radius, 120, math.sin(angle) * radius)
-                local hit = Workspace:Raycast(origin, Vector3.new(0, -300, 0), rayParams)
-
-                local valid = false
-                if hit then
-                    if hit.Instance:IsA("Terrain") then
-                        valid = hit.Normal.Y > 0.88 and hit.Material ~= Enum.Material.Water
-                    elseif hit.Normal.Y > 0.95 then
-                        local info = PartInfo[hit.Instance]
-                        valid = (info ~= nil and info.Ground) or math.abs(hit.Position.Y - refY) < 3
-                    end
-
-                    -- tidak ada genangan di bawah atap
-                    if valid and Workspace:Raycast(hit.Position + Vector3.new(0, 1, 0), Vector3.new(0, 40, 0), rayParams) then
-                        valid = false
-                    end
-                end
-
-                if valid then
-                    local pos = hit.Position
-                    local yaw = rng:NextNumber(0, math.pi)
-                    local w = rng:NextNumber(4, 11)
-                    local l = w * rng:NextNumber(0.55, 0.9)
-
-                    -- lapisan dasar (paling besar)
-                    puddle[1].Size = Vector3.new(w, 0.04, l)
-                    puddle[1].CFrame = CFrame.new(pos + Vector3.new(0, 0.04, 0)) * CFrame.Angles(0, yaw, 0)
-
-                    -- pecahan kedua: lebih panjang, diputar dan digeser
-                    local s2 = Vector3.new(rng:NextNumber(-0.22, 0.22) * w, 0.052, rng:NextNumber(-0.22, 0.22) * l)
-                    puddle[2].Size = Vector3.new(w * 0.62, 0.04, l * 1.3)
-                    puddle[2].CFrame = CFrame.new(pos + s2) * CFrame.Angles(0, yaw + rng:NextNumber(0.5, 1.1), 0)
-
-                    -- pecahan ketiga: kecil, di dekat tengah
-                    local s3 = Vector3.new(rng:NextNumber(-0.3, 0.3) * w, 0.064, rng:NextNumber(-0.3, 0.3) * l)
-                    puddle[3].Size = Vector3.new(w * 0.4, 0.04, l * 0.55)
-                    puddle[3].CFrame = CFrame.new(pos + s3) * CFrame.Angles(0, yaw - rng:NextNumber(0.4, 1.0), 0)
-
-                    for _, block in ipairs(puddle) do
-                        block.Parent = WorldFolder
-                    end
-                else
-                    hidePuddle(puddle)
-                end
-            end
-        end
-
-        lastPuddlePos = center
-    end
-
-    ------------------------------------------------------------
-    -- Cahaya hangat di tubuh karakter (sore)
-    ------------------------------------------------------------
-
-    local function updateBody(dt)
-        local char = Player.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then
-            return
-        end
-
+    local function updateBody(dt, sunDir, strength)
+        local char = Player.Character; local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
         if not bodyAttachment or not bodyAttachment.Parent then
-            bodyAttachment = Instance.new("Attachment")
-            bodyAttachment.Name = PREFIX .. "CahayaTubuh"
-            bodyAttachment.Parent = anchor
-
-            bodyLight = Instance.new("PointLight")
-            bodyLight.Name = PREFIX .. "CahayaTubuhLampu"
-            bodyLight.Color = rgb(255, 150, 70)
-            bodyLight.Range = 16
-            bodyLight.Brightness = 0
-            bodyLight.Shadows = false
-            bodyLight.Parent = bodyAttachment
+            bodyAttachment = Instance.new("Attachment"); bodyAttachment.Name = "URV4_WarmBodyAttachment"; bodyAttachment.Parent = Workspace.Terrain
+            bodyLight = Instance.new("PointLight"); bodyLight.Name = "URV4_WarmBodyLight"; bodyLight.Color = Color3.fromRGB(255, 160, 80)
+            bodyLight.Range = 16; bodyLight.Brightness = 0; bodyLight.Shadows = false; bodyLight.Parent = bodyAttachment
         end
-
-        local sunDir = Sun.Dir
-        bodyAttachment.Position = root.Position + sunDir * 7 + Vector3.new(0, 1.5, 0)
-
-        local covered = Workspace:Raycast(root.Position + Vector3.new(0, 2, 0), sunDir * 300, rayParams) ~= nil
+        bodyAttachment.WorldPosition = root.Position + sunDir * 7 + Vector3.new(0, 1.5, 0)
+        local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances = { char }
+        local covered = Workspace:Raycast(root.Position + Vector3.new(0, 2, 0), sunDir * 300, params) ~= nil
         local elevation = math.clamp(sunDir.Y * 4 + 0.35, 0, 1)
-        local target = covered and 0 or (1.0 * elevation * (0.4 + 0.6 * math.min(1, Sun.Scale)))
-
-        bodyBrightness = lerp(bodyBrightness, target, math.min(1, dt * 2.5))
-        bodyLight.Brightness = bodyBrightness
-    end
-
-    ------------------------------------------------------------
-    -- API
-    ------------------------------------------------------------
-
-    function World.SetMood(m)
-        build()
-        mood = m
-        lastSeedPos = nil
-        lastPuddlePos = nil
-        applyClouds(m)
-
-        if not m.WarmBody and bodyLight then
-            bodyLight.Brightness = 0
-            bodyBrightness = 0
+        local target = covered and 0 or (1.2 * elevation * strength)
+        bodyBrightness = lerp(bodyBrightness, target, math.min(1, dt * 2.5)); bodyLight.Brightness = bodyBrightness
+        castTimer += dt
+        if castTimer >= 2 then
+            castTimer = 0
+            for _, d in ipairs(char:GetDescendants()) do if d:IsA("BasePart") then d.CastShadow = true end end
         end
     end
 
-    function World.Update(dt)
-        if not built or not mood then
-            return
-        end
+    local function stop()
+        if connection then connection:Disconnect(); connection = nil end
+        if gui then gui.Enabled = false end
+        if sound then sound:Stop(); sound:Destroy(); sound = nil end
+        applyClouds(false)
+        if bodyAttachment then bodyAttachment:Destroy(); bodyAttachment = nil; bodyLight = nil end
+        bodyBrightness = 0
+    end
 
+    local function update(dt)
         local cam = Workspace.CurrentCamera
-        if not cam then
-            return
+        if not cam or not gui then return end
+        intensity = lerp(intensity, active and 1 or 0, math.min(1, dt * 1.5))
+        if not active and intensity < 0.01 then stop(); return end
+
+        local mood = Atmospheres[MOOD_NAME]
+        local drift = mood and mood.Drift
+        if active and drift then
+            driftClock += dt
+            local phase = (driftClock / (drift.Minutes * 60)) % 2
+            local t = phase < 1 and phase or (2 - phase)
+            t = t * t * (3 - 2 * t)
+            local breathing = math.sin(os.clock() * 0.7) * 0.02
+            setProperty(Lighting, "ClockTime", lerp(drift.Clock0, drift.Clock1, t))
+            setProperty(Lighting, "Brightness", lerp(drift.Bright0, drift.Bright1, t) + breathing)
+            setProperty(Lighting, "ExposureCompensation", lerp(drift.Exp0, drift.Exp1, t))
         end
 
-        local scale = State.Scale
-        local sunDir = Sun.Dir
         local camPos = cam.CFrame.Position
+        local sunDir = Lighting:GetSunDirection()
+        local facing = math.clamp(cam.CFrame.LookVector:Dot(sunDir), 0, 1)
+        local screenPoint, onScreen = cam:WorldToViewportPoint(camPos + sunDir * 1000)
+        local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances = { Player.Character }
+        local blocked = Workspace:Raycast(camPos, sunDir * 2000, params) ~= nil
+        local target = (onScreen and screenPoint.Z > 0 and not blocked) and 1 or 0
+        sunVisible = lerp(sunVisible, target, math.min(1, dt * 3))
 
-        local facing = Sun.Facing
-        local f2 = facing * facing
-        local f3 = f2 * facing
-        local distFade = clamp01(Sun.Scale)
+        local size = cam.ViewportSize
+        local sunPos = Vector2.new(screenPoint.X, screenPoint.Y)
+        local axis = (size / 2) - sunPos
+        local base = math.min(size.X, size.Y)
 
-        local sunSensitive = mood.SunGlow > 0 and 1 or 0
-
-        ------------------------------------------------------------
-        -- Glow matahari 3D (diam di tempatnya)
-        ------------------------------------------------------------
-        local glow = mood.SunGlow * Sun.Elev
-        sunGui.Enabled = glow > 0.01
-
-        if sunGui.Enabled then
-            sunPart.CFrame = CFrame.new(Sun.Pos)
-
-            local a = clamp01(glow * (0.6 + 0.4 * facing))
-            for _, layer in ipairs(sunLayers) do
-                layer.Frame.BackgroundTransparency = 1 - (1 - layer.Alpha) * a
-            end
-
-            sunStreak.BackgroundTransparency = 1 - 0.75 * a * (0.3 + 0.7 * facing)
-
-            for _, extra in ipairs(sunExtras) do
-                extra.Frame.BackgroundTransparency = 1 - extra.Alpha * a * (0.3 + 0.7 * facing)
-            end
+        for _, item in ipairs(flares) do
+            local p = sunPos + axis * item.Def.pos
+            local d = base * item.Def.size
+            item.Object.Position = UDim2.fromOffset(p.X, p.Y); item.Object.Size = UDim2.fromOffset(d, d)
         end
 
-        ------------------------------------------------------------
-        -- Efek kamera naik saat menghadap matahari (mengecil saat jauh)
-        ------------------------------------------------------------
-        local sens = Sun.Elev * Sun.Open * sunSensitive * distFade
+        streakMain.Position = UDim2.fromOffset(sunPos.X, sunPos.Y); streakMain.Size = UDim2.fromOffset(size.X * 0.75, math.max(2, base * 0.006))
+        streakSoft.Position = UDim2.fromOffset(sunPos.X, sunPos.Y); streakSoft.Size = UDim2.fromOffset(size.X * 0.5, math.max(6, base * 0.03))
+        halo.Position = UDim2.fromOffset(sunPos.X, sunPos.Y); halo.Size = UDim2.fromOffset(base * 0.5, base * 0.5)
 
-        local bloom = State.Instances.Bloom
-        if bloom and bloom.Parent then
-            bloom.Intensity = State.Base.Bloom + 0.45 * f3 * sens
-        end
-
-        local rays = State.Instances.SunRays
-        if rays and rays.Parent then
-            rays.Intensity = State.Base.SunRays + 0.10 * f2 * sens
-        end
-
-        local grade = State.Instances.Color
-        if grade and grade.Parent then
-            grade.TintColor = State.Base.Tint:Lerp(rgb(255, 200, 140), 0.25 * f2 * sens)
-            grade.Saturation = State.Base.Saturation + 0.04 * f2 * sens
-            grade.Brightness = 0.05 * f3 * sens
-        end
-
-        local atmosphere = State.Instances.Atmosphere
-        if atmosphere and atmosphere.Parent then
-            atmosphere.Glare = math.min(1, State.Base.Glare + 0.25 * f2 * sens)
-        end
-
-        ------------------------------------------------------------
-        -- Sun rays 3D
-        ------------------------------------------------------------
-        timers.Shaft += dt
-        if timers.Shaft >= 0.15 then
-            timers.Shaft = 0
-
-            local strength = mood.Shafts * scale * Sun.Elev * (0.45 + 0.55 * distFade)
-
-            if strength <= 0.01 then
-                lastSeedPos = nil
-            elseif not lastSeedPos
-                or (camPos - lastSeedPos).Magnitude > 45
-                or not lastSeedSun
-                or lastSeedSun:Dot(sunDir) < 0.9997 then
-                seedShafts(camPos)
-            end
-
-            for _, shaft in ipairs(shafts) do
-                if shaft.Active and strength > 0.01 then
-                    local distance = (shaft.Pos - camPos).Magnitude
-                    local near = clamp01((distance - 10) / 25)
-                    local amount = strength * (0.30 + 0.70 * facing) * shaft.Rand * 0.19 * near
-                    local t = 1 - clamp01(amount)
-
-                    shaft.Beam.Transparency = NumberSequence.new({
-                        NumberSequenceKeypoint.new(0, 1),
-                        NumberSequenceKeypoint.new(0.15, t),
-                        NumberSequenceKeypoint.new(0.6, math.min(1, t + (1 - t) * 0.5)),
-                        NumberSequenceKeypoint.new(1, 1),
-                    })
-                    shaft.Beam.Enabled = true
-                else
-                    shaft.Beam.Enabled = false
-                end
+        local now = os.clock()
+        local visibleCount = math.floor(#motes * State.Quality / 10)
+        for i, m in ipairs(motes) do
+            local show = i <= visibleCount
+            m.Object.Visible = show
+            if show then
+                m.x = (m.x + m.vx * dt) % 1; m.y = (m.y + m.vy * dt) % 1; m.Object.Position = UDim2.fromScale(m.x, m.y)
+                local twinkle = 0.5 + 0.5 * math.sin(now * m.speed + m.phase)
+                m.Object.BackgroundTransparency = 1 - (0.15 + 0.55 * twinkle)
             end
         end
 
-        ------------------------------------------------------------
-        -- Hujan + genangan kaca
-        ------------------------------------------------------------
-        local rainTarget = mood.Rain and 1 or 0
-        rainLevel = lerp(rainLevel, rainTarget, math.min(1, dt * 0.4))
+        local breathe = 0.5 + 0.5 * math.sin(now * 0.55)
+        vignetteGroup.GroupTransparency = 1 - intensity * 0.95
+        leakGroup.GroupTransparency = 1 - intensity * (0.55 + 0.20 * breathe)
+        flareGroup.GroupTransparency = 1 - intensity * sunVisible * (0.35 + 0.65 * facing)
+        moteGroup.GroupTransparency = 1 - intensity * (0.30 + 0.70 * facing)
 
-        timers.Rain += dt
-        if timers.Rain >= 0.2 then
-            timers.Rain = 0
+        local f1 = facing; local f2 = facing * facing; local f3 = f2 * facing
+        local exposureMask = intensity * (0.5 + 0.5 * sunVisible)
+        washGradient.Rotation = math.deg(math.atan2(axis.Y, axis.X))
+        washGroup.GroupTransparency = 1 - exposureMask * (0.10 + 0.80 * f2)
+        local whiteAmount = math.clamp((facing - 0.88) / 0.12, 0, 1)
+        whiteout.BackgroundTransparency = 1 - 0.30 * whiteAmount * whiteAmount * sunVisible
 
-            local covered = Workspace:Raycast(camPos, Vector3.new(0, 90, 0), rayParams) ~= nil
-            coverTarget = covered and 0.08 or 1
+        if active and mood then
+            setProperty(State.Instances.Bloom, "Intensity", mood.Bloom + 0.30 * f3 * sunVisible)
+            setProperty(State.Instances.SunRays, "Intensity", (mood.SunRays or Config.SunRayIntensity) + 0.22 * f2 * sunVisible)
+            local grade = State.Instances.ColorCorrection
+            setProperty(grade, "TintColor", mood.Tint:Lerp(Color3.fromRGB(255, 186, 112), 0.6 * f2 * intensity))
+            setProperty(grade, "Saturation", mood.Saturation + 0.10 * f2)
+            setProperty(grade, "Brightness", (mood.GradeBrightness or 0) + 0.035 * f3 * sunVisible)
+            setProperty(State.Instances.Atmosphere, "Glare", math.min(1, mood.Glare + 0.40 * f2))
+        end
 
-            if rainLevel > 0.03 then
-                if not lastPuddlePos or (camPos - lastPuddlePos).Magnitude > 50 then
-                    placePuddles(camPos)
-                end
-                -- makin hujan makin bening-pantul (transparansi turun ke ~0.45)
-                setPuddlesTransparency(1 - 0.55 * clamp01(rainLevel * 1.2))
-            elseif lastPuddlePos then
-                setPuddlesTransparency(1)
-                lastPuddlePos = nil
+        local center = size / 2
+        local wcenter = center + axis * 0.85
+        local wx = math.clamp(wcenter.X, size.X * 0.2, size.X * 0.8)
+        local wy = math.clamp(wcenter.Y, size.Y * 0.3, size.Y * 0.75)
+        windowX = windowX and lerp(windowX, wx, math.min(1, dt * 3)) or wx
+        windowY = windowY and lerp(windowY, wy, math.min(1, dt * 3)) or wy
+        local ww = base * 0.62
+        windowBox.Position = UDim2.fromOffset(windowX + math.sin(now * 0.23) * base * 0.012, windowY + math.cos(now * 0.19) * base * 0.010)
+        windowBox.Size = UDim2.fromOffset(ww * 1.15, ww); windowBox.Rotation = -12 + math.sin(now * 0.2) * 1.2
+
+        for i, pane in ipairs(windowPanes) do
+            local a = 0.72 + 0.07 * math.sin(now * 0.45 + i * 1.7)
+            pane.Gradient.Transparency = NumberSequence.new(a, a + 0.17)
+        end
+        windowGroup.GroupTransparency = 1 - intensity * (0.30 + 0.70 * f1) * (0.6 + 0.4 * sunVisible)
+        updateBody(dt, sunDir, intensity)
+        if sound then sound.Volume = AMBIENCE_VOLUME * intensity end
+    end
+
+    function NostalgiaFX.SetEnabled(on)
+        local wasActive = active; active = on and true or false
+        if active then
+            if not gui or not gui.Parent then
+                table.clear(flares); table.clear(motes); table.clear(windowPanes); build()
             end
-        end
-
-        coverLevel = lerp(coverLevel, coverTarget, math.min(1, dt * 3))
-
-        rainPart.CFrame = CFrame.new(camPos + Vector3.new(0, 42, 0))
-        local totalRate = 4200 * scale * rainLevel * coverLevel
-        for _, item in ipairs(rainEmitter) do
-            item.Emitter.Rate = totalRate * item.Weight
-        end
-
-        if rainSound then
-            rainSound.Volume = RAIN_SOUND_VOLUME * rainLevel * (0.35 + 0.65 * coverLevel)
-        end
-
-        -- Bokeh 3D di udara (muncul saat sore, mengecil saat jauh dari matahari)
-        if bokehPart and bokehEmitter then
-            local flat = Vector3.new(sunDir.X, 0, sunDir.Z)
-            flat = flat.Magnitude > 0.01 and flat.Unit or Vector3.new(0, 0, -1)
-            bokehPart.CFrame = CFrame.new(camPos + flat * 40 + Vector3.new(0, 6, 0))
-
-            local strength = mood.Flare * Sun.Elev * Sun.Open * distFade * (0.4 + 0.6 * facing) * scale
-            bokehEmitter.Rate = 14 * strength
-        end
-
-        if mood.WarmBody then
-            updateBody(dt)
+            if not wasActive then driftClock = 0 end
+            gui.Enabled = true; applyClouds(true); startAmbience()
+            if not connection then connection = RunService.RenderStepped:Connect(update) end
         end
     end
 
-    function World.Destroy()
-        applyClouds(nil)
-
-        if rainSound then
-            rainSound:Destroy()
-            rainSound = nil
-        end
-
-        for _, puddle in ipairs(puddles) do
-            for _, block in ipairs(puddle) do
-                block:Destroy()
-            end
-        end
-        table.clear(puddles)
-        table.clear(shafts)
-        table.clear(sunLayers)
-        table.clear(sunExtras)
-        bokehPart = nil
-        bokehEmitter = nil
-
-        WorldFolder:ClearAllChildren()
-
-        bodyAttachment = nil
-        bodyLight = nil
-        built = false
-        mood = nil
+    function NostalgiaFX.Destroy()
+        active = false; intensity = 0; stop()
+        if gui then gui:Destroy(); gui = nil end
+        table.clear(flares); table.clear(motes); table.clear(windowPanes)
     end
 end
 
 ----------------------------------------------------------------
--- LENSA MATAHARI
--- Matahari diam di satu titik dunia, jadi semua elemen lensa
--- (inti, sinar, ghost, bokeh) mengecil dan memudar saat menjauh.
+-- MOOD APPLICATION & PUBLIC API
 ----------------------------------------------------------------
-
-local SunLens = {}
-
-function SunLens.Update(dt) end
-
-function SunLens.Destroy() end
-
-----------------------------------------------------------------
--- TERAPKAN SUASANA & KUALITAS
-----------------------------------------------------------------
-
-local function activeMoods()
-    local list = {}
-    for _, name in ipairs(State.Selected) do
-        local mood = MoodByName[name]
-        if mood then
-            table.insert(list, mood)
-        end
-    end
-    if #list == 0 then
-        table.insert(list, Moods[1])
-        State.Selected = { Moods[1].Name }
-    end
-    return list
-end
-
-local function applyMoods()
-    local mood = mergeMoods(activeMoods())
-    State.Mood = mood
-
+local function applyAtmosphere()
     configureLightingBase()
-    configureMoodLighting(mood)
-    applySky(mood)
-    Atmos.Set(mood)
-
-    World.SetMood(mood)
-    setTerrainWet(mood.Wet == true)
-
-    task.spawn(styleParts, mood)
+    configureMoodLighting()
+    local activeMoods = State.SelectedMoods
+    local hasNostalgic = false
+    for _, name in ipairs(activeMoods) do
+        if name == "NOSTALGIC SORE" then hasNostalgic = true; break end
+    end
+    NostalgiaFX.SetEnabled(hasNostalgic and Config.Shaders)
 end
-
-local function applyQuality(level)
-    level = math.clamp(math.floor(level or 8), 1, 10)
-
-    State.Quality = level
-    State.Scale = qualityScale(level)
-
-    SunLens.Destroy()
-    applyMoods()
-    task.spawn(scanAccentLights)
-end
-
-----------------------------------------------------------------
--- API PUBLIK
-----------------------------------------------------------------
 
 local API = {}
+function API.SetQuality(level) applyQuality(level) end
+function API.GetQuality() return State.Quality end
 
-local onSelectionChanged = function() end
-
-function API.SetQuality(level)
-    applyQuality(level)
-end
-
-function API.GetQuality()
-    return State.Quality
-end
-
--- Satu suasana saja
-function API.SetMood(name)
-    if not MoodByName[name] then
-        return false
-    end
-    State.Selected = { name }
-    applyMoods()
-    onSelectionChanged()
-    return true
-end
-
--- Beberapa suasana sekaligus, contoh: API.SetMoods({ "Sore Keemasan", "Hujan" })
-function API.SetMoods(names)
-    local list = {}
-    for _, name in ipairs(names) do
-        if MoodByName[name] then
-            table.insert(list, name)
-        end
-    end
-    if #list == 0 then
-        return false
-    end
-    State.Selected = list
-    applyMoods()
-    onSelectionChanged()
-    return true
-end
-
--- Nyalakan / matikan satu suasana tanpa mengganggu yang lain
 function API.ToggleMood(name)
-    if not MoodByName[name] then
-        return false
-    end
-
-    local index = table.find(State.Selected, name)
-    if index then
-        if #State.Selected > 1 then
-            table.remove(State.Selected, index)
-        end
+    if not Atmospheres[name] then return false end
+    local idx = table.find(State.SelectedMoods, name)
+    if idx then
+        table.remove(State.SelectedMoods, idx)
     else
-        table.insert(State.Selected, name)
+        if #State.SelectedMoods >= 2 then
+            table.remove(State.SelectedMoods, 1)
+        end
+        table.insert(State.SelectedMoods, name)
     end
-
-    applyMoods()
-    onSelectionChanged()
+    applyAtmosphere()
     return true
 end
 
-function API.GetMood()
-    return selectedLabel()
-end
+function API.GetActiveMoods() return State.SelectedMoods end
 
-function API.GetActive()
-    return table.clone(State.Selected)
-end
-
-function API.GetMoods()
-    local names = {}
-    for _, mood in ipairs(Moods) do
-        table.insert(names, mood.Name)
+function API.SetMoodPreset(moodName, preset)
+    if not MoodSettings[moodName] then return false end
+    local settings = MoodSettings[moodName]
+    if preset == "Lumayan Terang" then
+        settings.BrightnessMultiplier = 1.25; settings.ExposureOffset = 0.05
+    elseif preset == "Sedang" then
+        settings.BrightnessMultiplier = 1.0; settings.ExposureOffset = 0
+    elseif preset == "Gelap" then
+        settings.BrightnessMultiplier = 0.75; settings.ExposureOffset = -0.05
     end
-    return names
+    applyAtmosphere()
+    return true
 end
 
-function API.GetStats()
-    return State.Stats
+function API.SetMoodSlider(moodName, sliderName, value)
+    if not MoodSettings[moodName] then return false end
+    MoodSettings[moodName][sliderName] = value
+    applyAtmosphere()
+    return true
 end
 
--- Pindahkan titik matahari (default: tempat kamu mulai)
-function API.SetSunAnchor(position)
-    Sun.Anchor = position
+function API.GetStats() return State.Stats end
+
+function API.RefreshDetails()
+    scanVisualAssets(); preserveDetailGeometry(); enhanceExistingLights(); scanAccentLights()
 end
 
-function API.ResetSunAnchor()
-    Sun.Anchor = nil
+function API.Rebuild()
+    configureLightingBase(); configureMoodLighting(); API.RefreshDetails()
 end
-
-function API.Refresh()
-    task.spawn(function()
-        scanWorld()
-        styleParts(State.Mood)
-        scanAccentLights()
-    end)
-end
-
-----------------------------------------------------------------
--- RESTORE
-----------------------------------------------------------------
 
 local function restoreOriginal()
-    if State.Restored then
-        return
-    end
-
+    if State.Restored then return end
     State.Restored = true
-    styleJob += 1
-
-    for _, connection in ipairs(State.Connections) do
-        connection:Disconnect()
-    end
-    table.clear(State.Connections)
-
     for property, value in pairs(Original.Lighting) do
-        if value ~= nil then
-            setProperty(Lighting, property, value)
-        end
+        if value ~= nil then setProperty(Lighting, property, value) end
     end
-
     for part, data in pairs(Original.Parts) do
         if part and part.Parent then
             for property, value in pairs(data) do
-                if value ~= nil then
-                    setProperty(part, property, value)
-                end
+                if value ~= nil then setProperty(part, property, value) end
             end
         end
     end
-
     for surface, data in pairs(Original.SurfaceAppearances) do
         if surface and surface.Parent then
             for property, value in pairs(data) do
-                if value ~= nil then
-                    setProperty(surface, property, value)
-                end
+                if value ~= nil then setProperty(surface, property, value) end
             end
         end
     end
-
-    for material, color in pairs(Original.TerrainColors) do
-        if color then
-            safe(function()
-                Terrain:SetMaterialColor(material, color)
-            end)
-        end
-    end
-
-    clearAccentLights()
-
-    for _, record in ipairs(Eggs.Records) do
-        destroyEgg(record)
-    end
-    table.clear(Eggs.Records)
-
-    restoreSky()
-    Atmos.Destroy()
-    SunLens.Destroy()
-    World.Destroy()
-
+    clearAccentLights(); NostalgiaFX.Destroy()
     for _, instance in ipairs(Original.Created) do
-        if instance and instance.Parent then
-            instance:Destroy()
-        end
+        if instance and instance.Parent then instance:Destroy() end
     end
-
-    for _, atmosphere in ipairs(Original.HiddenAtmospheres) do
-        if atmosphere then
-            atmosphere.Parent = Lighting
-        end
-    end
-
-    if State.UI then
-        State.UI:Destroy()
-        State.UI = nil
-    end
-
-    if WorldFolder then
-        WorldFolder:Destroy()
-    end
-
-    if _G.Leon4951Shaders == API then
-        _G.Leon4951Shaders = nil
+    if State.OriginalCameraFOV and Camera then
+        setProperty(Camera, "FieldOfView", State.OriginalCameraFOV)
     end
 end
-
 API.Restore = restoreOriginal
 
 ----------------------------------------------------------------
--- UI: kecil, halus, fleksibel (geser / lipat / ganti ukuran)
+-- UI SYSTEM (MAIN PANEL + SETTINGS PANEL)
 ----------------------------------------------------------------
-
 local function createUI()
-    if not Settings.ShowPanel then
-        return
-    end
+    if not Config.ShowUI then return end
 
-    local ACCENT = rgb(255, 150, 60)
-    local W = 200
-    local TITLE_H = 28
-    local BODY_H = 268
-    local SCALES = { 0.8, 0.95, 1.15 }
-    local scaleIndex = 2
-
-    local tweenFast = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local tweenSlow = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
+    -- Main Panel
     local gui = Instance.new("ScreenGui")
-    gui.Name = ROOT
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.DisplayOrder = 50
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.Parent = PlayerGui
+    gui.Name = ROOT_NAME; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; gui.Parent = PlayerGui
 
     local panel = Instance.new("Frame")
-    panel.Name = "Panel"
-    panel.AnchorPoint = Vector2.new(0, 0)
-    panel.Position = UDim2.fromScale(0.012, 0.26)
-    panel.Size = UDim2.fromOffset(W, TITLE_H + BODY_H)
-    panel.BackgroundColor3 = rgb(16, 15, 18)
-    panel.BackgroundTransparency = 0.08
-    panel.BorderSizePixel = 0
-    panel.ClipsDescendants = true
-    panel.Parent = gui
+    panel.Name = "RendererPanel"; panel.Size = UDim2.fromOffset(420, 500)
+    panel.Position = UDim2.new(0, 22, 0.5, -250)
+    panel.BackgroundColor3 = Color3.fromRGB(15, 17, 22); panel.BackgroundTransparency = 0.05; panel.BorderSizePixel = 0; panel.Parent = gui
 
-    local uiScale = Instance.new("UIScale")
-    uiScale.Scale = SCALES[scaleIndex]
-    uiScale.Parent = panel
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 14); corner.Parent = panel
+    local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(95, 105, 125); stroke.Transparency = 0.55; stroke.Thickness = 1; stroke.Parent = panel
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = panel
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = ACCENT
-    stroke.Transparency = 0.7
-    stroke.Thickness = 1
-    stroke.Parent = panel
-
-    local function makeButton(parent, text, x, y, w, h)
-        local b = Instance.new("TextButton")
-        b.AutoButtonColor = false
-        b.Position = UDim2.fromOffset(x, y)
-        b.Size = UDim2.fromOffset(w, h)
-        b.BackgroundColor3 = rgb(34, 33, 38)
-        b.BorderSizePixel = 0
-        b.Font = Enum.Font.GothamBold
-        b.TextSize = 11
-        b.TextColor3 = rgb(215, 215, 222)
-        b.Text = text
-        b.Parent = parent
-
-        local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(0, 6)
-        c.Parent = b
-        return b
-    end
-
-    -- Judul
     local title = Instance.new("TextLabel")
-    title.BackgroundTransparency = 1
-    title.Position = UDim2.fromOffset(10, 0)
-    title.Size = UDim2.fromOffset(W - 74, TITLE_H)
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 12
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.TextColor3 = rgb(255, 232, 205)
-    title.Text = "Leon4951 shaders"
-    title.Parent = panel
+    title.BackgroundTransparency = 1; title.Size = UDim2.new(1, -30, 0, 34); title.Position = UDim2.fromOffset(15, 12)
+    title.Font = Enum.Font.GothamBold; title.TextSize = 18; title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextColor3 = Color3.fromRGB(245, 248, 255); title.Text = "ULTRA REALISTIC RENDERER V4"; title.Parent = panel
 
-    local sizeButton = makeButton(panel, "A", W - 62, 4, 24, 20)
-    local collapseButton = makeButton(panel, "-", W - 34, 4, 24, 20)
+    local subtitle = Instance.new("TextLabel")
+    subtitle.BackgroundTransparency = 1; subtitle.Size = UDim2.new(1, -30, 0, 22); subtitle.Position = UDim2.fromOffset(15, 43)
+    subtitle.Font = Enum.Font.Gotham; subtitle.TextSize = 11; subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.TextColor3 = Color3.fromRGB(160, 170, 188); subtitle.Text = "REALISM • SUASANA • SHADERS • DETAIL"; subtitle.Parent = panel
 
-    local body = Instance.new("Frame")
-    body.BackgroundTransparency = 1
-    body.Position = UDim2.fromOffset(0, TITLE_H)
-    body.Size = UDim2.fromOffset(W, BODY_H)
-    body.Parent = panel
+    -- Quality Section
+    local qualityTitle = Instance.new("TextLabel")
+    qualityTitle.BackgroundTransparency = 1; qualityTitle.Size = UDim2.new(1, -30, 0, 22); qualityTitle.Position = UDim2.fromOffset(15, 76)
+    qualityTitle.Font = Enum.Font.GothamBold; qualityTitle.TextSize = 12; qualityTitle.TextXAlignment = Enum.TextXAlignment.Left
+    qualityTitle.TextColor3 = Color3.fromRGB(210, 218, 232); qualityTitle.Text = "QUALITY 1–10"; qualityTitle.Parent = panel
 
-    -- Kualitas
-    local qLabel = Instance.new("TextLabel")
-    qLabel.BackgroundTransparency = 1
-    qLabel.Position = UDim2.fromOffset(10, 2)
-    qLabel.Size = UDim2.fromOffset(80, 22)
-    qLabel.Font = Enum.Font.GothamMedium
-    qLabel.TextSize = 10
-    qLabel.TextXAlignment = Enum.TextXAlignment.Left
-    qLabel.TextColor3 = rgb(170, 170, 180)
-    qLabel.Text = "KUALITAS"
-    qLabel.Parent = body
+    local qualityHolder = Instance.new("Frame")
+    qualityHolder.BackgroundTransparency = 1; qualityHolder.Size = UDim2.new(1, -30, 0, 70); qualityHolder.Position = UDim2.fromOffset(15, 100); qualityHolder.Parent = panel
+    local grid = Instance.new("UIGridLayout"); grid.CellSize = UDim2.fromOffset(64, 30); grid.CellPadding = UDim2.fromOffset(6, 6)
+    grid.FillDirectionMaxCells = 5; grid.Parent = qualityHolder
 
-    local qMinus = makeButton(body, "-", W - 92, 3, 24, 20)
-    local qValue = Instance.new("TextLabel")
-    qValue.BackgroundTransparency = 1
-    qValue.Position = UDim2.fromOffset(W - 66, 3)
-    qValue.Size = UDim2.fromOffset(32, 20)
-    qValue.Font = Enum.Font.GothamBold
-    qValue.TextSize = 12
-    qValue.TextColor3 = ACCENT
-    qValue.Parent = body
-    local qPlus = makeButton(body, "+", W - 34, 3, 24, 20)
-
-    local function refreshQuality()
-        qValue.Text = tostring(State.Quality)
-    end
-    refreshQuality()
-
-    qMinus.MouseButton1Click:Connect(function()
-        applyQuality(State.Quality - 1)
-        refreshQuality()
-    end)
-    qPlus.MouseButton1Click:Connect(function()
-        applyQuality(State.Quality + 1)
-        refreshQuality()
-    end)
-
-    -- Daftar suasana (bisa digabung)
-    local listLabel = Instance.new("TextLabel")
-    listLabel.BackgroundTransparency = 1
-    listLabel.Position = UDim2.fromOffset(10, 28)
-    listLabel.Size = UDim2.fromOffset(W - 20, 16)
-    listLabel.Font = Enum.Font.GothamMedium
-    listLabel.TextSize = 10
-    listLabel.TextXAlignment = Enum.TextXAlignment.Left
-    listLabel.TextColor3 = rgb(170, 170, 180)
-    listLabel.Text = "SHADER  (tap beberapa = digabung)"
-    listLabel.Parent = body
-
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.BackgroundTransparency = 1
-    scroll.BorderSizePixel = 0
-    scroll.Position = UDim2.fromOffset(8, 46)
-    scroll.Size = UDim2.fromOffset(W - 16, 190)
-    scroll.ScrollBarThickness = 2
-    scroll.ScrollBarImageColor3 = ACCENT
-    scroll.CanvasSize = UDim2.fromOffset(0, 0)
-    scroll.Parent = body
-
-    local list = Instance.new("UIListLayout")
-    list.Padding = UDim.new(0, 4)
-    list.SortOrder = Enum.SortOrder.LayoutOrder
-    list.Parent = scroll
-
-    local rows = {}
-
-    local function refreshRows()
-        for name, row in pairs(rows) do
-            local on = table.find(State.Selected, name) ~= nil
-            TweenService:Create(row.Button, tweenFast, {
-                BackgroundColor3 = on and rgb(74, 44, 22) or rgb(28, 27, 32),
-                TextColor3 = on and rgb(255, 236, 214) or rgb(180, 180, 190),
-            }):Play()
-            TweenService:Create(row.Dot, tweenFast, {
-                BackgroundColor3 = on and ACCENT or rgb(70, 70, 78),
-            }):Play()
-        end
-    end
-
-    for index, mood in ipairs(Moods) do
-        local button = Instance.new("TextButton")
-        button.AutoButtonColor = false
-        button.LayoutOrder = index
-        button.Size = UDim2.new(1, -6, 0, 24)
-        button.BackgroundColor3 = rgb(28, 27, 32)
-        button.BorderSizePixel = 0
-        button.Font = Enum.Font.GothamMedium
-        button.TextSize = 11
-        button.TextXAlignment = Enum.TextXAlignment.Left
-        button.TextColor3 = rgb(180, 180, 190)
-        button.Text = "      " .. mood.Name .. (mood.Fx and "  +" or "")
-        button.Parent = scroll
-
-        local bc = Instance.new("UICorner")
-        bc.CornerRadius = UDim.new(0, 6)
-        bc.Parent = button
-
-        local dot = Instance.new("Frame")
-        dot.AnchorPoint = Vector2.new(0, 0.5)
-        dot.Position = UDim2.new(0, 9, 0.5, 0)
-        dot.Size = UDim2.fromOffset(7, 7)
-        dot.BackgroundColor3 = rgb(70, 70, 78)
-        dot.BorderSizePixel = 0
-        dot.Parent = button
-
-        local dc = Instance.new("UICorner")
-        dc.CornerRadius = UDim.new(1, 0)
-        dc.Parent = dot
-
-        button.MouseButton1Click:Connect(function()
-            API.ToggleMood(mood.Name)
-        end)
-
-        rows[mood.Name] = { Button = button, Dot = dot }
-    end
-
-    list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scroll.CanvasSize = UDim2.fromOffset(0, list.AbsoluteContentSize.Y + 6)
-    end)
-
-    -- Footer
-    local status = Instance.new("TextLabel")
-    status.BackgroundTransparency = 1
-    status.Position = UDim2.fromOffset(10, BODY_H - 26)
-    status.Size = UDim2.fromOffset(W - 82, 22)
-    status.Font = Enum.Font.Gotham
-    status.TextSize = 9
-    status.TextXAlignment = Enum.TextXAlignment.Left
-    status.TextTruncate = Enum.TextTruncate.AtEnd
-    status.TextColor3 = rgb(135, 135, 148)
-    status.Parent = body
-
-    local offButton = makeButton(body, "Matikan", W - 68, BODY_H - 26, 58, 22)
-    offButton.TextSize = 10
-    offButton.MouseButton1Click:Connect(function()
-        restoreOriginal()
-    end)
-
-    onSelectionChanged = refreshRows
-    refreshRows()
-
-    task.spawn(function()
-        while gui.Parent do
-            status.Text = string.format("%d aktif | Egg %d | FPS %d", #State.Selected, State.Stats.Eggs, State.Stats.FPS)
-            task.wait(1)
-        end
-    end)
-
-    -- Ganti ukuran
-    sizeButton.MouseButton1Click:Connect(function()
-        scaleIndex = scaleIndex % #SCALES + 1
-        TweenService:Create(uiScale, tweenSlow, { Scale = SCALES[scaleIndex] }):Play()
-    end)
-
-    -- Lipat / buka
-    local collapsed = false
-    collapseButton.MouseButton1Click:Connect(function()
-        collapsed = not collapsed
-        collapseButton.Text = collapsed and "+" or "-"
-
-        if collapsed then
-            local t = TweenService:Create(panel, tweenSlow, { Size = UDim2.fromOffset(W, TITLE_H) })
-            t:Play()
-            t.Completed:Connect(function()
-                if collapsed then
-                    body.Visible = false
-                end
-            end)
-        else
-            body.Visible = true
-            TweenService:Create(panel, tweenSlow, { Size = UDim2.fromOffset(W, TITLE_H + BODY_H) }):Play()
-        end
-    end)
-
-    -- Geser lewat judul (posisi disimpan sebagai pecahan layar,
-    -- jadi tidak terpengaruh ukuran UI)
-    local dragging = false
-    local dragStart, startAbs
-
-    title.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startAbs = panel.AbsolutePosition
-        end
-    end)
-
-    title.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-
-    table.insert(State.Connections, UserInputService.InputChanged:Connect(function(input)
-        if not dragging then
-            return
-        end
-        if input.UserInputType ~= Enum.UserInputType.MouseMovement
-            and input.UserInputType ~= Enum.UserInputType.Touch then
-            return
-        end
-
-        local screen = gui.AbsoluteSize
-        local delta = input.Position - dragStart
-        local panelSize = panel.AbsoluteSize
-
-        local x = math.clamp(startAbs.X + delta.X, 0, math.max(0, screen.X - panelSize.X))
-        local y = math.clamp(startAbs.Y + delta.Y, 0, math.max(0, screen.Y - 30))
-
-        panel.Position = UDim2.fromScale(x / screen.X, y / screen.Y)
-    end))
-
-    -- Tombol RightCtrl: tampil / sembunyikan panel
-    table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then
-            return
-        end
-        if input.KeyCode == Enum.KeyCode.RightControl then
-            gui.Enabled = not gui.Enabled
-        end
-    end))
-
-    State.UI = gui
-end
-
-----------------------------------------------------------------
--- LOOP UTAMA
-----------------------------------------------------------------
-
-local fpsAccumulator, fpsFrames = 0, 0
-
-table.insert(State.Connections, RunService.RenderStepped:Connect(function(dt)
-    if State.Restored then
-        return
-    end
-
-    updateSun(dt)
-    World.Update(dt)
-    SunLens.Update(dt)
-
-    fpsAccumulator += dt
-    fpsFrames += 1
-    if fpsAccumulator >= 1 then
-        State.Stats.FPS = math.floor(fpsFrames / fpsAccumulator)
-        fpsAccumulator = 0
-        fpsFrames = 0
-    end
-end))
-
-local lightTimer = 0
-
-table.insert(State.Connections, RunService.Heartbeat:Connect(function(dt)
-    if State.Restored then
-        return
-    end
-
-    updateEggs(dt)
-
-    lightTimer += dt
-    if lightTimer < Settings.LightUpdateInterval then
-        return
-    end
-    lightTimer = 0
-
-    local cam = Workspace.CurrentCamera
-    if not cam then
-        return
-    end
-
-    local camPos = cam.CFrame.Position
-
-    for _, record in ipairs(State.AccentLights) do
-        local source = record.Source
-        local light = record.Light
-
-        if source and source.Parent and light and light.Parent then
-            local distance = (source.Position - camPos).Magnitude
-
-            if distance > Settings.LightDistance then
-                light.Enabled = false
+    local buttons = {}
+    local function updateQualityButtons()
+        for level, button in pairs(buttons) do
+            if level == State.Quality then
+                button.BackgroundColor3 = Color3.fromRGB(90, 125, 190); button.TextColor3 = Color3.fromRGB(255, 255, 255)
             else
-                light.Enabled = true
-                local factor = 1 - math.clamp(distance / Settings.LightDistance, 0, 1)
-                light.Brightness = lerp(0.15, 0.85, factor)
+                button.BackgroundColor3 = Color3.fromRGB(31, 35, 43); button.TextColor3 = Color3.fromRGB(180, 188, 205)
             end
         end
     end
-end))
 
-table.insert(State.Connections, Player.CharacterAdded:Connect(function()
-    World.UpdateRayParams()
-end))
+    for level = 1, 10 do
+        local button = Instance.new("TextButton")
+        button.AutoButtonColor = true; button.BackgroundColor3 = Color3.fromRGB(31, 35, 43); button.BorderSizePixel = 0
+        button.Font = Enum.Font.GothamBold; button.TextSize = 12; button.TextColor3 = Color3.fromRGB(180, 188, 205); button.Text = tostring(level); button.Parent = qualityHolder
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 7); bc.Parent = button
+        button.MouseButton1Click:Connect(function() applyQuality(level); updateQualityButtons() end)
+        buttons[level] = button
+    end
+    updateQualityButtons()
 
-table.insert(State.Connections, Workspace.DescendantAdded:Connect(function(object)
-    if State.Restored or not object:IsA("BasePart") then
-        return
+    -- Mood Combination Section
+    local moodTitle = Instance.new("TextLabel")
+    moodTitle.BackgroundTransparency = 1; moodTitle.Size = UDim2.new(1, -30, 0, 22); moodTitle.Position = UDim2.fromOffset(15, 180)
+    moodTitle.Font = Enum.Font.GothamBold; moodTitle.TextSize = 12; moodTitle.TextXAlignment = Enum.TextXAlignment.Left
+    moodTitle.TextColor3 = Color3.fromRGB(210, 218, 232); moodTitle.Text = "KOMBINASI SHADERS (Maks 2)"; moodTitle.Parent = panel
+
+    local moodScroll = Instance.new("ScrollingFrame")
+    moodScroll.BackgroundTransparency = 1; moodScroll.BorderSizePixel = 0; moodScroll.Size = UDim2.new(1, -30, 0, 160)
+    moodScroll.Position = UDim2.fromOffset(15, 207); moodScroll.ScrollBarThickness = 3; moodScroll.CanvasSize = UDim2.fromOffset(0, 0); moodScroll.Parent = panel
+    local mList = Instance.new("UIListLayout"); mList.Padding = UDim.new(0, 5); mList.Parent = moodScroll
+
+    local moodButtons = {}
+    local function updateMoodButtons()
+        for name, button in pairs(moodButtons) do
+            local isActive = table.find(State.SelectedMoods, name) ~= nil
+            if isActive then
+                button.BackgroundColor3 = Color3.fromRGB(68, 80, 108); button.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                button.BackgroundColor3 = Color3.fromRGB(25, 29, 36); button.TextColor3 = Color3.fromRGB(178, 186, 201)
+            end
+        end
     end
 
-    task.defer(function()
-        -- telur / nest yang baru muncul (streaming atau telur baru ditaruh)
-        registerEgg(object)
+    for name, _ in pairs(Atmospheres) do
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(1, -5, 0, 28); button.BackgroundColor3 = Color3.fromRGB(25, 29, 36); button.BorderSizePixel = 0
+        button.Font = Enum.Font.GothamMedium; button.TextSize = 11; button.TextXAlignment = Enum.TextXAlignment.Left
+        button.TextColor3 = Color3.fromRGB(178, 186, 201); button.Text = "   " .. name; button.Parent = moodScroll
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 6); bc.Parent = button
+        button.MouseButton1Click:Connect(function() API.ToggleMood(name); updateMoodButtons(); updateSettingsPanel() end)
+        moodButtons[name] = button
+    end
+    mList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        moodScroll.CanvasSize = UDim2.fromOffset(0, mList.AbsoluteContentSize.Y + 10)
+    end)
+    updateMoodButtons()
 
-        if ScanDone and processPart(object) and State.Mood then
-            stylePart(object, State.Mood)
+    -- Settings Panel Section
+    local settingsTitle = Instance.new("TextLabel")
+    settingsTitle.BackgroundTransparency = 1; settingsTitle.Size = UDim2.new(1, -30, 0, 22); settingsTitle.Position = UDim2.fromOffset(15, 380)
+    settingsTitle.Font = Enum.Font.GothamBold; settingsTitle.TextSize = 12; settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    settingsTitle.TextColor3 = Color3.fromRGB(210, 218, 232); settingsTitle.Text = "PENGATURAN SHADER AKTIF"; settingsTitle.Parent = panel
+
+    local settingsMoodSelector = Instance.new("Frame")
+    settingsMoodSelector.BackgroundTransparency = 1; settingsMoodSelector.Size = UDim2.new(1, -30, 0, 30); settingsMoodSelector.Position = UDim2.fromOffset(15, 405); settingsMoodSelector.Parent = panel
+    
+    local settingsButtons = {}
+    local activeSettingsMood = nil
+
+    local function updateSettingsPanel()
+        -- Clear old selector buttons
+        for _, btn in pairs(settingsButtons) do btn:Destroy() end
+        settingsButtons = {}
+        activeSettingsMood = State.SelectedMoods[1]
+
+        if #State.SelectedMoods == 0 then
+            local label = Instance.new("TextLabel")
+            label.BackgroundTransparency = 1; label.Size = UDim2.new(1, 0, 1, 0)
+            label.Font = Enum.Font.Gotham; label.TextSize = 11; label.TextColor3 = Color3.fromRGB(150, 160, 170)
+            label.Text = "Pilih minimal 1 shader untuk mengatur"; label.Parent = settingsMoodSelector
+            return
+        end
+
+        local btnW = (420 - 30 - (#State.SelectedMoods - 1) * 5) / #State.SelectedMoods
+        for i, name in ipairs(State.SelectedMoods) do
+            local btn = Instance.new("TextButton")
+            btn.AutoButtonColor = false; btn.Position = UDim2.fromOffset((i - 1) * (btnW + 5), 0)
+            btn.Size = UDim2.fromOffset(btnW, 30); btn.BackgroundColor3 = (name == activeSettingsMood) and Color3.fromRGB(90, 125, 190) or Color3.fromRGB(31, 35, 43)
+            btn.BorderSizePixel = 0; btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
+            btn.TextColor3 = (name == activeSettingsMood) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 188, 205)
+            btn.Text = name; btn.Parent = settingsMoodSelector
+            local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 6); bc.Parent = btn
+            btn.MouseButton1Click:Connect(function()
+                activeSettingsMood = name
+                updateSettingsPanel()
+            end)
+            settingsButtons[name] = btn
+        end
+        
+        -- Here you would ideally add sliders below this selector, 
+        -- but to keep the main panel clean and within reasonable bounds, 
+        -- the sliders are conceptually linked to this selection.
+        -- For a full implementation, a dedicated Settings GUI window is better.
+    end
+    updateSettingsPanel()
+
+    -- Status Bar
+    local status = Instance.new("TextLabel")
+    status.BackgroundTransparency = 1; status.Size = UDim2.new(1, -30, 0, 25); status.Position = UDim2.new(0, 15, 1, -35)
+    status.Font = Enum.Font.GothamMedium; status.TextSize = 10; status.TextXAlignment = Enum.TextXAlignment.Left
+    status.TextColor3 = Color3.fromRGB(135, 145, 164); status.Parent = panel
+
+    local function refreshStatus()
+        local activeNames = table.concat(State.SelectedMoods, " + ")
+        if activeNames == "" then activeNames = "NONE" end
+        status.Text = string.format("Q%d • %s • Parts %d • PBR %d • Lights %d",
+            State.Quality, activeNames, State.Stats.Parts, State.Stats.SurfaceAppearances, State.Stats.LightsFound + State.Stats.LightsCreated)
+    end
+
+    task.spawn(function()
+        while gui.Parent do refreshStatus(); task.wait(1) end
+    end)
+
+    -- Dragging Logic
+    local dragging = false; local dragStart; local startPosition
+    title.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPosition = panel.Position
         end
     end)
-end))
+    title.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = input.Position - dragStart
+        panel.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end)
+
+    return gui
+end
+
+-- Dedicated Settings Window for Sliders and Presets
+local function createSettingsWindow()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = ROOT_NAME .. "_Settings"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 51; gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; gui.Parent = PlayerGui
+
+    local panel = Instance.new("Frame")
+    panel.Name = "SettingsPanel"; panel.Size = UDim2.fromOffset(300, 400)
+    panel.Position = UDim2.new(1, -322, 0.5, -200)
+    panel.BackgroundColor3 = Color3.fromRGB(15, 17, 22); panel.BackgroundTransparency = 0.05; panel.BorderSizePixel = 0; panel.Parent = gui
+
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 14); corner.Parent = panel
+    local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(95, 105, 125); stroke.Transparency = 0.55; stroke.Thickness = 1; stroke.Parent = panel
+
+    local title = Instance.new("TextLabel")
+    title.BackgroundTransparency = 1; title.Size = UDim2.new(1, -20, 0, 30); title.Position = UDim2.fromOffset(10, 10)
+    title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextColor3 = Color3.fromRGB(245, 248, 255); title.Text = "PENGATURAN DETAIL"; title.Parent = panel
+
+    local moodLabel = Instance.new("TextLabel")
+    moodLabel.BackgroundTransparency = 1; moodLabel.Size = UDim2.new(1, -20, 0, 20); moodLabel.Position = UDim2.fromOffset(10, 45)
+    moodLabel.Font = Enum.Font.GothamMedium; moodLabel.TextSize = 11; moodLabel.TextXAlignment = Enum.TextXAlignment.Left
+    moodLabel.TextColor3 = Color3.fromRGB(160, 170, 188); moodLabel.Text = "Mengatur: NONE"; moodLabel.Parent = panel
+
+    -- Preset Buttons
+    local presetHolder = Instance.new("Frame")
+    presetHolder.BackgroundTransparency = 1; presetHolder.Size = UDim2.new(1, -20, 0, 30); presetHolder.Position = UDim2.fromOffset(10, 70); presetHolder.Parent = panel
+    local presetGrid = Instance.new("UIGridLayout"); presetGrid.CellSize = UDim2.fromOffset(90, 25); presetGrid.CellPadding = UDim2.fromOffset(5, 0); presetGrid.Parent = presetHolder
+
+    local presets = {"Lumayan Terang", "Sedang", "Gelap"}
+    local presetBtns = {}
+    for _, preset in ipairs(presets) do
+        local btn = Instance.new("TextButton")
+        btn.AutoButtonColor = true; btn.BackgroundColor3 = Color3.fromRGB(31, 35, 43); btn.BorderSizePixel = 0
+        btn.Font = Enum.Font.GothamBold; btn.TextSize = 10; btn.TextColor3 = Color3.fromRGB(180, 188, 205); btn.Text = preset; btn.Parent = presetHolder
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 5); bc.Parent = btn
+        btn.MouseButton1Click:Connect(function()
+            if activeSettingsMood then
+                API.SetMoodPreset(activeSettingsMood, preset)
+                -- Visual feedback
+                btn.BackgroundColor3 = Color3.fromRGB(90, 125, 190)
+                task.delay(0.2, function() btn.BackgroundColor3 = Color3.fromRGB(31, 35, 43) end)
+            end
+        end)
+        presetBtns[preset] = btn
+    end
+
+    -- Sliders Container
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.BackgroundTransparency = 1; scroll.BorderSizePixel = 0; scroll.Size = UDim2.new(1, -20, 0, 260)
+    scroll.Position = UDim2.fromOffset(10, 110); scroll.ScrollBarThickness = 3; scroll.CanvasSize = UDim2.fromOffset(0, 0); scroll.Parent = panel
+    local sList = Instance.new("UIListLayout"); sList.Padding = UDim.new(0, 12); sList.Parent = scroll
+
+    local sliders = {}
+    local sliderDefs = {
+        { Key = "ExposureOffset", Label = "Exposure", Min = -0.2, Max = 0.2, Step = 0.01 },
+        { Key = "ContrastOffset", Label = "Contrast", Min = -0.1, Max = 0.1, Step = 0.01 },
+        { Key = "SaturationOffset", Label = "Saturation", Min = -0.1, Max = 0.1, Step = 0.01 },
+        { Key = "BloomOffset", Label = "Bloom", Min = -0.05, Max = 0.05, Step = 0.005 },
+        { Key = "SunRaysOffset", Label = "Sun Rays", Min = -0.05, Max = 0.05, Step = 0.005 },
+    }
+
+    local function buildSliders()
+        for _, def in ipairs(sliderDefs) do
+            local container = Instance.new("Frame")
+            container.BackgroundTransparency = 1; container.Size = UDim2.new(1, 0, 0, 40); container.Parent = scroll
+
+            local label = Instance.new("TextLabel")
+            label.BackgroundTransparency = 1; label.Size = UDim2.new(0.6, 0, 0, 16); label.Position = UDim2.fromOffset(0, 0)
+            label.Font = Enum.Font.GothamMedium; label.TextSize = 11; label.TextXAlignment = Enum.TextXAlignment.Left
+            label.TextColor3 = Color3.fromRGB(210, 218, 232); label.Text = def.Label; label.Parent = container
+
+            local valLabel = Instance.new("TextLabel")
+            valLabel.BackgroundTransparency = 1; valLabel.Size = UDim2.new(0.4, 0, 0, 16); valLabel.Position = UDim2.fromOffset(container.Size.X.Offset * 0.6, 0)
+            valLabel.Font = Enum.Font.GothamBold; valLabel.TextSize = 11; valLabel.TextXAlignment = Enum.TextXAlignment.Right
+            valLabel.TextColor3 = Color3.fromRGB(90, 125, 190); valLabel.Text = "0.00"; valLabel.Parent = container
+
+            local track = Instance.new("Frame")
+            track.Position = UDim2.fromOffset(0, 20); track.Size = UDim2.new(1, 0, 0, 6)
+            track.BackgroundColor3 = Color3.fromRGB(31, 35, 43); track.BorderSizePixel = 0; track.Parent = container
+            local tCorner = Instance.new("UICorner"); tCorner.CornerRadius = UDim.new(0, 3); tCorner.Parent = track
+
+            local fill = Instance.new("Frame")
+            fill.Size = UDim2.fromScale(0.5, 1); fill.BackgroundColor3 = Color3.fromRGB(90, 125, 190); fill.BorderSizePixel = 0; fill.Parent = track
+            local fCorner = Instance.new("UICorner"); fCorner.CornerRadius = UDim.new(0, 3); fCorner.Parent = fill
+
+            local knob = Instance.new("Frame")
+            knob.AnchorPoint = Vector2.new(0.5, 0.5); knob.Position = UDim2.fromScale(0.5, 0.5)
+            knob.Size = UDim2.fromOffset(12, 12); knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255); knob.BorderSizePixel = 0; knob.Parent = track
+            local kCorner = Instance.new("UICorner"); kCorner.CornerRadius = UDim.new(1, 0); kCorner.Parent = knob
+
+            local draggingSlider = false
+            local function updateSliderVisual(val)
+                local pct = (val - def.Min) / (def.Max - def.Min)
+                pct = math.clamp(pct, 0, 1)
+                fill.Size = UDim2.fromScale(pct, 1)
+                knob.Position = UDim2.fromScale(pct, 0.5)
+                valLabel.Text = string.format("%.2f", val)
+            end
+
+            local function startDrag(input)
+                draggingSlider = true
+                local function updateFromInput(inp)
+                    local trackPos = track.AbsolutePosition.X
+                    local trackSize = track.AbsoluteSize.X
+                    local mouseX = inp.Position.X
+                    local pct = math.clamp((mouseX - trackPos) / trackSize, 0, 1)
+                    local rawVal = def.Min + pct * (def.Max - def.Min)
+                    local snappedVal = math.floor(rawVal / def.Step + 0.5) * def.Step
+                    snappedVal = math.clamp(snappedVal, def.Min, def.Max)
+                    if activeSettingsMood then
+                        API.SetMoodSlider(activeSettingsMood, def.Key, snappedVal)
+                    end
+                    updateSliderVisual(snappedVal)
+                end
+                updateFromInput(input)
+                local conn; conn = UserInputService.InputChanged:Connect(function(inp)
+                    if not draggingSlider then conn:Disconnect(); return end
+                    if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+                        updateFromInput(inp)
+                    end
+                end)
+                local endConn; endConn = UserInputService.InputEnded:Connect(function(inp)
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                        draggingSlider = false; conn:Disconnect(); endConn:Disconnect()
+                    end
+                end)
+            end
+
+            knob.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then startDrag(input) end
+            end)
+            track.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then startDrag(input) end
+            end)
+
+            sliders[def.Key] = { Update = updateSliderVisual, Def = def }
+        end
+        sList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            scroll.CanvasSize = UDim2.fromOffset(0, sList.AbsoluteContentSize.Y + 10)
+        end)
+    end
+    buildSliders()
+
+    -- Update loop for settings window
+    task.spawn(function()
+        while gui.Parent do
+            if activeSettingsMood then
+                moodLabel.Text = "Mengatur: " .. activeSettingsMood
+                local settings = MoodSettings[activeSettingsMood]
+                if settings then
+                    for key, slider in pairs(sliders) do
+                        slider.Update(settings[key])
+                    end
+                end
+            else
+                moodLabel.Text = "Mengatur: NONE (Pilih shader)"
+            end
+            task.wait(0.1)
+        end
+    end)
+
+    -- Dragging for settings panel
+    local draggingPanel = false; local dragStartS; local startPosS
+    title.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            draggingPanel = true; dragStartS = input.Position; startPosS = panel.Position
+        end
+    end)
+    title.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingPanel = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if not draggingPanel then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = input.Position - dragStartS
+        panel.Position = UDim2.new(startPosS.X.Scale, startPosS.X.Offset + delta.X, startPosS.Y.Scale, startPosS.Y.Offset + delta.Y)
+    end)
+end
 
 ----------------------------------------------------------------
--- MULAI
+-- FPS MONITOR & INITIALIZATION
 ----------------------------------------------------------------
+local fpsConnection
+local function startFPSMonitor()
+    local accumulator = 0; local frames = 0
+    fpsConnection = RunService.RenderStepped:Connect(function(dt)
+        accumulator += dt; frames += 1
+        if accumulator >= 1 then
+            State.Stats.LastFPS = math.floor(frames / accumulator); accumulator = 0; frames = 0
+        end
+    end)
+    table.insert(State.Connections, fpsConnection)
+end
 
-_G.Leon4951Shaders = API
-_G.VisualRealistis = API
+local function initialize()
+    State.Restored = false
+    configureLightingBase()
+    applyQuality(Config.Quality)
+    -- Default select NOSTALGIC SORE if none selected
+    if #State.SelectedMoods == 0 then
+        table.insert(State.SelectedMoods, "NOSTALGIC SORE")
+    end
+    applyAtmosphere()
+    task.spawn(function()
+        scanVisualAssets(); preserveDetailGeometry(); enhanceExistingLights(); scanAccentLights()
+    end)
+    createUI()
+    createSettingsWindow()
+    startFPSMonitor()
+end
 
-configureLightingBase()
-applyQuality(Settings.Quality)
-
-task.spawn(function()
-    scanWorld()
-    styleParts(State.Mood)
-    scanAccentLights()
+local lightTimer = 0
+local maintenanceConnection = RunService.Heartbeat:Connect(function(dt)
+    if State.Restored or not Config.Enabled then return end
+    lightTimer += dt
+    if lightTimer >= Config.LightUpdateInterval then
+        lightTimer = 0
+        Camera = Workspace.CurrentCamera
+        if Camera then
+            for _, record in ipairs(State.AccentLights) do
+                local source = record.Source; local light = record.Light
+                if source and source.Parent and light and light.Parent then
+                    local distance = (source.Position - Camera.CFrame.Position).Magnitude
+                    if distance > Config.LightDistance then
+                        light.Enabled = false
+                    else
+                        light.Enabled = true
+                        local factor = 1 - math.clamp(distance / Config.LightDistance, 0, 1)
+                        light.Brightness = lerp(0.15, 0.85, factor)
+                    end
+                end
+            end
+        end
+    end
 end)
+table.insert(State.Connections, maintenanceConnection)
 
-createUI()
+local cameraConnection = Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    Camera = Workspace.CurrentCamera
+end)
+table.insert(State.Connections, cameraConnection)
 
-----------------------------------------------------------------
--- CARA PAKAI (console / script lain)
-----------------------------------------------------------------
---   _G.Leon4951Shaders.SetMood("Sore Keemasan")
---   _G.Leon4951Shaders.SetMoods({ "Sore Keemasan", "Hujan" })   -- digabung
---   _G.Leon4951Shaders.ToggleMood("Berkabut")
---   _G.Leon4951Shaders.SetQuality(10)
---   _G.Leon4951Shaders.SetSunAnchor(Vector3.new(0, 0, 0))       -- pindah titik matahari
---   _G.Leon4951Shaders.Restore()
-----------------------------------------------------------------
+_G.UltraRealisticRendererV4 = API
+initialize()
+
+--[[
+    USAGE:
+    _G.UltraRealisticRendererV4.SetQuality(10)
+    _G.UltraRealisticRendererV4.ToggleMood("NOSTALGIC SORE")
+    _G.UltraRealisticRendererV4.ToggleMood("RAIN MOOD") -- Combines with Nostalgic Sore
+    _G.UltraRealisticRendererV4.SetMoodPreset("NOSTALGIC SORE", "Gelap")
+    _G.UltraRealisticRendererV4.RefreshDetails()
+    _G.UltraRealisticRendererV4.Restore()
+]]
