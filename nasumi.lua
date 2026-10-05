@@ -280,15 +280,61 @@ local Moods = {
     },
 
     {
+        Name = "Sedikit Sore",
+        ClockTime = 16.5, Brightness = 1.90, Exposure = -0.03, ShadowSoftness = 0.20,
+        Density = 0.30, Offset = 0.08, Haze = 1.2, Glare = 0.0,
+        Color = Color3.fromRGB(255, 205, 140), Decay = Color3.fromRGB(240, 150, 70),
+        Ambient = Color3.fromRGB(52, 40, 28), OutdoorAmbient = Color3.fromRGB(120, 98, 72),
+        Top = Color3.fromRGB(255, 200, 110), Bottom = Color3.fromRGB(190, 150, 100),
+        Bloom = 0.10, BloomSize = 22, BloomThreshold = 1.1,
+        SunRays = 0.0, SunRaySpread = 0.8,
+        Contrast = 0.12, Saturation = 0.08, Tint = Color3.fromRGB(255, 235, 200),
+        Shafts = 0, SunGlow = 0, Flare = 0, Sheen = 0.06,
+        HideSun = true,
+        CloudColor = Color3.fromRGB(255, 200, 120), CloudCover = 0.55, CloudDensity = 0.5,
+        EggGlow = 0.1,
+    },
+
+    {
+        Name = "Kabut Halus",
+        ClockTime = 9.5, Brightness = 1.75, Exposure = -0.06, ShadowSoftness = 0.28,
+        Density = 0.42, Offset = 0.0, Haze = 1.8, Glare = 0.1,
+        Color = Color3.fromRGB(205, 215, 226), Decay = Color3.fromRGB(160, 172, 190),
+        Ambient = Color3.fromRGB(38, 41, 46), OutdoorAmbient = Color3.fromRGB(100, 108, 120),
+        Top = Color3.fromRGB(225, 225, 222), Bottom = Color3.fromRGB(160, 166, 176),
+        Bloom = 0.05, BloomSize = 22, BloomThreshold = 1.2,
+        SunRays = 0.04, SunRaySpread = 0.85,
+        Contrast = 0.08, Saturation = -0.03, Tint = Color3.fromRGB(238, 242, 246),
+        ShaftColor = Color3.fromRGB(235, 232, 220),
+        Shafts = 0.2, SunGlow = 0.15, Flare = 0.05,
+        CloudColor = Color3.fromRGB(190, 196, 206), CloudCover = 0.65, CloudDensity = 0.55,
+        EggGlow = 0.2,
+    },
+
+    {
+        Name = "Sedikit Gelap",
+        ClockTime = 19.2, Brightness = 1.20, Exposure = -0.15, ShadowSoftness = 0.25,
+        Density = 0.30, Offset = 0.10, Haze = 1.0, Glare = 0.0,
+        Color = Color3.fromRGB(150, 160, 185), Decay = Color3.fromRGB(80, 90, 120),
+        Ambient = Color3.fromRGB(24, 26, 34), OutdoorAmbient = Color3.fromRGB(70, 76, 96),
+        Top = Color3.fromRGB(150, 160, 190), Bottom = Color3.fromRGB(70, 72, 92),
+        Bloom = 0.05, BloomSize = 20, BloomThreshold = 1.1,
+        SunRays = 0.0, SunRaySpread = 0.8,
+        Contrast = 0.14, Saturation = -0.02, Tint = Color3.fromRGB(225, 230, 245),
+        Shafts = 0, SunGlow = 0, Flare = 0,
+        EggGlow = 0.6,
+    },
+
+    {
         Name = "Hujan",
-        ClockTime = 14.5, Brightness = 1.75, Exposure = -0.02, ShadowSoftness = 0.35,
+        ClockTime = 14.5, Brightness = 1.35, Exposure = -0.10, ShadowSoftness = 0.35,
         Density = 0.45, Offset = 0.02, Haze = 2.0, Glare = 0.0,
-        Color = Color3.fromRGB(190, 196, 204), Decay = Color3.fromRGB(145, 152, 162),
-        Ambient = Color3.fromRGB(52, 54, 58), OutdoorAmbient = Color3.fromRGB(120, 126, 134),
-        Top = Color3.fromRGB(220, 222, 226), Bottom = Color3.fromRGB(150, 154, 160),
+        Color = Color3.fromRGB(160, 166, 174), Decay = Color3.fromRGB(120, 127, 138),
+        Ambient = Color3.fromRGB(40, 42, 46), OutdoorAmbient = Color3.fromRGB(88, 94, 102),
+        Top = Color3.fromRGB(180, 184, 190), Bottom = Color3.fromRGB(115, 119, 126),
         Bloom = 0.05, BloomSize = 20, BloomThreshold = 1.2,
         SunRays = 0.0, SunRaySpread = 0.8,
-        Contrast = 0.10, Saturation = -0.03, Tint = Color3.fromRGB(240, 242, 245),
+        Contrast = 0.12, Saturation = -0.03, Tint = Color3.fromRGB(225, 228, 233),
         Rain = true, Wet = true, Sheen = 0.12,
         CloudColor = Color3.fromRGB(120, 128, 140), CloudCover = 0.9, CloudDensity = 0.8,
         EggGlow = 0.4,
@@ -2338,6 +2384,53 @@ end
 -- TERAPKAN SUASANA & KUALITAS
 ----------------------------------------------------------------
 
+----------------------------------------------------------------
+-- SKY: sembunyikan piringan matahari untuk suasana HideSun
+----------------------------------------------------------------
+
+local SkyState = { Object = nil, Owned = false, Saved = nil }
+
+local function restoreSky()
+    if SkyState.Object then
+        if SkyState.Owned then
+            if SkyState.Object.Parent then
+                SkyState.Object:Destroy()
+            end
+        elseif SkyState.Saved and SkyState.Object.Parent then
+            for property, value in pairs(SkyState.Saved) do
+                setProperty(SkyState.Object, property, value)
+            end
+        end
+    end
+    SkyState.Object = nil
+    SkyState.Owned = false
+    SkyState.Saved = nil
+end
+
+local function applySky(mood)
+    if not mood.HideSun then
+        restoreSky()
+        return
+    end
+
+    if not SkyState.Object then
+        local existing = Lighting:FindFirstChildOfClass("Sky")
+        if existing then
+            SkyState.Object = existing
+            SkyState.Owned = false
+            SkyState.Saved = { SunAngularSize = existing.SunAngularSize }
+        else
+            local sky = Instance.new("Sky")
+            sky.Name = "VR_Sky"
+            sky.Parent = Lighting
+            SkyState.Object = sky
+            SkyState.Owned = true
+        end
+    end
+
+    setProperty(SkyState.Object, "SunAngularSize", 0)
+end
+
 local function applyMood(name)
     local mood = MoodByName[name]
     if not mood then
@@ -2349,6 +2442,7 @@ local function applyMood(name)
 
     configureLightingBase()
     configureMoodLighting(mood)
+    applySky(mood)
 
     World.SetMood(mood)
     setTerrainWet(mood.Wet == true)
@@ -2473,6 +2567,7 @@ local function restoreOriginal()
     end
     table.clear(Eggs.Records)
 
+    restoreSky()
     SunLens.Destroy()
     World.Destroy()
 
