@@ -19,13 +19,12 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
--- [ 2. CONFIGURASI & THEME ]
+-- [ 2. CONFIGURASI & THEME - WARNA TETAP SAMA ]
 local Theme = {
     Background = Color3.fromRGB(11, 14, 21),
     CardBg = Color3.fromRGB(18, 24, 43),
     CardBgHover = Color3.fromRGB(26, 36, 64),
     AccentBlue = Color3.fromRGB(37, 120, 255),
-    AccentPurple = Color3.fromRGB(100, 80, 255),
     BadgeBg = Color3.fromRGB(18, 24, 43),
     BadgeBorder = Color3.fromRGB(34, 50, 86),
     RunPillBg = Color3.fromRGB(34, 50, 86),
@@ -38,8 +37,7 @@ local Theme = {
     NoKeyTagBg = Color3.fromRGB(40, 167, 69),
     WaGreen = Color3.fromRGB(37, 211, 102),
     WaDarkGreen = Color3.fromRGB(18, 38, 28),
-    DangerRed = Color3.fromRGB(220, 53, 69),
-    ExecuteBtn = Color3.fromRGB(88, 86, 214)
+    DangerRed = Color3.fromRGB(220, 53, 69)
 }
 
 local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
@@ -298,7 +296,7 @@ if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("Player
 
 local MainFrame = Instance.new("Frame") 
 MainFrame.Name = "MainFrame" 
-MainFrame.Size = UDim2.fromOffset(900, 550) 
+MainFrame.Size = UDim2.fromOffset(1000, 600) 
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5) 
 MainFrame.Position = UDim2.fromScale(0.5, 0.5) 
 MainFrame.BackgroundColor3 = Theme.Background 
@@ -324,21 +322,21 @@ local function CreateFLogo(size, rotation)
     container.Rotation = rotation or -12      
     local topBar = Instance.new("Frame")     
     topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))     
-    topBar.BackgroundColor3 = Theme.AccentPurple     
+    topBar.BackgroundColor3 = Theme.AccentBlue     
     topBar.BorderSizePixel = 0     
     topBar.Parent = container     
     Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 2)      
     local midBar = Instance.new("Frame")     
     midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))     
     midBar.Position = UDim2.new(0.2, 0, 0.4, 0)     
-    midBar.BackgroundColor3 = Theme.AccentPurple     
+    midBar.BackgroundColor3 = Theme.AccentBlue     
     midBar.BorderSizePixel = 0     
     midBar.Parent = container     
     Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 2)      
     local stem = Instance.new("Frame")     
     stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)     
     stem.Position = UDim2.new(0.08, 0, 0, 0)     
-    stem.BackgroundColor3 = Theme.AccentPurple     
+    stem.BackgroundColor3 = Theme.AccentBlue     
     stem.BorderSizePixel = 0     
     stem.Parent = container     
     Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 2)      
@@ -348,48 +346,48 @@ end
 -- [ 6. HEADER ]
 local Header = Instance.new("Frame") 
 Header.Name = "Header" 
-Header.Size = UDim2.new(1, 0, 0, 60) 
+Header.Size = UDim2.new(1, 0, 0, 64) 
 Header.BackgroundTransparency = 1 
 Header.Active = true 
 Header.Parent = MainFrame  
 
-local LogoF = CreateFLogo(UDim2.fromOffset(28, 28), -12) 
+local LogoF = CreateFLogo(UDim2.fromOffset(32, 32), -12) 
 LogoF.Position = UDim2.new(0, 16, 0, 16) 
 LogoF.Parent = Header  
 
 local TitleContainer = Instance.new("Frame")
-TitleContainer.Size = UDim2.new(0, 200, 0, 40)
-TitleContainer.Position = UDim2.new(0, 52, 0, 10)
+TitleContainer.Size = UDim2.new(0, 220, 0, 48)
+TitleContainer.Position = UDim2.new(0, 56, 0, 8)
 TitleContainer.BackgroundTransparency = 1
 TitleContainer.Parent = Header
 
 local Title = Instance.new("TextLabel") 
 Title.Name = "Title" 
 Title.Font = Enum.Font.GothamBold 
-Title.TextSize = 18 
+Title.TextSize = 20 
 Title.TextColor3 = Theme.TextPrimary 
 Title.BackgroundTransparency = 1 
-Title.Size = UDim2.new(1, 0, 0, 22) 
+Title.Size = UDim2.new(1, 0, 0, 24) 
 Title.Position = UDim2.new(0, 0, 0, 0) 
 Title.TextXAlignment = Enum.TextXAlignment.Left 
 Title.RichText = true 
-Title.Text = "leon4951 <font color=\"rgb(100, 80, 255)\">Hub</font>" 
+Title.Text = "leon4951 <font color=\"rgb(37, 120, 255)\">Hub</font>" 
 Title.Parent = TitleContainer  
 
 local Subtitle = Instance.new("TextLabel")
 Subtitle.Font = Enum.Font.Gotham
-Subtitle.TextSize = 10
+Subtitle.TextSize = 11
 Subtitle.TextColor3 = Theme.TextMuted
 Subtitle.BackgroundTransparency = 1
-Subtitle.Size = UDim2.new(1, 0, 0, 14)
-Subtitle.Position = UDim2.new(0, 0, 0, 24)
+Subtitle.Size = UDim2.new(1, 0, 0, 16)
+Subtitle.Position = UDim2.new(0, 0, 0, 26)
 Subtitle.TextXAlignment = Enum.TextXAlignment.Left
 Subtitle.Text = "Steal an Egg • Auto Farm & More"
 Subtitle.Parent = TitleContainer
 
 local ControlContainer = Instance.new("Frame") 
-ControlContainer.Size = UDim2.fromOffset(70, 30) 
-ControlContainer.Position = UDim2.new(1, -80, 0, 15) 
+ControlContainer.Size = UDim2.fromOffset(72, 32) 
+ControlContainer.Position = UDim2.new(1, -84, 0, 16) 
 ControlContainer.BackgroundTransparency = 1 
 ControlContainer.Parent = Header  
 local ControlLayout = Instance.new("UIListLayout") 
@@ -401,16 +399,16 @@ ControlLayout.Parent = ControlContainer
 
 local function CreateHeaderButton(iconText, callback)     
     local btn = Instance.new("TextButton")     
-    btn.Size = UDim2.fromOffset(30, 30)     
+    btn.Size = UDim2.fromOffset(32, 32)     
     btn.BackgroundColor3 = Theme.CardBg     
     btn.Text = iconText     
     btn.Font = Enum.Font.GothamBold     
-    btn.TextSize = 16     
+    btn.TextSize = 18     
     btn.TextColor3 = Theme.TextSecondary     
     btn.AutoButtonColor = false     
     btn.Parent = ControlContainer     
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)      
-    btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = Theme.AccentPurple, TextColor3 = Theme.TextPrimary }):Play() end)     
+    btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = Theme.AccentBlue, TextColor3 = Theme.TextPrimary }):Play() end)     
     btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = Theme.CardBg, TextColor3 = Theme.TextSecondary }):Play() end)      
     btn.MouseButton1Click:Connect(callback)     
     return btn 
@@ -419,20 +417,24 @@ end
 -- [ 7. BODY: SIDEBAR + KONTEN ]
 local Body = Instance.new("Frame") 
 Body.Name = "Body" 
-Body.Size = UDim2.new(1, 0, 1, -60) 
-Body.Position = UDim2.new(0, 0, 0, 60) 
+Body.Size = UDim2.new(1, 0, 1, -64) 
+Body.Position = UDim2.new(0, 0, 0, 64) 
 Body.BackgroundTransparency = 1 
 Body.Parent = MainFrame  
 
 local Sidebar = Instance.new("ScrollingFrame") 
 Sidebar.Name = "Sidebar" 
-Sidebar.Size = UDim2.new(0, 200, 1, 0) 
+Sidebar.Size = UDim2.new(0, 220, 1, 0) 
 Sidebar.BackgroundTransparency = 1 
 Sidebar.BorderSizePixel = 0 
-Sidebar.ScrollBarThickness = 0 
+ScrollbarThickness = 0 
 Sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y 
 Sidebar.CanvasSize = UDim2.new(0, 0, 0, 0) 
 Sidebar.Parent = Body  
+Instance.new("UIPadding", Sidebar).PaddingLeft = UDim.new(0, 12)
+Instance.new("UIPadding", Sidebar).PaddingRight = UDim.new(0, 12)
+Instance.new("UIPadding", Sidebar).PaddingTop = UDim.new(0, 8)
+Instance.new("UIPadding", Sidebar).PaddingBottom = UDim.new(0, 8)
 
 local SidebarLayout = Instance.new("UIListLayout") 
 SidebarLayout.Padding = UDim.new(0, 4) 
@@ -441,10 +443,14 @@ SidebarLayout.Parent = Sidebar
 
 local Content = Instance.new("Frame") 
 Content.Name = "Content" 
-Content.Size = UDim2.new(1, -200, 1, 0) 
-Content.Position = UDim2.new(0, 200, 0, 0) 
+Content.Size = UDim2.new(1, -220, 1, 0) 
+Content.Position = UDim2.new(0, 220, 0, 0) 
 Content.BackgroundTransparency = 1 
 Content.Parent = Body  
+Instance.new("UIPadding", Content).PaddingLeft = UDim.new(0, 20)
+Instance.new("UIPadding", Content).PaddingRight = UDim.new(0, 20)
+Instance.new("UIPadding", Content).PaddingTop = UDim.new(0, 16)
+Instance.new("UIPadding", Content).PaddingBottom = UDim.new(0, 16)
 
 local ContentHeader = Instance.new("Frame") 
 ContentHeader.Size = UDim2.new(1, 0, 0, 80) 
@@ -453,18 +459,18 @@ ContentHeader.Parent = Content
 
 local ContentLabel = Instance.new("TextLabel") 
 ContentLabel.Font = Enum.Font.GothamBold 
-ContentLabel.TextSize = 14 
+ContentLabel.TextSize = 16 
 ContentLabel.TextColor3 = Theme.TextPrimary 
 ContentLabel.BackgroundTransparency = 1 
-ContentLabel.Size = UDim2.new(1, 0, 0, 20) 
+ContentLabel.Size = UDim2.new(1, 0, 0, 24) 
 ContentLabel.Position = UDim2.new(0, 0, 0, 0) 
 ContentLabel.TextXAlignment = Enum.TextXAlignment.Left 
 ContentLabel.Text = "STEAL AN EGG SCRIPTS" 
 ContentLabel.Parent = ContentHeader  
 
 local FilterContainer = Instance.new("Frame") 
-FilterContainer.Size = UDim2.new(1, 0, 0, 32) 
-FilterContainer.Position = UDim2.new(0, 0, 0, 28) 
+FilterContainer.Size = UDim2.new(1, 0, 0, 36) 
+FilterContainer.Position = UDim2.new(0, 0, 0, 32) 
 FilterContainer.BackgroundTransparency = 1 
 FilterContainer.Parent = ContentHeader  
 
@@ -478,8 +484,8 @@ local filterButtons = {}
 
 local SearchBox = Instance.new("TextBox") 
 SearchBox.Name = "SearchBox" 
-SearchBox.Size = UDim2.new(1, 0, 0, 32) 
-SearchBox.Position = UDim2.new(0, 0, 0, 48) 
+SearchBox.Size = UDim2.new(1, 0, 0, 36) 
+SearchBox.Position = UDim2.new(0, 0, 0, 44) 
 SearchBox.BackgroundColor3 = Theme.CardBg 
 SearchBox.PlaceholderText = " Cari nama script..." 
 SearchBox.PlaceholderColor3 = Theme.TextMuted 
@@ -493,19 +499,20 @@ local SearchStroke = Instance.new("UIStroke")
 SearchStroke.Color = Theme.BorderColor 
 SearchStroke.Thickness = 1 
 SearchStroke.Parent = SearchBox  
+Instance.new("UIPadding", SearchBox).PaddingLeft = UDim.new(0, 12)
 
 local ScriptScroll = Instance.new("ScrollingFrame") 
-ScriptScroll.Size = UDim2.new(1, -12, 1, -92) 
-ScriptScroll.Position = UDim2.new(0, 12, 0, 92) 
+ScriptScroll.Size = UDim2.new(1, -12, 1, -96) 
+ScriptScroll.Position = UDim2.new(0, 12, 0, 96) 
 ScriptScroll.BackgroundTransparency = 1 
 ScriptScroll.BorderSizePixel = 0 
 ScriptScroll.ScrollBarThickness = 4 
-ScriptScroll.ScrollBarImageColor3 = Theme.AccentPurple 
+ScriptScroll.ScrollBarImageColor3 = Theme.AccentBlue 
 ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0) 
 ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y 
 ScriptScroll.Parent = Content  
-Instance.new("UIPadding", ScriptScroll).PaddingLeft = UDim.new(0, 8)
-Instance.new("UIPadding", ScriptScroll).PaddingRight = UDim.new(0, 8)
+Instance.new("UIPadding", ScriptScroll).PaddingLeft = UDim.new(0, 4)
+Instance.new("UIPadding", ScriptScroll).PaddingRight = UDim.new(0, 4)
 
 local RenderSidebarTabs 
 
@@ -528,7 +535,7 @@ local function RenderContent(categoryIndex)
         SearchBox.Visible = false         
         ContentLabel.Text = "ALL SCRIPTS DATABASE -- OVERVIEW"          
         local ListLayout = Instance.new("UIListLayout")         
-        ListLayout.Padding = UDim.new(0, 10)         
+        ListLayout.Padding = UDim.new(0, 12)         
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder         
         ListLayout.Parent = ScriptScroll          
         local totalCount, keyCount, noKeyCount = #category.scripts, 0, 0         
@@ -538,7 +545,7 @@ local function RenderContent(categoryIndex)
         end          
         local StatsBanner = Instance.new("Frame")         
         StatsBanner.Name = "StatsBanner"         
-        StatsBanner.Size = UDim2.new(1, 0, 0, 50)         
+        StatsBanner.Size = UDim2.new(1, 0, 0, 56)         
         StatsBanner.BackgroundColor3 = Theme.CardBg         
         StatsBanner.LayoutOrder = 1         
         StatsBanner.Parent = ScriptScroll         
@@ -553,7 +560,7 @@ local function RenderContent(categoryIndex)
         StatsText.TextColor3 = Theme.TextSecondary         
         StatsText.BackgroundTransparency = 1         
         StatsText.Size = UDim2.new(1, -24, 1, 0)         
-        StatsText.Position = UDim2.new(0, 12, 0, 0)         
+        StatsText.Position = UDim2.new(0, 16, 0, 0)         
         StatsText.TextXAlignment = Enum.TextXAlignment.Left         
         StatsText.RichText = true         
         StatsText.Text = " <font color=\"rgb(255, 255, 255)\">TOTAL SCRIPT:</font> " .. totalCount .. "   |   <font color=\"rgb(220, 53, 69)\"> KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(40, 167, 69)\"> NO KEY:</font> " .. noKeyCount         
@@ -567,18 +574,18 @@ local function RenderContent(categoryIndex)
         SearchBox.Visible = false         
         ContentLabel.Text = "NEW SCRIPTS -- UPDATES"          
         local ListLayout = Instance.new("UIListLayout")         
-        ListLayout.Padding = UDim.new(0, 8)         
+        ListLayout.Padding = UDim.new(0, 10)         
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder         
         ListLayout.Parent = ScriptScroll          
         if #category.scripts == 0 then             
             local emptyCard = Instance.new("Frame")
-            emptyCard.Size = UDim2.new(1, 0, 0, 60)
+            emptyCard.Size = UDim2.new(1, 0, 0, 64)
             emptyCard.BackgroundColor3 = Theme.CardBg
             emptyCard.Parent = ScriptScroll
             Instance.new("UICorner", emptyCard).CornerRadius = UDim.new(0, 8)
             local emptyLbl = Instance.new("TextLabel")
             emptyLbl.Font = Enum.Font.GothamBold
-            emptyLbl.TextSize = 12
+            emptyLbl.TextSize = 13
             emptyLbl.TextColor3 = Theme.TextMuted
             emptyLbl.BackgroundTransparency = 1
             emptyLbl.Size = UDim2.new(1, 0, 1, 0)
@@ -589,26 +596,26 @@ local function RenderContent(categoryIndex)
             for i, scriptEntry in ipairs(category.scripts) do                 
                 local row = Instance.new("Frame")                 
                 row.Name = "Row_" .. i                 
-                row.Size = UDim2.new(1, 0, 0, 56)                 
+                row.Size = UDim2.new(1, 0, 0, 60)                 
                 row.BackgroundColor3 = Theme.CardBg                 
                 row.LayoutOrder = i                 
                 row.Parent = ScriptScroll                 
                 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)                  
                 local nameLabel = Instance.new("TextLabel")                 
                 nameLabel.Font = Enum.Font.GothamBold                 
-                nameLabel.TextSize = 13                 
+                nameLabel.TextSize = 14                 
                 nameLabel.TextColor3 = Theme.TextPrimary                 
                 nameLabel.BackgroundTransparency = 1                 
-                nameLabel.Size = UDim2.new(1, -180, 0, 20)                 
-                nameLabel.Position = UDim2.new(0, 14, 0, 10)                 
+                nameLabel.Size = UDim2.new(1, -200, 0, 22)                 
+                nameLabel.Position = UDim2.new(0, 16, 0, 12)                 
                 nameLabel.TextXAlignment = Enum.TextXAlignment.Left                 
                 nameLabel.TextTruncate = Enum.TextTruncate.AtEnd                 
                 nameLabel.Text = scriptEntry.name                 
                 nameLabel.Parent = row                  
                 local runBtn = Instance.new("TextButton")                 
-                runBtn.Size = UDim2.fromOffset(90, 32)                 
-                runBtn.Position = UDim2.new(1, -102, 0.5, -16)                 
-                runBtn.BackgroundColor3 = Theme.ExecuteBtn                 
+                runBtn.Size = UDim2.fromOffset(100, 36)                 
+                runBtn.Position = UDim2.new(1, -112, 0.5, -18)                 
+                runBtn.BackgroundColor3 = Theme.AccentBlue                 
                 runBtn.Text = "▶ EXECUTE"                 
                 runBtn.Font = Enum.Font.GothamBold                 
                 runBtn.TextSize = 12                 
@@ -620,8 +627,8 @@ local function RenderContent(categoryIndex)
                     ExecuteScript(scriptEntry.name, scriptEntry.status, scriptEntry.url)
                 end)                  
                 local statusBadge = Instance.new("TextLabel")                 
-                statusBadge.Size = UDim2.fromOffset(60, 22)                 
-                statusBadge.Position = UDim2.new(1, -170, 0.5, -11)                 
+                statusBadge.Size = UDim2.fromOffset(64, 24)                 
+                statusBadge.Position = UDim2.new(1, -184, 0.5, -12)                 
                 local statusBg = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
                 statusBadge.BackgroundColor3 = statusBg                 
                 statusBadge.Text = scriptEntry.status                 
@@ -631,17 +638,17 @@ local function RenderContent(categoryIndex)
                 statusBadge.Parent = row                 
                 Instance.new("UICorner", statusBadge).CornerRadius = UDim.new(0, 4)                  
                 local favBtn = Instance.new("TextButton")                 
-                favBtn.Size = UDim2.fromOffset(28, 28)                 
-                favBtn.Position = UDim2.new(1, -210, 0.5, -14)                 
+                favBtn.Size = UDim2.fromOffset(32, 32)                 
+                favBtn.Position = UDim2.new(1, -228, 0.5, -16)                 
                 favBtn.BackgroundColor3 = Theme.RunPillBg                 
                 local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url                 
                 favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"                 
                 favBtn.Font = Enum.Font.GothamBold                 
-                favBtn.TextSize = 16                 
+                favBtn.TextSize = 18                 
                 favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextSecondary                 
                 favBtn.AutoButtonColor = false                 
                 favBtn.Parent = row                 
-                Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 4)                  
+                Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 6)                  
                 favBtn.MouseButton1Click:Connect(function()                     
                     if FavoriteList[fKeyId] then                         
                         FavoriteList[fKeyId] = nil                         
@@ -668,17 +675,17 @@ local function RenderContent(categoryIndex)
         ContentLabel.Text = "RIWAYAT SCRIPT"
 
         local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim.new(0, 8)
+        ListLayout.Padding = UDim.new(0, 10)
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         ListLayout.Parent = ScriptScroll
 
         if #category.scripts == 0 then
             local empty = Instance.new("TextLabel")
             empty.Font = Enum.Font.Gotham
-            empty.TextSize = 12
+            empty.TextSize = 13
             empty.TextColor3 = Theme.TextMuted
             empty.BackgroundTransparency = 1
-            empty.Size = UDim2.new(1, 0, 0, 60)
+            empty.Size = UDim2.new(1, 0, 0, 64)
             empty.Text = "Belum ada script yang dijalankan."
             empty.Parent = ScriptScroll
             return
@@ -687,7 +694,7 @@ local function RenderContent(categoryIndex)
         for i, scriptEntry in ipairs(category.scripts) do
             local row = Instance.new("Frame")
             row.Name = "HistRow_" .. i
-            row.Size = UDim2.new(1, 0, 0, 56)
+            row.Size = UDim2.new(1, 0, 0, 60)
             row.BackgroundColor3 = Theme.CardBg
             row.LayoutOrder = i
             row.Parent = ScriptScroll
@@ -695,20 +702,20 @@ local function RenderContent(categoryIndex)
 
             local nameLabel = Instance.new("TextLabel")
             nameLabel.Font = Enum.Font.GothamBold
-            nameLabel.TextSize = 13
+            nameLabel.TextSize = 14
             nameLabel.TextColor3 = Theme.TextPrimary
             nameLabel.BackgroundTransparency = 1
-            nameLabel.Size = UDim2.new(1, -200, 0, 20)
-            nameLabel.Position = UDim2.new(0, 14, 0, 10)
+            nameLabel.Size = UDim2.new(1, -220, 0, 22)
+            nameLabel.Position = UDim2.new(0, 16, 0, 12)
             nameLabel.TextXAlignment = Enum.TextXAlignment.Left
             nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
             nameLabel.Text = scriptEntry.name
             nameLabel.Parent = row
 
             local runBtn = Instance.new("TextButton")
-            runBtn.Size = UDim2.fromOffset(90, 32)
-            runBtn.Position = UDim2.new(1, -102, 0.5, -16)
-            runBtn.BackgroundColor3 = Theme.ExecuteBtn
+            runBtn.Size = UDim2.fromOffset(100, 36)
+            runBtn.Position = UDim2.new(1, -112, 0.5, -18)
+            runBtn.BackgroundColor3 = Theme.AccentBlue
             runBtn.Text = "▶ EXECUTE"
             runBtn.Font = Enum.Font.GothamBold
             runBtn.TextSize = 12
@@ -722,8 +729,8 @@ local function RenderContent(categoryIndex)
             end)
 
             local statusBadge = Instance.new("TextLabel")
-            statusBadge.Size = UDim2.fromOffset(60, 22)
-            statusBadge.Position = UDim2.new(1, -170, 0.5, -11)
+            statusBadge.Size = UDim2.fromOffset(64, 24)
+            statusBadge.Position = UDim2.new(1, -184, 0.5, -12)
             statusBadge.BackgroundColor3 = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
             statusBadge.Text = scriptEntry.status
             statusBadge.Font = Enum.Font.GothamBold
@@ -735,48 +742,67 @@ local function RenderContent(categoryIndex)
         ScriptScroll.CanvasPosition = Vector2.new(0, 0)
         return
 
-    -- [ CUSTOM SCRIPT TAB ]
+    -- [ CUSTOM SCRIPT TAB - TAMBAHKAN SCRIPT ]
     elseif category.type == "custom_script" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
         ContentLabel.Text = "TAMBAHKAN SCRIPT"
 
         local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim.new(0, 12)
+        ListLayout.Padding = UDim.new(0, 16)
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         ListLayout.Parent = ScriptScroll
 
-        -- Input Area
-        local inputArea = Instance.new("Frame")
-        inputArea.Size = UDim2.new(1, 0, 0, 110)
-        inputArea.BackgroundColor3 = Theme.CardBg
-        inputArea.LayoutOrder = 0
-        inputArea.Parent = ScriptScroll
-        Instance.new("UICorner", inputArea).CornerRadius = UDim.new(0, 8)
-        Instance.new("UIStroke", inputArea).Color = Theme.BorderColor
-        Instance.new("UIPadding", inputArea).PaddingLeft = UDim.new(0, 12)
-        Instance.new("UIPadding", inputArea).PaddingRight = UDim.new(0, 12)
-        Instance.new("UIPadding", inputArea).PaddingTop = UDim.new(0, 12)
-        Instance.new("UIPadding", inputArea).PaddingBottom = UDim.new(0, 12)
+        -- Input Area Header
+        local inputHeader = Instance.new("Frame")
+        inputHeader.Size = UDim2.new(1, 0, 0, 48)
+        inputHeader.BackgroundTransparency = 1
+        inputHeader.LayoutOrder = 0
+        inputHeader.Parent = ScriptScroll
 
         local inputTitle = Instance.new("TextLabel")
         inputTitle.Font = Enum.Font.GothamBold
-        inputTitle.TextSize = 12
+        inputTitle.TextSize = 16
         inputTitle.TextColor3 = Theme.TextPrimary
         inputTitle.BackgroundTransparency = 1
-        inputTitle.Size = UDim2.new(1, 0, 0, 16)
+        inputTitle.Size = UDim2.new(1, 0, 0, 24)
         inputTitle.Position = UDim2.new(0, 0, 0, 0)
         inputTitle.TextXAlignment = Enum.TextXAlignment.Left
-        inputTitle.Text = "Masukkan nama, key (jika ada) dan link loadstring script."
-        inputTitle.Parent = inputArea
+        inputTitle.Text = "Tambahkan Script"
+        inputTitle.Parent = inputHeader
+
+        local inputSubtitle = Instance.new("TextLabel")
+        inputSubtitle.Font = Enum.Font.Gotham
+        inputSubtitle.TextSize = 11
+        inputSubtitle.TextColor3 = Theme.TextMuted
+        inputSubtitle.BackgroundTransparency = 1
+        inputSubtitle.Size = UDim2.new(1, 0, 0, 16)
+        inputSubtitle.Position = UDim2.new(0, 0, 0, 26)
+        inputSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+        inputSubtitle.Text = "Masukkan nama, key (jika ada) dan link loadstring script."
+        inputSubtitle.Parent = inputHeader
+
+        -- Input Fields Container
+        local inputArea = Instance.new("Frame")
+        inputArea.Size = UDim2.new(1, 0, 0, 140)
+        inputArea.BackgroundColor3 = Theme.CardBg
+        inputArea.LayoutOrder = 1
+        inputArea.Parent = ScriptScroll
+        Instance.new("UICorner", inputArea).CornerRadius = UDim.new(0, 8)
+        Instance.new("UIStroke", inputArea).Color = Theme.BorderColor
+        Instance.new("UIPadding", inputArea).PaddingLeft = UDim.new(0, 16)
+        Instance.new("UIPadding", inputArea).PaddingRight = UDim.new(0, 16)
+        Instance.new("UIPadding", inputArea).PaddingTop = UDim.new(0, 16)
+        Instance.new("UIPadding", inputArea).PaddingBottom = UDim.new(0, 16)
 
         local inputLayout = Instance.new("UIListLayout")
-        inputLayout.Padding = UDim.new(0, 8)
+        inputLayout.Padding = UDim.new(0, 12)
         inputLayout.SortOrder = Enum.SortOrder.LayoutOrder
         inputLayout.Parent = inputArea
 
+        -- Name Input
         local nameInput = Instance.new("TextBox")
-        nameInput.Size = UDim2.new(1, 0, 0, 32)
+        nameInput.Size = UDim2.new(1, 0, 0, 36)
         nameInput.BackgroundColor3 = Theme.Background
         nameInput.PlaceholderText = "Nama Script"
         nameInput.PlaceholderColor3 = Theme.TextMuted
@@ -786,10 +812,11 @@ local function RenderContent(categoryIndex)
         nameInput.ClearTextOnFocus = false
         nameInput.Parent = inputArea
         Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 6)
-        Instance.new("UIPadding", nameInput).PaddingLeft = UDim.new(0, 10)
+        Instance.new("UIPadding", nameInput).PaddingLeft = UDim.new(0, 12)
 
+        -- Status Toggle
         local statusToggle = Instance.new("TextButton")
-        statusToggle.Size = UDim2.new(1, 0, 0, 32)
+        statusToggle.Size = UDim2.new(1, 0, 0, 36)
         statusToggle.BackgroundColor3 = Theme.NoKeyTagBg
         statusToggle.Text = "KEY / NO KEY  •  No Key"
         statusToggle.Font = Enum.Font.GothamBold
@@ -812,8 +839,9 @@ local function RenderContent(categoryIndex)
             end
         end)
 
+        -- URL Input
         local urlInput = Instance.new("TextBox")
-        urlInput.Size = UDim2.new(1, 0, 0, 32)
+        urlInput.Size = UDim2.new(1, 0, 0, 36)
         urlInput.BackgroundColor3 = Theme.Background
         urlInput.PlaceholderText = "Link Loadstring"
         urlInput.PlaceholderColor3 = Theme.TextMuted
@@ -823,17 +851,18 @@ local function RenderContent(categoryIndex)
         urlInput.ClearTextOnFocus = false
         urlInput.Parent = inputArea
         Instance.new("UICorner", urlInput).CornerRadius = UDim.new(0, 6)
-        Instance.new("UIPadding", urlInput).PaddingLeft = UDim.new(0, 10)
+        Instance.new("UIPadding", urlInput).PaddingLeft = UDim.new(0, 12)
 
+        -- Add Button Container
         local addBtnContainer = Instance.new("Frame")
-        addBtnContainer.Size = UDim2.new(1, 0, 0, 32)
+        addBtnContainer.Size = UDim2.new(1, 0, 0, 36)
         addBtnContainer.BackgroundTransparency = 1
         addBtnContainer.Parent = inputArea
 
         local addBtn = Instance.new("TextButton")
-        addBtn.Size = UDim2.fromOffset(100, 32)
+        addBtn.Size = UDim2.fromOffset(100, 36)
         addBtn.Position = UDim2.new(1, -100, 0, 0)
-        addBtn.BackgroundColor3 = Theme.AccentPurple
+        addBtn.BackgroundColor3 = Theme.AccentBlue
         addBtn.Text = "+ ADD"
         addBtn.Font = Enum.Font.GothamBold
         addBtn.TextSize = 13
@@ -868,6 +897,24 @@ local function RenderContent(categoryIndex)
             RenderContent(categoryIndex)
         end)
 
+        -- Saved Scripts Section Header
+        local savedSection = Instance.new("Frame")
+        savedSection.Size = UDim2.new(1, 0, 0, 24)
+        savedSection.BackgroundTransparency = 1
+        savedSection.LayoutOrder = 2
+        savedSection.Parent = ScriptScroll
+
+        local savedTitle = Instance.new("TextLabel")
+        savedTitle.Font = Enum.Font.GothamBold
+        savedTitle.TextSize = 13
+        savedTitle.TextColor3 = Theme.TextPrimary
+        savedTitle.BackgroundTransparency = 1
+        savedTitle.Size = UDim2.new(1, 0, 0, 20)
+        savedTitle.Position = UDim2.new(0, 0, 0, 0)
+        savedTitle.TextXAlignment = Enum.TextXAlignment.Left
+        savedTitle.Text = "Script yang Tersimpan"
+        savedTitle.Parent = savedSection
+
         -- Custom Scripts List
         if #category.scripts == 0 then
             local empty = Instance.new("TextLabel")
@@ -875,36 +922,57 @@ local function RenderContent(categoryIndex)
             empty.TextSize = 12
             empty.TextColor3 = Theme.TextMuted
             empty.BackgroundTransparency = 1
-            empty.Size = UDim2.new(1, 0, 0, 60)
+            empty.Size = UDim2.new(1, 0, 0, 64)
             empty.Text = "Belum ada script custom. Tambahkan di atas."
             empty.Parent = ScriptScroll
         else
             for i, scriptEntry in ipairs(category.scripts) do
                 local row = Instance.new("Frame")
                 row.Name = "CustRow_" .. i
-                row.Size = UDim2.new(1, 0, 0, 56)
+                row.Size = UDim2.new(1, 0, 0, 60)
                 row.BackgroundColor3 = Theme.CardBg
-                row.LayoutOrder = i + 1
+                row.LayoutOrder = 3 + i
                 row.Parent = ScriptScroll
                 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-                -- Nama
+                -- Icon (simple circle)
+                local iconFrame = Instance.new("Frame")
+                iconFrame.Size = UDim2.fromOffset(36, 36)
+                iconFrame.Position = UDim2.new(0, 16, 0.5, -18)
+                iconFrame.BackgroundColor3 = Theme.AccentBlue
+                iconFrame.Parent = row
+                Instance.new("UICorner", iconFrame).CornerRadius = UDim.new(1, 0)
+
+                -- Name
                 local nameLabel = Instance.new("TextLabel")
                 nameLabel.Font = Enum.Font.GothamBold
-                nameLabel.TextSize = 13
+                nameLabel.TextSize = 14
                 nameLabel.TextColor3 = Theme.TextPrimary
                 nameLabel.BackgroundTransparency = 1
-                nameLabel.Size = UDim2.new(1, -280, 0, 20)
-                nameLabel.Position = UDim2.new(0, 14, 0, 10)
+                nameLabel.Size = UDim2.new(1, -420, 0, 22)
+                nameLabel.Position = UDim2.new(0, 64, 0, 12)
                 nameLabel.TextXAlignment = Enum.TextXAlignment.Left
                 nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 nameLabel.Text = scriptEntry.name
                 nameLabel.Parent = row
 
+                -- URL Preview (small text)
+                local urlLabel = Instance.new("TextLabel")
+                urlLabel.Font = Enum.Font.Gotham
+                urlLabel.TextSize = 10
+                urlLabel.TextColor3 = Theme.TextMuted
+                urlLabel.BackgroundTransparency = 1
+                urlLabel.Size = UDim2.new(1, -420, 0, 14)
+                urlLabel.Position = UDim2.new(0, 64, 0, 36)
+                urlLabel.TextXAlignment = Enum.TextXAlignment.Left
+                urlLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                urlLabel.Text = string.sub(scriptEntry.url, 1, 60) .. (string.len(scriptEntry.url) > 60 and "..." or "")
+                urlLabel.Parent = row
+
                 -- Status Badge
                 local statusBadge = Instance.new("TextLabel")
-                statusBadge.Size = UDim2.fromOffset(60, 22)
-                statusBadge.Position = UDim2.new(1, -210, 0.5, -11)
+                statusBadge.Size = UDim2.fromOffset(64, 24)
+                statusBadge.Position = UDim2.new(1, -320, 0.5, -12)
                 statusBadge.BackgroundColor3 = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
                 statusBadge.Text = scriptEntry.status
                 statusBadge.Font = Enum.Font.GothamBold
@@ -915,16 +983,16 @@ local function RenderContent(categoryIndex)
 
                 -- Favorite Button
                 local favBtn = Instance.new("TextButton")
-                favBtn.Size = UDim2.fromOffset(28, 28)
-                favBtn.Position = UDim2.new(1, -170, 0.5, -14)
+                favBtn.Size = UDim2.fromOffset(32, 32)
+                favBtn.Position = UDim2.new(1, -272, 0.5, -16)
                 favBtn.BackgroundColor3 = Theme.RunPillBg
                 favBtn.Text = FavoriteList[scriptEntry.id] and "★" or "☆"
                 favBtn.Font = Enum.Font.GothamBold
-                favBtn.TextSize = 16
+                favBtn.TextSize = 18
                 favBtn.TextColor3 = FavoriteList[scriptEntry.id] and Theme.GoldBadge or Theme.TextSecondary
                 favBtn.AutoButtonColor = false
                 favBtn.Parent = row
-                Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 4)
+                Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 6)
 
                 favBtn.MouseButton1Click:Connect(function()
                     if FavoriteList[scriptEntry.id] then
@@ -939,10 +1007,33 @@ local function RenderContent(categoryIndex)
                     SaveData()
                 end)
 
+                -- Copy Button
+                local copyBtn = Instance.new("TextButton")
+                copyBtn.Size = UDim2.fromOffset(32, 32)
+                copyBtn.Position = UDim2.new(1, -228, 0.5, -16)
+                copyBtn.BackgroundColor3 = Theme.RunPillBg
+                copyBtn.Text = "📋"
+                copyBtn.Font = Enum.Font.GothamBold
+                copyBtn.TextSize = 14
+                copyBtn.TextColor3 = Theme.TextSecondary
+                copyBtn.AutoButtonColor = false
+                copyBtn.Parent = row
+                Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
+
+                copyBtn.MouseButton1Click:Connect(function()
+                    if setclipboard then
+                        setclipboard(scriptEntry.url)
+                    end
+                    copyBtn.TextColor3 = Theme.AccentBlue
+                    task.delay(1, function()
+                        if copyBtn then copyBtn.TextColor3 = Theme.TextSecondary end
+                    end)
+                end)
+
                 -- Delete Button (X)
                 local delBtn = Instance.new("TextButton")
                 delBtn.Size = UDim2.fromOffset(32, 32)
-                delBtn.Position = UDim2.new(1, -130, 0.5, -16)
+                delBtn.Position = UDim2.new(1, -184, 0.5, -16)
                 delBtn.BackgroundColor3 = Theme.DangerRed
                 delBtn.Text = "X"
                 delBtn.Font = Enum.Font.GothamBold
@@ -966,9 +1057,9 @@ local function RenderContent(categoryIndex)
 
                 -- Execute Button
                 local runBtn = Instance.new("TextButton")
-                runBtn.Size = UDim2.fromOffset(90, 32)
-                runBtn.Position = UDim2.new(1, -102, 0.5, -16)
-                runBtn.BackgroundColor3 = Theme.ExecuteBtn
+                runBtn.Size = UDim2.fromOffset(100, 36)
+                runBtn.Position = UDim2.new(1, -112, 0.5, -18)
+                runBtn.BackgroundColor3 = Theme.AccentBlue
                 runBtn.Text = "▶ EXECUTE"
                 runBtn.Font = Enum.Font.GothamBold
                 runBtn.TextSize = 12
@@ -991,7 +1082,7 @@ local function RenderContent(categoryIndex)
     SearchBox.Visible = true      
 
     local ListLayout = Instance.new("UIListLayout")     
-    ListLayout.Padding = UDim.new(0, 8)     
+    ListLayout.Padding = UDim.new(0, 10)     
     ListLayout.SortOrder = Enum.SortOrder.LayoutOrder     
     ListLayout.Parent = ScriptScroll      
 
@@ -1022,10 +1113,10 @@ local function RenderContent(categoryIndex)
     if #filteredScripts == 0 then         
         local empty = Instance.new("TextLabel")         
         empty.Font = Enum.Font.Gotham         
-        empty.TextSize = 12         
+        empty.TextSize = 13         
         empty.TextColor3 = Theme.TextMuted         
         empty.BackgroundTransparency = 1         
-        empty.Size = UDim2.new(1, 0, 0, 60)         
+        empty.Size = UDim2.new(1, 0, 0, 64)         
         empty.Text = "Tidak ada script yang cocok."         
         empty.Parent = ScriptScroll         
         return     
@@ -1034,7 +1125,7 @@ local function RenderContent(categoryIndex)
     for i, scriptEntry in ipairs(filteredScripts) do         
         local row = Instance.new("Frame")         
         row.Name = "Row_" .. i         
-        row.Size = UDim2.new(1, 0, 0, 56)         
+        row.Size = UDim2.new(1, 0, 0, 60)         
         row.BackgroundColor3 = Theme.CardBg         
         row.LayoutOrder = i         
         row.Parent = ScriptScroll         
@@ -1042,20 +1133,20 @@ local function RenderContent(categoryIndex)
 
         local nameLabel = Instance.new("TextLabel")         
         nameLabel.Font = Enum.Font.GothamBold         
-        nameLabel.TextSize = 13         
+        nameLabel.TextSize = 14         
         nameLabel.TextColor3 = Theme.TextPrimary         
         nameLabel.BackgroundTransparency = 1         
-        nameLabel.Size = UDim2.new(1, -280, 0, 20)         
-        nameLabel.Position = UDim2.new(0, 14, 0, 10)         
+        nameLabel.Size = UDim2.new(1, -300, 0, 22)         
+        nameLabel.Position = UDim2.new(0, 16, 0, 12)         
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left         
         nameLabel.TextTruncate = Enum.TextTruncate.AtEnd         
         nameLabel.Text = scriptEntry.name         
         nameLabel.Parent = row          
 
         local runBtn = Instance.new("TextButton")         
-        runBtn.Size = UDim2.fromOffset(90, 32)         
-        runBtn.Position = UDim2.new(1, -102, 0.5, -16)         
-        runBtn.BackgroundColor3 = Theme.ExecuteBtn         
+        runBtn.Size = UDim2.fromOffset(100, 36)         
+        runBtn.Position = UDim2.new(1, -112, 0.5, -18)         
+        runBtn.BackgroundColor3 = Theme.AccentBlue         
         runBtn.Text = "▶ EXECUTE"         
         runBtn.Font = Enum.Font.GothamBold         
         runBtn.TextSize = 12         
@@ -1064,16 +1155,16 @@ local function RenderContent(categoryIndex)
         runBtn.Parent = row         
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(0, 6)          
 
-        runBtn.MouseEnter:Connect(function() TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentPurple }):Play() end)         
-        runBtn.MouseLeave:Connect(function() TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.ExecuteBtn }):Play() end)          
+        runBtn.MouseEnter:Connect(function() TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.CardBgHover }):Play() end)         
+        runBtn.MouseLeave:Connect(function() TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentBlue }):Play() end)          
 
         runBtn.MouseButton1Click:Connect(function()
             ExecuteScript(scriptEntry.name, scriptEntry.status, scriptEntry.url)
         end)          
 
         local statusBadge = Instance.new("TextLabel")         
-        statusBadge.Size = UDim2.fromOffset(60, 22)         
-        statusBadge.Position = UDim2.new(1, -170, 0.5, -11)         
+        statusBadge.Size = UDim2.fromOffset(64, 24)         
+        statusBadge.Position = UDim2.new(1, -184, 0.5, -12)         
         local statusBg = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
         statusBadge.BackgroundColor3 = statusBg         
         statusBadge.Text = scriptEntry.status         
@@ -1083,33 +1174,33 @@ local function RenderContent(categoryIndex)
         statusBadge.Parent = row         
         Instance.new("UICorner", statusBadge).CornerRadius = UDim.new(0, 4)          
 
-        local favXPos = -210         
+        local favXPos = -228         
         if scriptEntry.recommended then             
             local recBadge = Instance.new("TextLabel")             
-            recBadge.Size = UDim2.fromOffset(90, 22)             
-            recBadge.Position = UDim2.new(1, -270, 0.5, -11)             
+            recBadge.Size = UDim2.fromOffset(100, 24)             
+            recBadge.Position = UDim2.new(1, -296, 0.5, -12)             
             recBadge.BackgroundColor3 = Theme.GoldBadge             
             recBadge.Text = "★ RECOMMENDED"             
             recBadge.Font = Enum.Font.GothamBold             
-            recBadge.TextSize = 9             
+            recBadge.TextSize = 10             
             recBadge.TextColor3 = Color3.fromRGB(0, 0, 0)             
             recBadge.Parent = row             
             Instance.new("UICorner", recBadge).CornerRadius = UDim.new(0, 4)             
-            favXPos = -270         
+            favXPos = -296         
         end          
 
         local favBtn = Instance.new("TextButton")         
-        favBtn.Size = UDim2.fromOffset(28, 28)         
-        favBtn.Position = UDim2.new(1, favXPos, 0.5, -14)         
+        favBtn.Size = UDim2.fromOffset(32, 32)         
+        favBtn.Position = UDim2.new(1, favXPos, 0.5, -16)         
         favBtn.BackgroundColor3 = Theme.RunPillBg         
         local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url         
         favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"         
         favBtn.Font = Enum.Font.GothamBold         
-        favBtn.TextSize = 16         
+        favBtn.TextSize = 18         
         favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextSecondary         
         favBtn.AutoButtonColor = false         
         favBtn.Parent = row         
-        Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 4)          
+        Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 6)          
 
         favBtn.MouseButton1Click:Connect(function()             
             if FavoriteList[fKeyId] then                 
@@ -1141,8 +1232,8 @@ local filterDefs = {
 for _, fDef in ipairs(filterDefs) do     
     local fBtn = Instance.new("TextButton")     
     fBtn.Name = "Filter_" .. fDef.id     
-    fBtn.Size = UDim2.fromOffset(90, 28)     
-    fBtn.BackgroundColor3 = (activeFilter == fDef.id) and Theme.AccentPurple or Theme.CardBg     
+    fBtn.Size = UDim2.fromOffset(100, 32)     
+    fBtn.BackgroundColor3 = (activeFilter == fDef.id) and Theme.AccentBlue or Theme.CardBg     
     fBtn.Text = fDef.text     
     fBtn.Font = Enum.Font.GothamBold     
     fBtn.TextSize = 11     
@@ -1158,7 +1249,7 @@ for _, fDef in ipairs(filterDefs) do
         for id, btn in pairs(filterButtons) do             
             local isActive = (id == activeFilter)             
             TweenService:Create(btn, TweenInfo.new(0.15), {                 
-                BackgroundColor3 = isActive and Theme.AccentPurple or Theme.CardBg,
+                BackgroundColor3 = isActive and Theme.AccentBlue or Theme.CardBg,
                 TextColor3 = isActive and Theme.TextPrimary or Theme.TextSecondary
             }):Play()         
         end         
@@ -1182,9 +1273,10 @@ local function SetActiveCategory(index)
     for i, btnData in ipairs(sidebarTabButtons) do         
         local isActive = (i == index)         
         TweenService:Create(btnData.frame, TweenInfo.new(0.15), {             
-            BackgroundColor3 = isActive and Theme.AccentPurple or Theme.CardBg
+            BackgroundColor3 = isActive and Theme.AccentBlue or Theme.CardBg
         }):Play()         
         btnData.label.TextColor3 = isActive and Theme.TextPrimary or Theme.TextSecondary          
+        btnData.icon.TextColor3 = isActive and Theme.TextPrimary or Theme.TextSecondary
 
         if isActive and Categories[i].hasNotification then             
             Categories[i].hasNotification = false             
@@ -1211,8 +1303,8 @@ RenderSidebarTabs = function()
     for i, category in ipairs(Categories) do         
         local tabBtn = Instance.new("TextButton")         
         tabBtn.Name = "Tab_" .. category.key         
-        tabBtn.Size = UDim2.new(1, -8, 0, 42)         
-        tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.AccentPurple or Theme.CardBg         
+        tabBtn.Size = UDim2.new(1, -24, 0, 44)         
+        tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.AccentBlue or Theme.CardBg         
         tabBtn.Text = ""         
         tabBtn.AutoButtonColor = false         
         tabBtn.LayoutOrder = i         
@@ -1220,9 +1312,10 @@ RenderSidebarTabs = function()
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)          
 
         local iconLabel = Instance.new("TextLabel")
+        iconLabel.Name = "Icon"
         iconLabel.Font = Enum.Font.GothamBold
-        iconLabel.TextSize = 16
-        iconLabel.TextColor3 = Theme.TextPrimary
+        iconLabel.TextSize = 18
+        iconLabel.TextColor3 = (i == activeCategoryIndex) and Theme.TextPrimary or Theme.TextSecondary
         iconLabel.BackgroundTransparency = 1
         iconLabel.Size = UDim2.fromOffset(24, 24)
         iconLabel.Position = UDim2.new(0, 12, 0.5, -12)
@@ -1235,8 +1328,8 @@ RenderSidebarTabs = function()
         label.TextSize = 12         
         label.TextColor3 = (i == activeCategoryIndex) and Theme.TextPrimary or Theme.TextSecondary         
         label.BackgroundTransparency = 1         
-        label.Size = UDim2.new(1, -44, 1, 0)         
-        label.Position = UDim2.new(0, 44, 0, 0)         
+        label.Size = UDim2.new(1, -48, 1, 0)         
+        label.Position = UDim2.new(0, 48, 0, 0)         
         label.TextXAlignment = Enum.TextXAlignment.Left         
         label.TextWrapped = true         
         label.Text = category.name         
@@ -1255,7 +1348,7 @@ RenderSidebarTabs = function()
             Instance.new("UICorner", notifBadge).CornerRadius = UDim.new(1, 0)
         end          
 
-        table.insert(sidebarTabButtons, { frame = tabBtn, label = label, notifBadge = notifBadge })          
+        table.insert(sidebarTabButtons, { frame = tabBtn, label = label, icon = iconLabel, notifBadge = notifBadge })          
 
         tabBtn.MouseButton1Click:Connect(function()             
             SetActiveCategory(i)         
@@ -1303,13 +1396,13 @@ end)
 -- [ 11.5 RESIZE SYSTEM ]
 local ResizeHandle = Instance.new("TextButton") 
 ResizeHandle.Name = "ResizeHandle" 
-ResizeHandle.Size = UDim2.fromOffset(20, 20) 
+ResizeHandle.Size = UDim2.fromOffset(24, 24) 
 ResizeHandle.AnchorPoint = Vector2.new(1, 1) 
 ResizeHandle.Position = UDim2.new(1, 0, 1, 0) 
-ResizeHandle.BackgroundColor3 = Theme.AccentPurple 
+ResizeHandle.BackgroundColor3 = Theme.AccentBlue 
 ResizeHandle.Text = "◢" 
 ResizeHandle.Font = Enum.Font.GothamBold 
-ResizeHandle.TextSize = 10 
+ResizeHandle.TextSize = 11 
 ResizeHandle.TextColor3 = Theme.TextPrimary 
 ResizeHandle.AutoButtonColor = false 
 ResizeHandle.Parent = MainFrame  
@@ -1336,8 +1429,8 @@ end)
 UserInputService.InputChanged:Connect(function(input)     
     if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then         
         local delta = input.Position - resizeStartPos         
-        local newWidth = math.clamp(startSize.X.Offset + delta.X, 700, 1200)         
-        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 400, 800)         
+        local newWidth = math.clamp(startSize.X.Offset + delta.X, 800, 1200)         
+        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 500, 800)         
         MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)     
     end 
 end) 
@@ -1345,7 +1438,7 @@ end)
 -- [ 12. FLOATING TOGGLE BUTTON (F) ]
 local FloatingBtn = Instance.new("TextButton") 
 FloatingBtn.Name = "FloatingToggleBtn" 
-FloatingBtn.Size = UDim2.fromOffset(50, 50) 
+FloatingBtn.Size = UDim2.fromOffset(56, 56) 
 FloatingBtn.AnchorPoint = Vector2.new(0, 0.5) 
 FloatingBtn.Position = UDim2.new(0, 20, 0.4, 0) 
 FloatingBtn.BackgroundColor3 = Theme.Background 
@@ -1355,14 +1448,14 @@ FloatingBtn.Active = true
 FloatingBtn.Text = "" 
 FloatingBtn.Parent = ScreenGui  
 
-Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 12)  
+Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 14)  
 local FloatingStroke = Instance.new("UIStroke") 
-FloatingStroke.Color = Theme.AccentPurple 
+FloatingStroke.Color = Theme.AccentBlue 
 FloatingStroke.Thickness = 2 
 FloatingStroke.Parent = FloatingBtn  
 
-local FloatingLogo = CreateFLogo(UDim2.fromOffset(26, 26), -12) 
-FloatingLogo.Position = UDim2.new(0.5, -13, 0.5, -13) 
+local FloatingLogo = CreateFLogo(UDim2.fromOffset(30, 30), -12) 
+FloatingLogo.Position = UDim2.new(0.5, -15, 0.5, -15) 
 FloatingLogo.Parent = FloatingBtn  
 
 local FloatingScale = Instance.new("UIScale") 
@@ -1405,7 +1498,7 @@ end)
 -- [ 13. TOGGLE UI <-> FLOATING BUTTON ]
 local function ToggleMainUI(show)     
     if show then         
-        MainFrame.Size = UDim2.fromOffset(900, 550)         
+        MainFrame.Size = UDim2.fromOffset(1000, 600)         
         MainFrame.Visible = true         
         MainScale.Scale = 0          
         TweenService:Create(FloatingScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {             
@@ -1442,11 +1535,11 @@ CreateHeaderButton("−", function()
     isMinimized = not isMinimized     
     if isMinimized then         
         TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {             
-            Size = UDim2.fromOffset(900, 60)         
+            Size = UDim2.fromOffset(1000, 64)         
         }):Play()     
     else         
         TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {             
-            Size = UDim2.fromOffset(900, 550)         
+            Size = UDim2.fromOffset(1000, 600)         
         }):Play()     
     end 
 end)  
@@ -1458,7 +1551,7 @@ end)
 -- [ 14. BOOT LOADING SCREEN ]
 local BootScreen = Instance.new("CanvasGroup") 
 BootScreen.Name = "BootScreen" 
-BootScreen.Size = UDim2.fromOffset(320, 150) 
+BootScreen.Size = UDim2.fromOffset(340, 160) 
 BootScreen.AnchorPoint = Vector2.new(0.5, 0.5) 
 BootScreen.Position = UDim2.fromScale(0.5, 0.5) 
 BootScreen.BackgroundColor3 = Theme.Background 
@@ -1472,34 +1565,34 @@ BootStroke.Color = Theme.BorderColor
 BootStroke.Thickness = 1 
 BootStroke.Parent = BootScreen  
 
-local BootLogo = CreateFLogo(UDim2.new(0, 36, 0, 36), -12) 
-BootLogo.Position = UDim2.new(0.5, -18, 0, 20) 
+local BootLogo = CreateFLogo(UDim2.new(0, 40, 0, 40), -12) 
+BootLogo.Position = UDim2.new(0.5, -20, 0, 22) 
 BootLogo.Parent = BootScreen  
 
 local BootTitle = Instance.new("TextLabel") 
 BootTitle.Font = Enum.Font.GothamBold 
-BootTitle.TextSize = 18 
+BootTitle.TextSize = 20 
 BootTitle.TextColor3 = Theme.TextPrimary 
 BootTitle.BackgroundTransparency = 1 
-BootTitle.Size = UDim2.new(1, -24, 0, 24) 
-BootTitle.Position = UDim2.new(0, 12, 0, 64) 
+BootTitle.Size = UDim2.new(1, -24, 0, 28) 
+BootTitle.Position = UDim2.new(0, 12, 0, 72) 
 BootTitle.RichText = true 
-BootTitle.Text = "leon4951 <font color=\"rgb(100, 80, 255)\">Hub</font>" 
+BootTitle.Text = "leon4951 <font color=\"rgb(37, 120, 255)\">Hub</font>" 
 BootTitle.Parent = BootScreen  
 
 local BootSubText = Instance.new("TextLabel") 
 BootSubText.Font = Enum.Font.Gotham 
-BootSubText.TextSize = 11 
+BootSubText.TextSize = 12 
 BootSubText.TextColor3 = Theme.TextSecondary 
 BootSubText.BackgroundTransparency = 1 
-BootSubText.Size = UDim2.new(1, -24, 0, 16) 
-BootSubText.Position = UDim2.new(0, 12, 0, 90) 
+BootSubText.Size = UDim2.new(1, -24, 0, 18) 
+BootSubText.Position = UDim2.new(0, 12, 0, 102) 
 BootSubText.Text = "Loading..." 
 BootSubText.Parent = BootScreen  
 
 local BootTrack = Instance.new("Frame") 
 BootTrack.Size = UDim2.new(1, -48, 0, 6) 
-BootTrack.Position = UDim2.new(0, 24, 1, -32) 
+BootTrack.Position = UDim2.new(0, 24, 1, -36) 
 BootTrack.BackgroundColor3 = Theme.RunPillBg 
 BootTrack.BorderSizePixel = 0 
 BootTrack.Parent = BootScreen 
@@ -1507,7 +1600,7 @@ Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
 
 local BootFill = Instance.new("Frame") 
 BootFill.Size = UDim2.new(0, 0, 1, 0) 
-BootFill.BackgroundColor3 = Theme.AccentPurple 
+BootFill.BackgroundColor3 = Theme.AccentBlue 
 BootFill.BorderSizePixel = 0 
 BootFill.Parent = BootTrack 
 Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)  
@@ -1518,8 +1611,8 @@ BootPercentLabel.TextSize = 11
 BootPercentLabel.TextColor3 = Theme.TextPrimary 
 BootPercentLabel.BackgroundTransparency = 1 
 BootPercentLabel.TextXAlignment = Enum.TextXAlignment.Center 
-BootPercentLabel.Size = UDim2.new(1, 0, 0, 14) 
-BootPercentLabel.Position = UDim2.new(0, 0, 1, -50) 
+BootPercentLabel.Size = UDim2.new(1, 0, 0, 16) 
+BootPercentLabel.Position = UDim2.new(0, 0, 1, -56) 
 BootPercentLabel.Text = "0%" 
 BootPercentLabel.Parent = BootScreen  
 
