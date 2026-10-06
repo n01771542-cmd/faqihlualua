@@ -21,8 +21,8 @@ local HttpService = game:GetService("HttpService")
 
 -- [ 2. CONFIGURASI & THEME ]
 local Theme = {
-    Background = Color3.fromRGB(11, 14, 21),
-    CardBg = Color3.fromRGB(18, 24, 43),
+    Background = Color3.fromRGB(7, 10, 17),
+    CardBg = Color3.fromRGB(14, 20, 32),
     CardBgHover = Color3.fromRGB(26, 36, 64),
     InputBg = Color3.fromRGB(8, 11, 18),
     AccentBlue = Color3.fromRGB(37, 120, 255),
@@ -30,9 +30,9 @@ local Theme = {
     BadgeBg = Color3.fromRGB(18, 24, 43),
     BadgeBorder = Color3.fromRGB(34, 50, 86),
     RunPillBg = Color3.fromRGB(34, 50, 86),
-    TextPrimary = Color3.fromRGB(255, 255, 255),
-    TextSecondary = Color3.fromRGB(140, 155, 180),
-    TextMuted = Color3.fromRGB(107, 114, 128),
+    TextPrimary = Color3.fromRGB(245, 250, 255),
+    TextSecondary = Color3.fromRGB(130, 150, 185),
+    TextMuted = Color3.fromRGB(90, 110, 130),
     BorderColor = Color3.fromRGB(28, 36, 52),
     BorderFocus = Color3.fromRGB(50, 70, 110),
     GoldBadge = Color3.fromRGB(255, 185, 0),
@@ -836,7 +836,7 @@ local function RenderContent(categoryIndex)
         ScriptScroll.CanvasPosition = Vector2.new(0, 0)
         return
 
-    -- [ CUSTOM SCRIPT TAB - REDESIGNED ]
+    -- [ CUSTOM SCRIPT TAB - REDESIGNED & RESPONSIVE ]
     elseif category.type == "custom_script" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
@@ -851,12 +851,14 @@ local function RenderContent(categoryIndex)
         local currentKeyStatus = "No Key"
         local addDebounce = false
         local activeDropdown = nil
+        local dropdownConnection = nil
 
         -- ===== HELPER: Create Card Container =====
         local function CreateCard(height)
             local card = Instance.new("Frame")
             card.BackgroundColor3 = Theme.CardBg
             card.Size = UDim2.new(1, 0, 0, height)
+            card.BorderSizePixel = 0
             Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
             local stroke = Instance.new("UIStroke")
             stroke.Color = Theme.BorderColor
@@ -869,7 +871,7 @@ local function RenderContent(categoryIndex)
         local function CreateIconCircle(size, bgColor)
             local circle = Instance.new("Frame")
             circle.Size = UDim2.fromOffset(size, size)
-            circle.BackgroundColor3 = bgColor or Color3.fromRGB(25, 35, 60)
+            circle.BackgroundColor3 = bgColor or Color3.fromRGB(22, 32, 55)
             circle.BorderSizePixel = 0
             Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
             local circleStroke = Instance.new("UIStroke")
@@ -898,7 +900,7 @@ local function RenderContent(categoryIndex)
         end
 
         -- ===== HEADER CARD =====
-        local headerCard = CreateCard(62)
+        local headerCard = CreateCard(64)
         headerCard.LayoutOrder = 0
         headerCard.Parent = ScriptScroll
 
@@ -925,7 +927,7 @@ local function RenderContent(categoryIndex)
         -- Title
         local headerTitle = Instance.new("TextLabel")
         headerTitle.Font = Enum.Font.GothamBold
-        headerTitle.TextSize = 18
+        headerTitle.TextSize = 17
         headerTitle.TextColor3 = Theme.TextPrimary
         headerTitle.BackgroundTransparency = 1
         headerTitle.Size = UDim2.new(1, -60, 0, 22)
@@ -937,7 +939,7 @@ local function RenderContent(categoryIndex)
         -- Subtitle
         local headerSub = Instance.new("TextLabel")
         headerSub.Font = Enum.Font.Gotham
-        headerSub.TextSize = 11
+        headerSub.TextSize = 10
         headerSub.TextColor3 = Color3.fromRGB(130, 150, 185)
         headerSub.BackgroundTransparency = 1
         headerSub.Size = UDim2.new(1, -60, 0, 16)
@@ -946,10 +948,17 @@ local function RenderContent(categoryIndex)
         headerSub.Text = "Masukkan nama, key (jika ada) dan link loadstring script."
         headerSub.Parent = headerCard
 
-        -- ===== FORM ROW 1: Name + Key =====
-        local formRow1 = CreateCard(46)
+        -- ===== FORM ROW 1: Name + Key (RESPONSIVE) =====
+        local formRow1 = CreateCard(48)
         formRow1.LayoutOrder = 1
         formRow1.Parent = ScriptScroll
+
+        -- Name Container (fills remaining space)
+        local nameContainer = Instance.new("Frame")
+        nameContainer.Size = UDim2.new(1, -130, 1, 0)
+        nameContainer.Position = UDim2.new(0, 10, 0, 0)
+        nameContainer.BackgroundTransparency = 1
+        nameContainer.Parent = formRow1
 
         -- User icon
         local userIcon = Instance.new("TextLabel")
@@ -958,17 +967,17 @@ local function RenderContent(categoryIndex)
         userIcon.TextColor3 = Theme.TextMuted
         userIcon.BackgroundTransparency = 1
         userIcon.Size = UDim2.fromOffset(20, 20)
-        userIcon.Position = UDim2.new(0, 12, 0.5, -10)
+        userIcon.Position = UDim2.new(0, 10, 0.5, -10)
         userIcon.Text = "👤"
         userIcon.TextXAlignment = Enum.TextXAlignment.Center
         userIcon.TextYAlignment = Enum.TextYAlignment.Center
-        userIcon.Parent = formRow1
+        userIcon.Parent = nameContainer
 
-        -- Name input
+        -- Name input (fills container minus icon)
         local nameInput = Instance.new("TextBox")
         nameInput.Name = "NameInput"
-        nameInput.Size = UDim2.new(0, 250, 1, -12)
-        nameInput.Position = UDim2.new(0, 40, 0, 6)
+        nameInput.Size = UDim2.new(1, -30, 1, -12)
+        nameInput.Position = UDim2.new(0, 30, 0, 6)
         nameInput.BackgroundColor3 = Theme.InputBg
         nameInput.PlaceholderText = "Masukan nama script..."
         nameInput.PlaceholderColor3 = Theme.TextMuted
@@ -978,7 +987,7 @@ local function RenderContent(categoryIndex)
         nameInput.TextSize = 12
         nameInput.ClearTextOnFocus = false
         nameInput.BorderSizePixel = 0
-        nameInput.Parent = formRow1
+        nameInput.Parent = nameContainer
         Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 8)
         local nameStroke = Instance.new("UIStroke")
         nameStroke.Color = Theme.BorderColor
@@ -992,6 +1001,13 @@ local function RenderContent(categoryIndex)
             nameStroke.Color = Theme.BorderColor
         end)
 
+        -- Key Container (fixed width)
+        local keyContainer = Instance.new("Frame")
+        keyContainer.Size = UDim2.fromOffset(120, 1, -12)
+        keyContainer.Position = UDim2.new(1, -120, 0, 6)
+        keyContainer.BackgroundTransparency = 1
+        keyContainer.Parent = formRow1
+
         -- Key icon
         local keyIcon = Instance.new("TextLabel")
         keyIcon.Font = Enum.Font.GothamBold
@@ -999,20 +1015,20 @@ local function RenderContent(categoryIndex)
         keyIcon.TextColor3 = Color3.fromRGB(200, 170, 80)
         keyIcon.BackgroundTransparency = 1
         keyIcon.Size = UDim2.fromOffset(18, 18)
-        keyIcon.Position = UDim2.new(1, -140, 0.5, -9)
-        keyIcon.Text = "🔑"
+        keyIcon.Position = UDim2.new(0, 8, 0.5, -9)
+        keyIcon.Text = ""
         keyIcon.TextXAlignment = Enum.TextXAlignment.Center
         keyIcon.TextYAlignment = Enum.TextYAlignment.Center
-        keyIcon.Parent = formRow1
+        keyIcon.Parent = keyContainer
 
         -- Key dropdown button
         local keyBtn = Instance.new("TextButton")
-        keyBtn.Size = UDim2.fromOffset(110, 34)
-        keyBtn.Position = UDim2.new(1, -118, 0.5, -17)
+        keyBtn.Size = UDim2.new(1, -26, 1, 0)
+        keyBtn.Position = UDim2.new(0, 26, 0, 0)
         keyBtn.BackgroundColor3 = Theme.NoKeyTagBg
         keyBtn.Text = ""
         keyBtn.AutoButtonColor = false
-        keyBtn.Parent = formRow1
+        keyBtn.Parent = keyContainer
         Instance.new("UICorner", keyBtn).CornerRadius = UDim.new(0, 8)
 
         local keyBtnLabel = Instance.new("TextLabel")
@@ -1020,8 +1036,8 @@ local function RenderContent(categoryIndex)
         keyBtnLabel.TextSize = 11
         keyBtnLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         keyBtnLabel.BackgroundTransparency = 1
-        keyBtnLabel.Size = UDim2.new(1, -24, 1, 0)
-        keyBtnLabel.Position = UDim2.new(0, 10, 0, 0)
+        keyBtnLabel.Size = UDim2.new(1, -20, 1, 0)
+        keyBtnLabel.Position = UDim2.new(0, 8, 0, 0)
         keyBtnLabel.TextXAlignment = Enum.TextXAlignment.Left
         keyBtnLabel.Text = "No Key"
         keyBtnLabel.Parent = keyBtn
@@ -1032,7 +1048,7 @@ local function RenderContent(categoryIndex)
         keyChevron.TextColor3 = Color3.fromRGB(255, 255, 255)
         keyChevron.BackgroundTransparency = 1
         keyChevron.Size = UDim2.fromOffset(16, 16)
-        keyChevron.Position = UDim2.new(1, -20, 0.5, -8)
+        keyChevron.Position = UDim2.new(1, -18, 0.5, -8)
         keyChevron.Text = "∨"
         keyChevron.TextXAlignment = Enum.TextXAlignment.Center
         keyChevron.TextYAlignment = Enum.TextYAlignment.Center
@@ -1044,6 +1060,10 @@ local function RenderContent(categoryIndex)
                 activeDropdown:Destroy()
                 activeDropdown = nil
             end
+            if dropdownConnection then
+                dropdownConnection:Disconnect()
+                dropdownConnection = nil
+            end
         end
 
         keyBtn.MouseButton1Click:Connect(function()
@@ -1053,11 +1073,11 @@ local function RenderContent(categoryIndex)
             end
 
             local dropdown = Instance.new("Frame")
-            dropdown.Size = UDim2.fromOffset(110, 72)
+            dropdown.Size = UDim2.fromOffset(120, 72)
             dropdown.Position = UDim2.new(0, 0, 1, 4)
             dropdown.BackgroundColor3 = Theme.CardBg
             dropdown.ZIndex = 50
-            dropdown.Parent = formRow1
+            dropdown.Parent = keyContainer
             Instance.new("UICorner", dropdown).CornerRadius = UDim.new(0, 8)
             local dropStroke = Instance.new("UIStroke")
             dropStroke.Color = Theme.BorderColor
@@ -1094,23 +1114,34 @@ local function RenderContent(categoryIndex)
 
             activeDropdown = dropdown
 
-            -- Close on outside click
+            -- Close on outside click (with cleanup)
             task.delay(0.1, function()
-                local conn
-                conn = UserInputService.InputBegan:Connect(function(input)
+                dropdownConnection = UserInputService.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         closeDropdown()
-                        if conn then conn:Disconnect() end
                     end
                 end)
-                task.delay(3, function() if conn then conn:Disconnect() end end)
+                -- Auto cleanup after 5 seconds
+                task.delay(5, function()
+                    if dropdownConnection then
+                        dropdownConnection:Disconnect()
+                        dropdownConnection = nil
+                    end
+                end)
             end)
         end)
 
-        -- ===== FORM ROW 2: Link + ADD =====
-        local formRow2 = CreateCard(46)
+        -- ===== FORM ROW 2: Link + ADD (RESPONSIVE) =====
+        local formRow2 = CreateCard(48)
         formRow2.LayoutOrder = 2
         formRow2.Parent = ScriptScroll
+
+        -- Link Container (fills remaining space)
+        local linkContainer = Instance.new("Frame")
+        linkContainer.Size = UDim2.new(1, -110, 1, 0)
+        linkContainer.Position = UDim2.new(0, 10, 0, 0)
+        linkContainer.BackgroundTransparency = 1
+        linkContainer.Parent = formRow2
 
         -- Link icon
         local linkIcon = Instance.new("TextLabel")
@@ -1119,17 +1150,17 @@ local function RenderContent(categoryIndex)
         linkIcon.TextColor3 = Theme.TextMuted
         linkIcon.BackgroundTransparency = 1
         linkIcon.Size = UDim2.fromOffset(20, 20)
-        linkIcon.Position = UDim2.new(0, 12, 0.5, -10)
+        linkIcon.Position = UDim2.new(0, 10, 0.5, -10)
         linkIcon.Text = "🔗"
         linkIcon.TextXAlignment = Enum.TextXAlignment.Center
         linkIcon.TextYAlignment = Enum.TextYAlignment.Center
-        linkIcon.Parent = formRow2
+        linkIcon.Parent = linkContainer
 
-        -- Link input
+        -- Link input (fills container minus icon)
         local linkInput = Instance.new("TextBox")
         linkInput.Name = "LinkInput"
-        linkInput.Size = UDim2.new(0, 290, 1, -12)
-        linkInput.Position = UDim2.new(0, 40, 0, 6)
+        linkInput.Size = UDim2.new(1, -30, 1, -12)
+        linkInput.Position = UDim2.new(0, 30, 0, 6)
         linkInput.BackgroundColor3 = Theme.InputBg
         linkInput.PlaceholderText = "Masukan link loadstring..."
         linkInput.PlaceholderColor3 = Theme.TextMuted
@@ -1139,7 +1170,7 @@ local function RenderContent(categoryIndex)
         linkInput.TextSize = 12
         linkInput.ClearTextOnFocus = false
         linkInput.BorderSizePixel = 0
-        linkInput.Parent = formRow2
+        linkInput.Parent = linkContainer
         Instance.new("UICorner", linkInput).CornerRadius = UDim.new(0, 8)
         local linkStroke = Instance.new("UIStroke")
         linkStroke.Color = Theme.BorderColor
@@ -1153,10 +1184,10 @@ local function RenderContent(categoryIndex)
             linkStroke.Color = Theme.BorderColor
         end)
 
-        -- ADD button
+        -- ADD button (fixed width)
         local addBtn = Instance.new("TextButton")
-        addBtn.Size = UDim2.fromOffset(90, 34)
-        addBtn.Position = UDim2.new(1, -98, 0.5, -17)
+        addBtn.Size = UDim2.fromOffset(100, 1, -12)
+        addBtn.Position = UDim2.new(1, -100, 0, 6)
         addBtn.BackgroundColor3 = Theme.AccentBlue
         addBtn.Text = "+ ADD"
         addBtn.Font = Enum.Font.GothamBold
@@ -1290,7 +1321,7 @@ local function RenderContent(categoryIndex)
             emptyLbl.Parent = emptyCard
         else
             for i, scriptData in ipairs(category.scripts) do
-                local card = CreateCard(56)
+                local card = CreateCard(58)
                 card.LayoutOrder = 4 + i
                 card.Parent = ScriptScroll
 
@@ -1310,13 +1341,13 @@ local function RenderContent(categoryIndex)
                 iconLabel.TextYAlignment = Enum.TextYAlignment.Center
                 iconLabel.Parent = iconCircle
 
-                -- Script name
+                -- Script name (responsive width)
                 local nameLabel = Instance.new("TextLabel")
                 nameLabel.Font = Enum.Font.GothamBold
                 nameLabel.TextSize = 14
                 nameLabel.TextColor3 = Theme.TextPrimary
                 nameLabel.BackgroundTransparency = 1
-                nameLabel.Size = UDim2.new(0, 120, 1, 0)
+                nameLabel.Size = UDim2.new(0, 130, 1, 0)
                 nameLabel.Position = UDim2.new(0, 56, 0, 0)
                 nameLabel.TextXAlignment = Enum.TextXAlignment.Left
                 nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -1327,7 +1358,7 @@ local function RenderContent(categoryIndex)
                 local isKey = scriptData.keyRequired or scriptData.status == "Key"
                 local statusBadge = Instance.new("TextLabel")
                 statusBadge.Size = UDim2.fromOffset(60, 24)
-                statusBadge.Position = UDim2.new(0, 184, 0.5, -12)
+                statusBadge.Position = UDim2.new(0, 194, 0.5, -12)
                 statusBadge.BackgroundColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
                 statusBadge.Text = isKey and "Key" or "No Key"
                 statusBadge.Font = Enum.Font.GothamBold
@@ -1365,7 +1396,7 @@ local function RenderContent(categoryIndex)
                 end)
 
                 -- Copy button
-                local copyBtn = CreateSmallButton(30, Theme.CardBgHover, "", 12, Theme.TextSecondary)
+                local copyBtn = CreateSmallButton(30, Theme.CardBgHover, "📋", 12, Theme.TextSecondary)
                 copyBtn.Position = UDim2.new(1, -124, 0.5, -15)
                 copyBtn.Parent = card
 
@@ -1387,7 +1418,7 @@ local function RenderContent(categoryIndex)
                             end
                         end)
                     else
-                        copyBtn.Text = ""
+                        copyBtn.Text = "✗"
                         copyBtn.TextColor3 = Theme.KeyTagBg
                         task.delay(1.5, function()
                             if copyBtn and copyBtn.Parent then
