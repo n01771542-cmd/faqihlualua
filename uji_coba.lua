@@ -1,5 +1,5 @@
 -- ============================================================================
--- LEON4951 HUB v2 - REDESIGN (ELEGANT BLUE THEME EDITION)
+-- LEON4951 HUB v2 - REDESIGN (JADEN HUB THICK OUTLINE EDITION)
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
@@ -22,31 +22,30 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
--- [ 2. CONFIGURASI & THEME (ELEGANT BLUE PALETTE) ]
+-- [ 2. CONFIGURASI & THEME (JADEN HUB STYLE PALETTE) ]
 local Theme = {
-    Background = Color3.fromRGB(7, 10, 17),          -- #070A11
-    SidebarBg = Color3.fromRGB(10, 14, 24),           -- Darker blue shade
-    CardBg = Color3.fromRGB(14, 20, 32),              -- #0E1420
-    CardBorder = Color3.fromRGB(34, 48, 73),          -- #223049
+    Background = Color3.fromRGB(13, 13, 15),          -- #0D0D0F
+    SidebarBg = Color3.fromRGB(16, 16, 19),           -- #101013
+    CardBg = Color3.fromRGB(25, 24, 29),              -- #19181D
+    CardBorder = Color3.fromRGB(53, 51, 59),          -- #35333B
     
-    AccentBlue = Color3.fromRGB(37, 120, 255),        -- #2578FF (Primary Accent)
-    AccentLight = Color3.fromRGB(82, 151, 255),       -- #5297FF (Secondary Accent)
-    TabActiveBg = Color3.fromRGB(18, 38, 68),         -- Dark Active Tab
-    TabActiveBorder = Color3.fromRGB(37, 120, 255),     -- #2578FF
-    CloseBtnBg = Color3.fromRGB(35, 20, 30),          -- Dark Redish/Purple Close
+    AccentRed = Color3.fromRGB(255, 65, 75),          -- #FF414B (Jaden Red)
+    TabActiveBg = Color3.fromRGB(75, 29, 36),         -- #4B1D24
+    TabActiveBorder = Color3.fromRGB(255, 65, 75),     -- #FF414B
+    CloseBtnBg = Color3.fromRGB(57, 28, 34),          -- #391C22
     
-    BadgeBg = Color3.fromRGB(14, 20, 32),
-    BadgeBorder = Color3.fromRGB(34, 48, 73),
-    RunPillBg = Color3.fromRGB(20, 32, 54),
+    BadgeBg = Color3.fromRGB(25, 24, 29),
+    BadgeBorder = Color3.fromRGB(53, 51, 59),
+    RunPillBg = Color3.fromRGB(35, 33, 42),
     
-    TextPrimary = Color3.fromRGB(245, 247, 255),       -- #F5F7FF
-    TextSecondary = Color3.fromRGB(130, 145, 175),     -- #8291B9
-    TextMuted = Color3.fromRGB(100, 115, 145),
-    BorderColor = Color3.fromRGB(34, 48, 73),         -- #223049
+    TextPrimary = Color3.fromRGB(245, 245, 247),       -- #F5F5F7
+    TextSecondary = Color3.fromRGB(166, 165, 174),     -- #A6A5AE
+    TextMuted = Color3.fromRGB(155, 155, 165),         -- #9B9BA5
+    BorderColor = Color3.fromRGB(255, 65, 75),         -- #FF414B
     
     GoldBadge = Color3.fromRGB(255, 185, 0),
     KeyTagBg = Color3.fromRGB(220, 53, 69),
-    NoKeyTagBg = Color3.fromRGB(46, 146, 116),
+    NoKeyTagBg = Color3.fromRGB(40, 167, 69),
     WaGreen = Color3.fromRGB(37, 211, 102),
     WaDarkGreen = Color3.fromRGB(18, 38, 28)
 }
@@ -299,7 +298,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- Main Frame Jaden Hub Style (Theme Color Updated)
+-- Panel Utama Jaden Hub Style (Thick Red Border Thickness = 6)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(630, 420)
@@ -316,53 +315,42 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 28)
 
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 2
-MainStroke.Transparency = 0.1
+MainStroke.Thickness = 6 -- Ketebalan outline utama ditingkatkan
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ 5. LOGO "F" (ELEGANT HUB BLUE STYLE) ]
-local function CreateFLogo(size)
+-- [ 5. LOGO VEKTOR "F" (Jaden Fox Style / Vector F) ]
+local function CreateFLogo(size, rotation)
     local container = Instance.new("Frame")
     container.Size = size
-    container.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
-    container.BorderSizePixel = 0
-    container.ClipsDescendants = true
+    container.BackgroundTransparency = 1
+    container.Rotation = rotation or 0
 
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 6)
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))
+    topBar.BackgroundColor3 = Theme.AccentRed
+    topBar.BorderSizePixel = 0
+    topBar.Parent = container
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 3)
 
-    local logoStroke = Instance.new("UIStroke")
-    logoStroke.Color = Theme.AccentBlue
-    logoStroke.Thickness = 1
-    logoStroke.Transparency = 0.35
-    logoStroke.Parent = container
+    local midBar = Instance.new("Frame")
+    midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))
+    midBar.Position = UDim2.new(0.2, 0, 0.4, 0)
+    midBar.BackgroundColor3 = Theme.AccentRed
+    midBar.BorderSizePixel = 0
+    midBar.Parent = container
+    Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 3)
 
-    local fVert = Instance.new("Frame")
-    fVert.Size = UDim2.fromOffset(math.max(2, size.X.Offset * 0.14), size.Y.Offset * 0.5)
-    fVert.Position = UDim2.fromOffset(size.X.Offset * 0.3, size.Y.Offset * 0.25)
-    fVert.BackgroundColor3 = Theme.AccentBlue
-    fVert.BorderSizePixel = 0
-    fVert.Rotation = -6
-    fVert.Parent = container
-
-    local fTop = Instance.new("Frame")
-    fTop.Size = UDim2.fromOffset(size.X.Offset * 0.36, math.max(2, size.Y.Offset * 0.14))
-    fTop.Position = UDim2.fromOffset(size.X.Offset * 0.38, size.Y.Offset * 0.25)
-    fTop.BackgroundColor3 = Theme.AccentBlue
-    fTop.BorderSizePixel = 0
-    fTop.Rotation = -6
-    fTop.Parent = container
-
-    local fMid = Instance.new("Frame")
-    fMid.Size = UDim2.fromOffset(size.X.Offset * 0.28, math.max(2, size.Y.Offset * 0.11))
-    fMid.Position = UDim2.fromOffset(size.X.Offset * 0.35, size.Y.Offset * 0.45)
-    fMid.BackgroundColor3 = Theme.AccentLight
-    fMid.BorderSizePixel = 0
-    fMid.Rotation = -6
-    fMid.Parent = container
+    local stem = Instance.new("Frame")
+    stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)
+    stem.Position = UDim2.new(0.08, 0, 0, 0)
+    stem.BackgroundColor3 = Theme.AccentRed
+    stem.BorderSizePixel = 0
+    stem.Parent = container
+    Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 3)
 
     return container
 end
@@ -375,27 +363,27 @@ Header.BackgroundTransparency = 1
 Header.Active = true
 Header.Parent = MainFrame
 
-local LogoF = CreateFLogo(UDim2.fromOffset(28, 28))
+local LogoF = CreateFLogo(UDim2.fromOffset(26, 26), 0)
 LogoF.Position = UDim2.new(0, 20, 0, 18)
 LogoF.Parent = Header
 
 local Title = Instance.new("TextLabel")
 Title.Name = "Title"
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 22
-Title.TextColor3 = Theme.TextPrimary
+Title.TextSize = 24
+Title.TextColor3 = Theme.AccentRed
 Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(0, 200, 0, 26)
-Title.Position = UDim2.new(0, 58, 0, 18)
+Title.Size = UDim2.new(0, 180, 0, 26)
+Title.Position = UDim2.new(0, 56, 0, 18)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.RichText = true
-Title.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
+Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
-WaBtn.Size = UDim2.fromOffset(170, 26)
-WaBtn.Position = UDim2.new(0, 260, 0, 19)
+WaBtn.Size = UDim2.fromOffset(190, 26)
+WaBtn.Position = UDim2.new(0, 245, 0, 19)
 WaBtn.BackgroundColor3 = Theme.WaGreen
 WaBtn.Text = "💬 SALURAN WA"
 WaBtn.Font = Enum.Font.GothamBold
@@ -408,7 +396,7 @@ Instance.new("UICorner", WaBtn).CornerRadius = UDim.new(0, 8)
 
 local WaStroke = Instance.new("UIStroke")
 WaStroke.Color = Theme.WaDarkGreen
-WaStroke.Thickness = 1.5
+WaStroke.Thickness = 2
 WaStroke.Parent = WaBtn
 
 WaBtn.MouseButton1Click:Connect(function()
@@ -453,12 +441,12 @@ local function CreateHeaderButton(iconText, callback, isClose)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
 
     local stroke = Instance.new("UIStroke")
-    stroke.Color = isClose and Color3.fromRGB(120, 40, 50) or Theme.CardBorder
-    stroke.Thickness = 1
+    stroke.Color = isClose and Theme.TabActiveBorder or Theme.CardBorder
+    stroke.Thickness = 2
     stroke.Parent = btn
 
     btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = isClose and Color3.fromRGB(220, 53, 69) or Theme.TabActiveBg }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = isClose and Theme.AccentRed or Theme.TabActiveBg }):Play()
     end)
     btn.MouseLeave:Connect(function()
         TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = isClose and Theme.CloseBtnBg or Theme.CardBg }):Play()
@@ -470,7 +458,7 @@ end
 
 -- Header Line Separator
 local HeaderLine = Instance.new("Frame")
-HeaderLine.Size = UDim2.new(1, -40, 0, 1)
+HeaderLine.Size = UDim2.new(1, -40, 0, 2)
 HeaderLine.Position = UDim2.new(0, 20, 0, 60)
 HeaderLine.BackgroundColor3 = Theme.CardBorder
 HeaderLine.BorderSizePixel = 0
@@ -564,7 +552,7 @@ Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
 
 local SearchStroke = Instance.new("UIStroke")
 SearchStroke.Color = Theme.CardBorder
-SearchStroke.Thickness = 1
+SearchStroke.Thickness = 2
 SearchStroke.Parent = SearchBox
 
 local ScriptScroll = Instance.new("ScrollingFrame")
@@ -573,12 +561,14 @@ ScriptScroll.Position = UDim2.new(0, 0, 0, 66)
 ScriptScroll.BackgroundTransparency = 1
 ScriptScroll.BorderSizePixel = 0
 ScriptScroll.ScrollBarThickness = 3
-ScriptScroll.ScrollBarImageColor3 = Theme.AccentBlue
+ScriptScroll.ScrollBarImageColor3 = Theme.AccentRed
 ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScriptScroll.Parent = Content
 
--- [ 8. RENDER KONTEN ]
+local RenderSidebarTabs 
+
+-- [ 8. RENDER KONTEN (CARD JADEN HUB 2-COLUMN GRID STYLE) ]
 local function RenderContent(categoryIndex)
     local category = Categories[categoryIndex]
 
@@ -622,7 +612,7 @@ local function RenderContent(categoryIndex)
 
         local BannerStroke = Instance.new("UIStroke")
         BannerStroke.Color = Theme.CardBorder
-        BannerStroke.Thickness = 1
+        BannerStroke.Thickness = 2
         BannerStroke.Parent = StatsBanner
 
         local StatsText = Instance.new("TextLabel")
@@ -634,7 +624,7 @@ local function RenderContent(categoryIndex)
         StatsText.Position = UDim2.new(0, 10, 0, 0)
         StatsText.TextXAlignment = Enum.TextXAlignment.Left
         StatsText.RichText = true
-        StatsText.Text = "📊 <font color=\"rgb(255, 255, 255)\">TOTAL SCRIPT:</font> " .. totalCount .. "   |   <font color=\"rgb(220, 53, 69)\">🔑 KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(46, 146, 116)\">🔓 NO KEY:</font> " .. noKeyCount
+        StatsText.Text = "📊 <font color=\"rgb(255, 255, 255)\">TOTAL SCRIPT:</font> " .. totalCount .. "   |   <font color=\"rgb(220, 53, 69)\">🔑 KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(40, 167, 69)\">🔓 NO KEY:</font> " .. noKeyCount
         StatsText.Parent = StatsBanner
 
         local GridContainer = Instance.new("Frame")
@@ -660,7 +650,7 @@ local function RenderContent(categoryIndex)
 
             local cardStroke = Instance.new("UIStroke")
             cardStroke.Color = Theme.CardBorder
-            cardStroke.Thickness = 1
+            cardStroke.Thickness = 2
             cardStroke.Parent = card
 
             local indicator = Instance.new("Frame")
@@ -742,7 +732,7 @@ local function RenderContent(categoryIndex)
 
         local cardStroke = Instance.new("UIStroke")
         cardStroke.Color = Theme.CardBorder
-        cardStroke.Thickness = 1
+        cardStroke.Thickness = 2.5 -- Stroke tebal untuk kartu script
         cardStroke.Parent = card
 
         local nameLabel = Instance.new("TextLabel")
@@ -768,7 +758,7 @@ local function RenderContent(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = card
 
-        -- Tombol Run/Execute (Blue Accent)
+        -- Tombol Run/Execute (Jaden Dot Style / Text Pill)
         local runBtn = Instance.new("TextButton")
         runBtn.Size = UDim2.fromOffset(46, 22)
         runBtn.Position = UDim2.new(1, -54, 0.5, -11)
@@ -776,23 +766,23 @@ local function RenderContent(categoryIndex)
         runBtn.Text = "run"
         runBtn.Font = Enum.Font.GothamBold
         runBtn.TextSize = 10
-        runBtn.TextColor3 = Theme.AccentBlue
+        runBtn.TextColor3 = Theme.AccentRed
         runBtn.AutoButtonColor = false
         runBtn.Parent = card
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
 
         local runStroke = Instance.new("UIStroke")
         runStroke.Color = Theme.CardBorder
-        runStroke.Thickness = 1
+        runStroke.Thickness = 1.5
         runStroke.Parent = runBtn
 
         runBtn.MouseEnter:Connect(function()
-            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentBlue }):Play()
+            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentRed }):Play()
             runBtn.TextColor3 = Theme.TextPrimary
         end)
         runBtn.MouseLeave:Connect(function()
             TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
-            runBtn.TextColor3 = Theme.AccentBlue
+            runBtn.TextColor3 = Theme.AccentRed
         end)
 
         runBtn.MouseButton1Click:Connect(function()
@@ -865,7 +855,7 @@ for _, fDef in ipairs(filterDefs) do
 
     local fStroke = Instance.new("UIStroke")
     fStroke.Color = (activeFilter == fDef.id) and Theme.TabActiveBorder or Theme.CardBorder
-    fStroke.Thickness = 1
+    fStroke.Thickness = 2 -- Stroke tombol filter ditingkatkan
     fStroke.Parent = fBtn
 
     filterButtons[fDef.id] = { btn = fBtn, stroke = fStroke }
@@ -888,7 +878,7 @@ SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
     RenderContent(activeCategoryIndex)
 end)
 
--- [ 10. RENDER TAB SIDEBAR ]
+-- [ 10. RENDER TAB SIDEBAR (JADEN HUB SIDEBAR STYLE) ]
 local sidebarTabButtons = {}
 
 local function SetActiveCategory(index)
@@ -904,8 +894,8 @@ local function SetActiveCategory(index)
             BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
         }):Play()
         btnData.frame.BackgroundTransparency = isActive and 0 or 1
-        btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-        btnData.stroke.Enabled = isActive
+        btnData.stroke.Color = isActive and Theme.TabActiveBorder or Theme.CardBorder
+        btnData.stroke.Enabled = true -- Tetap tampilkan stroke meskipun tidak aktif
         btnData.label.TextColor3 = isActive and Theme.TextPrimary or Theme.TextMuted
         btnData.indicator.Visible = isActive
 
@@ -923,7 +913,7 @@ local function SetActiveCategory(index)
     RenderContent(index)
 end
 
-local function RenderSidebarTabs()
+RenderSidebarTabs = function()
     for _, child in ipairs(Sidebar:GetChildren()) do
         if not child:IsA("UIListLayout") then
             child:Destroy()
@@ -944,17 +934,17 @@ local function RenderSidebarTabs()
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 14)
 
         local tabStroke = Instance.new("UIStroke")
-        tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-        tabStroke.Thickness = 1.5
-        tabStroke.Enabled = (i == activeCategoryIndex)
+        tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Theme.CardBorder
+        tabStroke.Thickness = 2.5 -- Stroke sidebar tebal
+        tabStroke.Enabled = true
         tabStroke.Parent = tabBtn
 
-        -- Indikator Vertikal Biru Aksen
+        -- Indikator Vertikal Merah Khas Jaden Hub
         local indicator = Instance.new("Frame")
         indicator.Name = "Indicator"
         indicator.Size = UDim2.new(0, 5, 0, 30)
         indicator.Position = UDim2.new(0, 6, 0.5, -15)
-        indicator.BackgroundColor3 = Theme.AccentBlue
+        indicator.BackgroundColor3 = Theme.AccentRed
         indicator.BorderSizePixel = 0
         indicator.Visible = (i == activeCategoryIndex)
         indicator.Parent = tabBtn
@@ -979,7 +969,7 @@ local function RenderSidebarTabs()
             notifBadge.Size = UDim2.fromOffset(16, 16)
             notifBadge.AnchorPoint = Vector2.new(1, 0.5)
             notifBadge.Position = UDim2.new(1, -8, 0.5, 0)
-            notifBadge.BackgroundColor3 = Theme.AccentBlue
+            notifBadge.BackgroundColor3 = Theme.AccentRed
             notifBadge.Text = "!"
             notifBadge.Font = Enum.Font.GothamBold
             notifBadge.TextSize = 10
@@ -999,7 +989,7 @@ end
 RenderSidebarTabs()
 RenderContent(activeCategoryIndex)
 
--- [ 11. DRAG SYSTEM ]
+-- [ 11. DRAG SYSTEM (HEADER) ]
 local isDragging = false
 local dragStartPos = Vector3.new()
 local startFramePos = UDim2.new()
@@ -1039,7 +1029,7 @@ ResizeHandle.Name = "ResizeHandle"
 ResizeHandle.Size = UDim2.fromOffset(20, 20)
 ResizeHandle.AnchorPoint = Vector2.new(1, 1)
 ResizeHandle.Position = UDim2.new(1, 0, 1, 0)
-ResizeHandle.BackgroundColor3 = Theme.AccentBlue
+ResizeHandle.BackgroundColor3 = Theme.AccentRed
 ResizeHandle.Text = "◢"
 ResizeHandle.Font = Enum.Font.GothamBold
 ResizeHandle.TextSize = 10
@@ -1076,7 +1066,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- [ 12. FLOATING TOGGLE BUTTON ]
+-- [ 12. FLOATING TOGGLE BUTTON (F) ]
 local FloatingBtn = Instance.new("TextButton")
 FloatingBtn.Name = "FloatingToggleBtn"
 FloatingBtn.Size = UDim2.fromOffset(46, 46)
@@ -1092,12 +1082,12 @@ FloatingBtn.Parent = ScreenGui
 Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 14)
 
 local FloatingStroke = Instance.new("UIStroke")
-FloatingStroke.Color = Theme.AccentBlue
-FloatingStroke.Thickness = 2
+FloatingStroke.Color = Theme.AccentRed
+FloatingStroke.Thickness = 3 -- Stroke floating button tebal
 FloatingStroke.Parent = FloatingBtn
 
-local FloatingLogo = CreateFLogo(UDim2.fromOffset(26, 26))
-FloatingLogo.Position = UDim2.new(0.5, -13, 0.5, -13)
+local FloatingLogo = CreateFLogo(UDim2.fromOffset(22, 22), 0)
+FloatingLogo.Position = UDim2.new(0.5, -11, 0.5, -11)
 FloatingLogo.Parent = FloatingBtn
 
 local FloatingScale = Instance.new("UIScale")
@@ -1195,7 +1185,7 @@ CreateHeaderButton("✕", function()
     ToggleMainUI(false)
 end, true)
 
--- [ 14. BOOT LOADING SCREEN ]
+-- [ 14. BOOT LOADING SCREEN (REDESIGNED) ]
 local BootScreen = Instance.new("CanvasGroup")
 BootScreen.Name = "BootScreen"
 BootScreen.Size = UDim2.fromOffset(290, 140)
@@ -1209,23 +1199,22 @@ BootScreen.Parent = ScreenGui
 Instance.new("UICorner", BootScreen).CornerRadius = UDim.new(0, 18)
 
 local BootStroke = Instance.new("UIStroke")
-BootStroke.Color = Theme.AccentBlue
-BootStroke.Thickness = 2
+BootStroke.Color = Theme.AccentRed
+BootStroke.Thickness = 4 -- Outline loading screen dipertebal
 BootStroke.Parent = BootScreen
 
-local BootLogo = CreateFLogo(UDim2.fromOffset(28, 28))
+local BootLogo = CreateFLogo(UDim2.new(0, 28, 0, 28), 0)
 BootLogo.Position = UDim2.new(0.5, -14, 0, 16)
 BootLogo.Parent = BootScreen
 
 local BootTitle = Instance.new("TextLabel")
 BootTitle.Font = Enum.Font.GothamBold
 BootTitle.TextSize = 16
-BootTitle.TextColor3 = Theme.TextPrimary
+BootTitle.TextColor3 = Theme.AccentRed
 BootTitle.BackgroundTransparency = 1
-BootTitle.RichText = true
 BootTitle.Size = UDim2.new(1, -20, 0, 20)
 BootTitle.Position = UDim2.new(0, 10, 0, 50)
-BootTitle.Text = 'leon4951 <font color="rgb(65,135,255)">Hub</font>'
+BootTitle.Text = "LEON4951 HUB"
 BootTitle.Parent = BootScreen
 
 local BootSubText = Instance.new("TextLabel")
@@ -1248,7 +1237,7 @@ Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
 
 local BootFill = Instance.new("Frame")
 BootFill.Size = UDim2.new(0, 0, 1, 0)
-BootFill.BackgroundColor3 = Theme.AccentBlue
+BootFill.BackgroundColor3 = Theme.AccentRed
 BootFill.BorderSizePixel = 0
 BootFill.Parent = BootTrack
 Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)
