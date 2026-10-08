@@ -403,11 +403,11 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- Tombol Close (X) Merah Kiri Atas / Samping WA Btn
+-- Tombol Close (X) Merah Kanan Atas
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.fromOffset(26, 26)
-CloseBtn.Position = UDim2.new(1, -38, 0, 15)
+CloseBtn.Position = UDim2.new(1, -36, 0, 15)
 CloseBtn.BackgroundColor3 = Theme.CloseRed
 CloseBtn.Text = "✕"
 CloseBtn.Font = Enum.Font.GothamBold
@@ -429,11 +429,11 @@ CloseBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Tombol Saluran WA Ringkas & Rapi di Kanan Atas
+-- Tombol Saluran WA Ringkas & Rapi di Samping Tombol X
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(115, 26)
-WaBtn.Position = UDim2.new(1, -160, 0, 15)
+WaBtn.Position = UDim2.new(1, -158, 0, 15)
 WaBtn.BackgroundColor3 = Theme.WaGreen
 WaBtn.Text = "💬 SALURAN WA"
 WaBtn.Font = Enum.Font.GothamBold
@@ -746,11 +746,11 @@ local function RenderContent(categoryIndex)
 
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 12
+        nameLabel.TextSize = 11
         nameLabel.TextColor3 = Theme.TextPrimary
         nameLabel.BackgroundTransparency = 1
-        nameLabel.Size = UDim2.new(1, -54, 0, 20)
-        nameLabel.Position = UDim2.new(0, 10, 0, 8)
+        nameLabel.Size = UDim2.new(1, -38, 0, 20)
+        nameLabel.Position = UDim2.new(0, 10, 0, 6)
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
         nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
         nameLabel.Text = scriptEntry.name
@@ -772,37 +772,31 @@ local function RenderContent(categoryIndex)
 
         local statusText = Instance.new("TextLabel")
         statusText.Font = Enum.Font.GothamBold
-        statusText.TextSize = 10
+        statusText.TextSize = 9
         statusText.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
         statusText.BackgroundTransparency = 1
         statusText.Size = UDim2.fromScale(1, 1)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol Run/Execute (MERAPIKAN TOMBOL RUN & OUTLINE TEKS)
+        -- Tombol RUN / Execute (DIPERBAIKI SANGAT BERSIH TANPA STROKE DISTORSI TEKS)
         local runBtn = Instance.new("TextButton")
-        runBtn.Size = UDim2.fromOffset(54, 24)
-        runBtn.Position = UDim2.new(1, -60, 0.5, 4)
+        runBtn.Name = "RunButton"
+        runBtn.Size = UDim2.fromOffset(52, 22)
+        runBtn.Position = UDim2.new(1, -60, 1, -30)
         runBtn.BackgroundColor3 = Theme.RunPillBg
         runBtn.Text = "RUN"
         runBtn.Font = Enum.Font.GothamBold
         runBtn.TextSize = 11
-        runBtn.TextColor3 = Theme.AccentCyan
+        runBtn.TextColor3 = Theme.TextPrimary
         runBtn.AutoButtonColor = false
         runBtn.Parent = card
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
 
         local runStroke = Instance.new("UIStroke")
         runStroke.Color = Theme.AccentCyan
-        runStroke.Thickness = 1.5
+        runStroke.Thickness = 1.2
         runStroke.Parent = runBtn
-
-        -- Outline tipis untuk Teks "RUN"
-        local runTextStroke = Instance.new("UIStroke")
-        runTextStroke.Color = Color3.fromRGB(0, 0, 0)
-        runTextStroke.Thickness = 1.2
-        runTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-        runTextStroke.Parent = runBtn
 
         runBtn.MouseEnter:Connect(function()
             TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentCyan }):Play()
@@ -810,7 +804,7 @@ local function RenderContent(categoryIndex)
         end)
         runBtn.MouseLeave:Connect(function()
             TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
-            runBtn.TextColor3 = Theme.AccentCyan
+            runBtn.TextColor3 = Theme.TextPrimary
         end)
 
         runBtn.MouseButton1Click:Connect(function()
@@ -828,10 +822,11 @@ local function RenderContent(categoryIndex)
             end
         end)
 
-        -- Favorite Button Star (MENAIKKAN POSISI BINTANG 2-3 PIKSEL)
+        -- Favorite Button Star (DINAIKKAN POSISINYA KE KANAN ATAS KARTU)
         local favBtn = Instance.new("TextButton")
+        favBtn.Name = "FavoriteBtn"
         favBtn.Size = UDim2.fromOffset(24, 24)
-        favBtn.Position = UDim2.new(1, -28, 0, 2)
+        favBtn.Position = UDim2.new(1, -30, 0, 4)
         favBtn.BackgroundTransparency = 1
         local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url
         favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"
