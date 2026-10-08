@@ -47,7 +47,8 @@ local Theme = {
     NoKeyTagBg = Color3.fromRGB(40, 210, 120),         -- No Key Green
     NoKeyTagPill = Color3.fromRGB(15, 45, 30),
     WaGreen = Color3.fromRGB(37, 211, 102),
-    WaDarkGreen = Color3.fromRGB(18, 38, 28)
+    WaDarkGreen = Color3.fromRGB(18, 38, 28),
+    CloseRed = Color3.fromRGB(255, 60, 70)
 }
 
 local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
@@ -374,6 +375,9 @@ local function CreateFLogo(size)
     return container
 end
 
+-- Forward declaration untuk Toggle function
+local ToggleMainUI
+
 -- [ 6. HEADER ]
 local Header = Instance.new("Frame")
 Header.Name = "Header"
@@ -399,11 +403,37 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
+-- Tombol Close (X) Merah Kiri Atas / Samping WA Btn
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.fromOffset(26, 26)
+CloseBtn.Position = UDim2.new(1, -38, 0, 15)
+CloseBtn.BackgroundColor3 = Theme.CloseRed
+CloseBtn.Text = "✕"
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 13
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = Header
+
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+
+local CloseStroke = Instance.new("UIStroke")
+CloseStroke.Color = Color3.fromRGB(200, 30, 45)
+CloseStroke.Thickness = 1.5
+CloseStroke.Parent = CloseBtn
+
+CloseBtn.MouseButton1Click:Connect(function()
+    if ToggleMainUI then
+        ToggleMainUI(false)
+    end
+end)
+
 -- Tombol Saluran WA Ringkas & Rapi di Kanan Atas
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(115, 26)
-WaBtn.Position = UDim2.new(1, -130, 0, 15)
+WaBtn.Position = UDim2.new(1, -160, 0, 15)
 WaBtn.BackgroundColor3 = Theme.WaGreen
 WaBtn.Text = "💬 SALURAN WA"
 WaBtn.Font = Enum.Font.GothamBold
@@ -749,14 +779,14 @@ local function RenderContent(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol Run/Execute (DIPERBESAR + TEKS BER-OUTLINE)
+        -- Tombol Run/Execute (MERAPIKAN TOMBOL RUN & OUTLINE TEKS)
         local runBtn = Instance.new("TextButton")
         runBtn.Size = UDim2.fromOffset(54, 24)
-        runBtn.Position = UDim2.new(1, -60, 0.5, -12)
+        runBtn.Position = UDim2.new(1, -60, 0.5, 4)
         runBtn.BackgroundColor3 = Theme.RunPillBg
-        runBtn.Text = "run"
+        runBtn.Text = "RUN"
         runBtn.Font = Enum.Font.GothamBold
-        runBtn.TextSize = 12
+        runBtn.TextSize = 11
         runBtn.TextColor3 = Theme.AccentCyan
         runBtn.AutoButtonColor = false
         runBtn.Parent = card
@@ -767,10 +797,10 @@ local function RenderContent(categoryIndex)
         runStroke.Thickness = 1.5
         runStroke.Parent = runBtn
 
-        -- Outline tipis untuk Teks "run"
+        -- Outline tipis untuk Teks "RUN"
         local runTextStroke = Instance.new("UIStroke")
         runTextStroke.Color = Color3.fromRGB(0, 0, 0)
-        runTextStroke.Thickness = 1
+        runTextStroke.Thickness = 1.2
         runTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
         runTextStroke.Parent = runBtn
 
@@ -798,15 +828,15 @@ local function RenderContent(categoryIndex)
             end
         end)
 
-        -- Favorite Button Star (DIPERBESAR & MENCOLOK)
+        -- Favorite Button Star (MENAIKKAN POSISI BINTANG 2-3 PIKSEL)
         local favBtn = Instance.new("TextButton")
-        favBtn.Size = UDim2.fromOffset(26, 26)
-        favBtn.Position = UDim2.new(1, -30, 0, 4)
+        favBtn.Size = UDim2.fromOffset(24, 24)
+        favBtn.Position = UDim2.new(1, -28, 0, 2)
         favBtn.BackgroundTransparency = 1
         local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url
         favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"
         favBtn.Font = Enum.Font.GothamBold
-        favBtn.TextSize = 18
+        favBtn.TextSize = 16
         favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextMuted
         favBtn.AutoButtonColor = false
         favBtn.Parent = card
@@ -1125,9 +1155,8 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- [ 13. TOGGLE UI <-> FLOATING BUTTON ]
-local function ToggleMainUI(show)
+ToggleMainUI = function(show)
     if show then
-        MainFrame.Size = UDim2.fromOffset(480, 300)
         MainFrame.Visible = true
         MainScale.Scale = 0
 
