@@ -1,5 +1,5 @@
 -- ============================================================================
--- LEON4951 HUB v2 - REDESIGN (CYAN BLUE EDITION)
+-- LEON4951 HUB v2 - REDESIGN (ELEGANT DARK BLUE EDITION)
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
@@ -22,30 +22,31 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
--- [ 2. CONFIGURASI & THEME (CYAN BLUE PALETTE) ]
+-- [ 2. CONFIGURASI & THEME (PALET WARNA KODE KEDUA) ]
 local Theme = {
-    Background = Color3.fromRGB(13, 15, 20),          -- Dark Slate Bg
-    SidebarBg = Color3.fromRGB(16, 19, 25),           
-    CardBg = Color3.fromRGB(22, 26, 35),              
-    CardBorder = Color3.fromRGB(42, 50, 68),          
+    Background = Color3.fromRGB(7, 10, 17),           -- Background Utama
+    SidebarBg = Color3.fromRGB(10, 15, 24),            
+    CardBg = Color3.fromRGB(14, 20, 32),              -- Background Kartu
+    CardBorder = Color3.fromRGB(34, 48, 73),          -- Border Kartu
     
-    AccentCyan = Color3.fromRGB(0, 210, 255),         -- Light Cyan Blue
-    TabActiveBg = Color3.fromRGB(18, 55, 75),         -- Soft Cyan Dark
-    TabActiveBorder = Color3.fromRGB(0, 210, 255),     
+    Accent = Color3.fromRGB(37, 120, 255),            -- Accent Biru
+    AccentLight = Color3.fromRGB(82, 151, 255),       -- Accent Biru Terang
+    TabActiveBg = Color3.fromRGB(18, 32, 54),         
+    TabActiveBorder = Color3.fromRGB(37, 120, 255),     
     
-    BadgeBg = Color3.fromRGB(22, 26, 35),
-    RunPillBg = Color3.fromRGB(20, 38, 50),
+    BadgeBg = Color3.fromRGB(14, 20, 32),
+    RunPillBg = Color3.fromRGB(20, 35, 60),
     
-    TextPrimary = Color3.fromRGB(245, 248, 255),       
-    TextSecondary = Color3.fromRGB(160, 175, 200),     
-    TextMuted = Color3.fromRGB(130, 145, 170),         
-    BorderColor = Color3.fromRGB(0, 210, 255),         
+    TextPrimary = Color3.fromRGB(245, 247, 255),       -- Teks Utama
+    TextSecondary = Color3.fromRGB(180, 195, 220),     
+    TextMuted = Color3.fromRGB(130, 145, 175),         -- Teks Muted
+    BorderColor = Color3.fromRGB(37, 120, 255),        
     
     GoldBadge = Color3.fromRGB(255, 185, 0),
     KeyTagBg = Color3.fromRGB(255, 75, 90),            -- Key Red
     KeyTagPill = Color3.fromRGB(50, 18, 22),
-    NoKeyTagBg = Color3.fromRGB(40, 210, 120),         -- No Key Green
-    NoKeyTagPill = Color3.fromRGB(15, 45, 30),
+    NoKeyTagBg = Color3.fromRGB(46, 146, 116),         -- OnStroke / No Key Green
+    NoKeyTagPill = Color3.fromRGB(18, 48, 43),         -- On / No Key Pill
     WaGreen = Color3.fromRGB(37, 211, 102),
     WaDarkGreen = Color3.fromRGB(18, 38, 28),
     CloseRed = Color3.fromRGB(255, 60, 70)
@@ -299,7 +300,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- Panel Utama Cyan Blue Style (Default Size: 480 x 300)
+-- Panel Utama Cyan/Dark Blue Style (Default Size: 480 x 300)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(480, 300)
@@ -323,56 +324,56 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ 5. LOGO VEKTOR "F" BAGUS (MODERN STYLIZED LOGO) ]
+-- [ 5. LOGIKAPEMBUATAN LOGO F BERDASARKAN KODE KEDUA ]
 local function CreateFLogo(size)
-    local container = Instance.new("Frame")
-    container.Size = size
-    container.BackgroundTransparency = 1
+    local LogoHolder = Instance.new("Frame")
+    LogoHolder.Name = "LogoHolder"
+    LogoHolder.Size = size
+    LogoHolder.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
+    LogoHolder.BorderSizePixel = 0
+    LogoHolder.ClipsDescendants = true
 
-    local bgGlow = Instance.new("Frame")
-    bgGlow.Size = UDim2.fromScale(1, 1)
-    bgGlow.BackgroundColor3 = Theme.AccentCyan
-    bgGlow.BackgroundTransparency = 0.85
-    bgGlow.Parent = container
-    Instance.new("UICorner", bgGlow).CornerRadius = UDim.new(0, 6)
+    local LogoCorner = Instance.new("UICorner")
+    LogoCorner.CornerRadius = UDim.new(0, 5)
+    LogoCorner.Parent = LogoHolder
 
-    -- Batang Utama (Vertical Stem)
-    local stem = Instance.new("Frame")
-    stem.Size = UDim2.new(0.26, 0, 0.84, 0)
-    stem.Position = UDim2.new(0.12, 0, 0.08, 0)
-    stem.BackgroundColor3 = Theme.AccentCyan
-    stem.BorderSizePixel = 0
-    stem.Parent = container
-    Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 3)
+    local LogoStroke = Instance.new("UIStroke")
+    LogoStroke.Color = Theme.Accent
+    LogoStroke.Thickness = 1
+    LogoStroke.Transparency = 0.35
+    LogoStroke.Parent = LogoHolder
 
-    -- Garis Atas (Top Bar)
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(0.64, 0, 0.24, 0)
-    topBar.Position = UDim2.new(0.24, 0, 0.08, 0)
-    topBar.BackgroundColor3 = Theme.AccentCyan
-    topBar.BorderSizePixel = 0
-    topBar.Parent = container
-    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 3)
+    -- Batang vertikal F
+    local FVertical = Instance.new("Frame")
+    FVertical.Name = "FVertical"
+    FVertical.Size = UDim2.new(0.14, 0, 0.5, 0)
+    FVertical.Position = UDim2.new(0.3, 0, 0.25, 0)
+    FVertical.BackgroundColor3 = Theme.Accent
+    FVertical.BorderSizePixel = 0
+    FVertical.Rotation = -6
+    FVertical.Parent = LogoHolder
 
-    -- Garis Tengah (Mid Bar)
-    local midBar = Instance.new("Frame")
-    midBar.Size = UDim2.new(0.48, 0, 0.2, 0)
-    midBar.Position = UDim2.new(0.24, 0, 0.42, 0)
-    midBar.BackgroundColor3 = Theme.AccentCyan
-    midBar.BorderSizePixel = 0
-    midBar.Parent = container
-    Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 3)
+    -- Garis horizontal atas F
+    local FTop = Instance.new("Frame")
+    FTop.Name = "FTop"
+    FTop.Size = UDim2.new(0.36, 0, 0.14, 0)
+    FTop.Position = UDim2.new(0.38, 0, 0.25, 0)
+    FTop.BackgroundColor3 = Theme.Accent
+    FTop.BorderSizePixel = 0
+    FTop.Rotation = -6
+    FTop.Parent = LogoHolder
 
-    -- Aksen Titik / Diamond
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0.18, 0, 0.18, 0)
-    dot.Position = UDim2.new(0.75, 0, 0.72, 0)
-    dot.BackgroundColor3 = Theme.AccentCyan
-    dot.BorderSizePixel = 0
-    dot.Parent = container
-    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    -- Garis horizontal tengah F
+    local FMiddle = Instance.new("Frame")
+    FMiddle.Name = "FMiddle"
+    FMiddle.Size = UDim2.new(0.28, 0, 0.11, 0)
+    FMiddle.Position = UDim2.new(0.36, 0, 0.44, 0)
+    FMiddle.BackgroundColor3 = Theme.AccentLight
+    FMiddle.BorderSizePixel = 0
+    FMiddle.Rotation = -6
+    FMiddle.Parent = LogoHolder
 
-    return container
+    return LogoHolder
 end
 
 -- Forward declaration untuk Toggle function
@@ -394,7 +395,7 @@ local Title = Instance.new("TextLabel")
 Title.Name = "Title"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 20
-Title.TextColor3 = Theme.AccentCyan
+Title.TextColor3 = Theme.Accent
 Title.BackgroundTransparency = 1
 Title.Size = UDim2.new(0, 180, 0, 26)
 Title.Position = UDim2.new(0, 52, 0, 15)
@@ -570,7 +571,7 @@ ScriptScroll.Position = UDim2.new(0, 0, 0, 58)
 ScriptScroll.BackgroundTransparency = 1
 ScriptScroll.BorderSizePixel = 0
 ScriptScroll.ScrollBarThickness = 3
-ScriptScroll.ScrollBarImageColor3 = Theme.AccentCyan
+ScriptScroll.ScrollBarImageColor3 = Theme.Accent
 ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScriptScroll.Parent = Content
@@ -633,7 +634,7 @@ local function RenderContent(categoryIndex)
         StatsText.Position = UDim2.new(0, 8, 0, 0)
         StatsText.TextXAlignment = Enum.TextXAlignment.Left
         StatsText.RichText = true
-        StatsText.Text = "📊 <font color=\"rgb(255, 255, 255)\">TOTAL:</font> " .. totalCount .. "   |   <font color=\"rgb(255, 75, 90)\">🔑 KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(40, 210, 120)\">🔓 NO KEY:</font> " .. noKeyCount
+        StatsText.Text = "📊 <font color=\"rgb(245, 247, 255)\">TOTAL:</font> " .. totalCount .. "   |   <font color=\"rgb(255, 75, 90)\">🔑 KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(46, 146, 116)\">🔓 NO KEY:</font> " .. noKeyCount
         StatsText.Parent = StatsBanner
 
         local GridContainer = Instance.new("Frame")
@@ -779,7 +780,7 @@ local function RenderContent(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol RUN / Execute (DIPERBAIKI SANGAT BERSIH TANPA STROKE DISTORSI TEKS)
+        -- Tombol RUN / Execute
         local runBtn = Instance.new("TextButton")
         runBtn.Name = "RunButton"
         runBtn.Size = UDim2.fromOffset(52, 22)
@@ -794,12 +795,12 @@ local function RenderContent(categoryIndex)
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
 
         local runStroke = Instance.new("UIStroke")
-        runStroke.Color = Theme.AccentCyan
+        runStroke.Color = Theme.Accent
         runStroke.Thickness = 1.2
         runStroke.Parent = runBtn
 
         runBtn.MouseEnter:Connect(function()
-            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentCyan }):Play()
+            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
             runBtn.TextColor3 = Theme.Background
         end)
         runBtn.MouseLeave:Connect(function()
@@ -822,7 +823,7 @@ local function RenderContent(categoryIndex)
             end
         end)
 
-        -- Favorite Button Star (DINAIKKAN POSISINYA KE KANAN ATAS KARTU)
+        -- Favorite Button Star (KANAN ATAS KARTU)
         local favBtn = Instance.new("TextButton")
         favBtn.Name = "FavoriteBtn"
         favBtn.Size = UDim2.fromOffset(24, 24)
@@ -966,7 +967,7 @@ RenderSidebarTabs = function()
         indicator.Name = "Indicator"
         indicator.Size = UDim2.new(0, 4, 0, 26)
         indicator.Position = UDim2.new(0, 5, 0.5, -13)
-        indicator.BackgroundColor3 = Theme.AccentCyan
+        indicator.BackgroundColor3 = Theme.Accent
         indicator.BorderSizePixel = 0
         indicator.Visible = (i == activeCategoryIndex)
         indicator.Parent = tabBtn
@@ -991,7 +992,7 @@ RenderSidebarTabs = function()
             notifBadge.Size = UDim2.fromOffset(14, 14)
             notifBadge.AnchorPoint = Vector2.new(1, 0.5)
             notifBadge.Position = UDim2.new(1, -6, 0.5, 0)
-            notifBadge.BackgroundColor3 = Theme.AccentCyan
+            notifBadge.BackgroundColor3 = Theme.Accent
             notifBadge.Text = "!"
             notifBadge.Font = Enum.Font.GothamBold
             notifBadge.TextSize = 9
@@ -1051,7 +1052,7 @@ ResizeHandle.Name = "ResizeHandle"
 ResizeHandle.Size = UDim2.fromOffset(18, 18)
 ResizeHandle.AnchorPoint = Vector2.new(1, 1)
 ResizeHandle.Position = UDim2.new(1, 0, 1, 0)
-ResizeHandle.BackgroundColor3 = Theme.AccentCyan
+ResizeHandle.BackgroundColor3 = Theme.Accent
 ResizeHandle.Text = "◢"
 ResizeHandle.Font = Enum.Font.GothamBold
 ResizeHandle.TextSize = 9
@@ -1104,12 +1105,12 @@ FloatingBtn.Parent = ScreenGui
 Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 12)
 
 local FloatingStroke = Instance.new("UIStroke")
-FloatingStroke.Color = Theme.AccentCyan
+FloatingStroke.Color = Theme.Accent
 FloatingStroke.Thickness = 2
 FloatingStroke.Parent = FloatingBtn
 
-local FloatingLogo = CreateFLogo(UDim2.fromOffset(24, 24))
-FloatingLogo.Position = UDim2.new(0.5, -12, 0.5, -12)
+local FloatingLogo = CreateFLogo(UDim2.fromOffset(26, 26))
+FloatingLogo.Position = UDim2.new(0.5, -13, 0.5, -13)
 FloatingLogo.Parent = FloatingBtn
 
 local FloatingScale = Instance.new("UIScale")
@@ -1189,7 +1190,7 @@ BootScreen.Parent = ScreenGui
 Instance.new("UICorner", BootScreen).CornerRadius = UDim.new(0, 16)
 
 local BootStroke = Instance.new("UIStroke")
-BootStroke.Color = Theme.AccentCyan
+BootStroke.Color = Theme.Accent
 BootStroke.Thickness = 2
 BootStroke.Parent = BootScreen
 
@@ -1200,7 +1201,7 @@ BootLogo.Parent = BootScreen
 local BootTitle = Instance.new("TextLabel")
 BootTitle.Font = Enum.Font.GothamBold
 BootTitle.TextSize = 15
-BootTitle.TextColor3 = Theme.AccentCyan
+BootTitle.TextColor3 = Theme.Accent
 BootTitle.BackgroundTransparency = 1
 BootTitle.Size = UDim2.new(1, -20, 0, 18)
 BootTitle.Position = UDim2.new(0, 10, 0, 46)
@@ -1227,7 +1228,7 @@ Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
 
 local BootFill = Instance.new("Frame")
 BootFill.Size = UDim2.new(0, 0, 1, 0)
-BootFill.BackgroundColor3 = Theme.AccentCyan
+BootFill.BackgroundColor3 = Theme.Accent
 BootFill.BorderSizePixel = 0
 BootFill.Parent = BootTrack
 Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)
@@ -1244,7 +1245,7 @@ BootPercentLabel.Text = "0%"
 BootPercentLabel.Parent = BootScreen
 
 local BootStatuses = {
-    { 0.00, "Initializing Cyan Theme..." },
+    { 0.00, "Initializing Elegant Theme..." },
     { 0.20, "Loading UI Components..." },
     { 0.40, "Filtering Script Database..." },
     { 0.65, "Preparing Categories..." },
