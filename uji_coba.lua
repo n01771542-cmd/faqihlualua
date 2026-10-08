@@ -719,14 +719,14 @@ local function RenderContent(categoryIndex)
         nameLabel.TextSize = 12
         nameLabel.TextColor3 = Theme.TextPrimary
         nameLabel.BackgroundTransparency = 1
-        nameLabel.Size = UDim2.new(1, -38, 0, 20)
+        nameLabel.Size = UDim2.new(1, -54, 0, 20)
         nameLabel.Position = UDim2.new(0, 10, 0, 8)
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
         nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
         nameLabel.Text = scriptEntry.name
         nameLabel.Parent = card
 
-        -- Teks KEY / NO KEY Diperbesar & Diperbagus Kapsul Badge
+        -- Teks KEY / NO KEY Kapsul Badge
         local isKey = (scriptEntry.status == "Key")
         local tagPill = Instance.new("Frame")
         tagPill.Size = isKey and UDim2.fromOffset(42, 18) or UDim2.fromOffset(56, 18)
@@ -749,14 +749,14 @@ local function RenderContent(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol Run/Execute
+        -- Tombol Run/Execute (DIPERBESAR + TEKS BER-OUTLINE)
         local runBtn = Instance.new("TextButton")
-        runBtn.Size = UDim2.fromOffset(42, 20)
-        runBtn.Position = UDim2.new(1, -48, 0.5, -10)
+        runBtn.Size = UDim2.fromOffset(54, 24)
+        runBtn.Position = UDim2.new(1, -60, 0.5, -12)
         runBtn.BackgroundColor3 = Theme.RunPillBg
         runBtn.Text = "run"
         runBtn.Font = Enum.Font.GothamBold
-        runBtn.TextSize = 10
+        runBtn.TextSize = 12
         runBtn.TextColor3 = Theme.AccentCyan
         runBtn.AutoButtonColor = false
         runBtn.Parent = card
@@ -764,8 +764,15 @@ local function RenderContent(categoryIndex)
 
         local runStroke = Instance.new("UIStroke")
         runStroke.Color = Theme.AccentCyan
-        runStroke.Thickness = 1
+        runStroke.Thickness = 1.5
         runStroke.Parent = runBtn
+
+        -- Outline tipis untuk Teks "run"
+        local runTextStroke = Instance.new("UIStroke")
+        runTextStroke.Color = Color3.fromRGB(0, 0, 0)
+        runTextStroke.Thickness = 1
+        runTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+        runTextStroke.Parent = runBtn
 
         runBtn.MouseEnter:Connect(function()
             TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.AccentCyan }):Play()
@@ -791,15 +798,15 @@ local function RenderContent(categoryIndex)
             end
         end)
 
-        -- Favorite Button Star
+        -- Favorite Button Star (DIPERBESAR & MENCOLOK)
         local favBtn = Instance.new("TextButton")
-        favBtn.Size = UDim2.fromOffset(18, 18)
-        favBtn.Position = UDim2.new(1, -22, 0, 6)
+        favBtn.Size = UDim2.fromOffset(26, 26)
+        favBtn.Position = UDim2.new(1, -30, 0, 4)
         favBtn.BackgroundTransparency = 1
         local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url
         favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"
         favBtn.Font = Enum.Font.GothamBold
-        favBtn.TextSize = 12
+        favBtn.TextSize = 18
         favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextMuted
         favBtn.AutoButtonColor = false
         favBtn.Parent = card
