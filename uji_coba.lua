@@ -198,6 +198,27 @@ local RawNewScriptsData = {
     {"OJIASA","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
     {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
     {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
+    
+    -- [ TAMBAHAN SCRIPT BARU DARI PESAN ]
+    {"LEON4951 HUB (TEMP)","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faluahub/refs/heads/main/Loader.lua\"))()"},
+    {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
+    {"MIRANDA HUB V3 (AFK)","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/mirandaafk.lua\"))()"},
+    {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
+    {"TRIPSHUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TripNation/Trips-Hub/main/games/steal_an_egg.lua\"))()"},
+    {"VANTABLACK","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tranduykhanh08428-web/VantablackHub/refs/heads/main/Stealanegg.lua.txt\"))()"},
+    {"YOKUDO HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/betdoyvaka/stealanegg/main/Loader.lua\"))()"},
+    {"LSS HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/LSSHub_Steal_An_Hub.lua\"))()"},
+    {"CYRUS HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/CyrusOffc/scriptcyrus/refs/heads/main/loader\"))()"},
+    {"TITANIC HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TITANIC-HUB/StealAnEgg/main/Loader.lua\"))()"},
+    {"ASTRAL HUB","No Key",false,"loadstring(game:HttpGet(\"https://api.polsec.sh/loader/57d088befe906a8e/76f9bde1349c5eb9\"))()"},
+    {"THANHDUY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Game/refs/heads/main/Steal-An-Egg.lua\"))()"},
+    {"LEON4951 HUB (AUTO HOP)","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/leon4951.lua\"))()"},
+    {"CM HUB","Key",false,"loadstring(game:HttpGet(\"https://cmhub-key-system.vercel.app/roblox/loader.lua\"))()"},
+    {"SYNEXHUD","Key",false,"loadstring(game:HttpGet(\"https://synex.lat/loaders/stealegg.lua\"))()"},
+    {"POLLUTED HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PollutedHub/Sae/refs/heads/main/SaePolluted\"))()"},
+    {"NOX HUB","No Key",false,"loadstring(game:HttpGet(\"https://noxscript.com/loader\"))()"},
+    {"SIGIL HUB V3","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Curu/refs/heads/main/Steal-An-Egg-V3.lua\"))()"},
+    {"SKRR HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/skrrhubontop-design/skrrhub/main/skrrhub.txt\"))()"},
 }
 
 local function NormalizeScriptData(raw)
@@ -284,13 +305,9 @@ end
 
 LoadHistory()
 
-local MonthNames = {
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-}
-
-local DayNames = {
-    "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"
+local MonthShortNames = {
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
 }
 
 local RenderContent
@@ -298,11 +315,10 @@ local Categories
 
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
-    local monthName = MonthNames[t.month] or tostring(t.month)
-    local dayName = DayNames[t.wday] or ""
+    local monthStr = MonthShortNames[t.month] or tostring(t.month)
     
-    -- Format Waktu: (tahun) (nama bulan) (nama hari) (jam)
-    local timeStr = string.format("%04d %s %s %02d:%02d", t.year, monthName, dayName, t.hour, t.min)
+    -- Format ringkas & padat agar jam tidak terpotong (misal: 2026 Okt 10:36)
+    local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
     
     for i = #HistoryList, 1, -1 do
         if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
@@ -473,7 +489,6 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- Tombol Close (X) Diperbesar (30x30)
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.fromOffset(30, 30)
@@ -765,7 +780,7 @@ RenderContent = function(categoryIndex)
 
     ContentSub.Text = "Click run to execute a script!"
 
-    -- RENDER TAB HISTORI (Sesuai Penyesuaian Waktu & Layout)
+    -- RENDER TAB HISTORI (Sesuai Penyesuaian Waktu & Penataan Ulang)
     if category.key == "History" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
@@ -808,7 +823,7 @@ RenderContent = function(categoryIndex)
             nameLbl.TextSize = 11
             nameLbl.TextColor3 = Theme.TextPrimary
             nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(1, -125, 0, 18)
+            nameLbl.Size = UDim2.new(1, -70, 0, 18)
             nameLbl.Position = UDim2.new(0, 10, 0, 6)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -838,16 +853,16 @@ RenderContent = function(categoryIndex)
             statusText.Text = string.upper(scriptEntry.status)
             statusText.Parent = tagPill
 
-            -- Teks Waktu (Diperbesar & Diperjelas)
+            -- Teks Waktu (Area Diperlebar sampai batas tombol RUN agar jam tidak terpotong)
             local timeLbl = Instance.new("TextLabel")
             timeLbl.Font = Enum.Font.GothamBold
-            timeLbl.TextSize = 11
+            timeLbl.TextSize = 10
             timeLbl.TextColor3 = Theme.AccentLight
             timeLbl.BackgroundTransparency = 1
-            timeLbl.Size = UDim2.new(1, -190, 0, 16)
-            timeLbl.Position = UDim2.new(0, 70, 0, 28)
+            timeLbl.Size = UDim2.new(1, -135, 0, 16)
+            timeLbl.Position = UDim2.new(0, 68, 0, 28)
             timeLbl.TextXAlignment = Enum.TextXAlignment.Left
-            timeLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            timeLbl.TextTruncate = Enum.TextTruncate.None
             timeLbl.Text = scriptEntry.time or "-"
             timeLbl.Parent = card
 
