@@ -34,6 +34,8 @@ local Theme = {
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(37, 120, 255),     
 
+    FilterActiveBg = Color3.fromRGB(255, 255, 255), -- Warna Latar Belakang Putih saat Aktif
+
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
 
@@ -199,7 +201,7 @@ local RawNewScriptsData = {
     {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
     {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
     
-    -- [ TAMBAHAN SCRIPT BARU DARI PESAN ]
+    -- [ SCRIPT BARU DARI PESAN ]
     {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
     {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
     {"TRIPSHUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TripNation/Trips-Hub/main/games/steal_an_egg.lua\"))()"},
@@ -315,7 +317,6 @@ local function AddToHistory(scriptEntry)
     local t = os.date("*t")
     local monthStr = MonthShortNames[t.month] or tostring(t.month)
     
-    -- Format ringkas & padat agar jam tidak terpotong
     local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
     
     for i = #HistoryList, 1, -1 do
@@ -768,13 +769,9 @@ RenderContent = function(categoryIndex)
         return
     end
 
-    if category.key == "StealAnEgg" or category.key == "Favorite" then
-        SearchBox.Visible = true
-        FilterContainer.Visible = false
-    else
-        SearchBox.Visible = false
-        FilterContainer.Visible = true
-    end
+    -- Menampilkan Filter dan Opsi Pencarian untuk Steal An Egg dan Favorite
+    FilterContainer.Visible = true
+    SearchBox.Visible = false
 
     ContentSub.Text = "Click run to execute a script!"
 
@@ -851,7 +848,7 @@ RenderContent = function(categoryIndex)
             statusText.Text = string.upper(scriptEntry.status)
             statusText.Parent = tagPill
 
-            -- Teks Waktu (Area Diperlebar sampai batas tombol RUN agar jam tidak terpotong)
+            -- Teks Waktu
             local timeLbl = Instance.new("TextLabel")
             timeLbl.Font = Enum.Font.GothamBold
             timeLbl.TextSize = 10
@@ -922,7 +919,7 @@ RenderContent = function(categoryIndex)
 
     for _, scriptEntry in ipairs(category.scripts) do
         local matchesFilter = false
-        if activeFilter == "ALL" or category.key == "StealAnEgg" or category.key == "Favorite" then
+        if activeFilter == "ALL" then
             matchesFilter = true
         elseif activeFilter == "Key" then
             matchesFilter = (scriptEntry.status == "Key")
@@ -1084,15 +1081,23 @@ for _, fDef in ipairs(filterDefs) do
     local fBtn = Instance.new("TextButton")
     fBtn.Name = "Filter_" .. fDef.id
     fBtn.Size = UDim2.fromOffset(62, 18)
-    fBtn.BackgroundColor3 = (activeFilter == fDef.id) and Theme.TabActiveBg or Theme.CardBg
+    fBtn.BackgroundColor3 = (activeFilter == fDef.id) and Theme.FilterActiveBg or Theme.CardBg
     fBtn.Text = fDef.text
     fBtn.Font = Enum.Font.GothamBold
     fBtn.TextSize = 8
-    fBtn.TextColor3 = (activeFilter == fDef.id) and Theme.TextPrimary or Theme.TextMuted
+    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255) -- Warna Teks Putih
     fBtn.AutoButtonColor = false
     fBtn.Parent = FilterContainer
     Instance.new("UICorner", fBtn).CornerRadius = UDim.new(0, 5)
 
+    -- Outline Teks Hitam Tipis
+    local textStroke = Instance.new("UIStroke")
+    textStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    textStroke.Color = Color3.fromRGB(0, 0, 0)
+    textStroke.Thickness = 1
+    textStroke.Parent = fBtn
+
+    -- Border Kartu Opsi
     local fStroke = Instance.new("UIStroke")
     fStroke.Color = (activeFilter == fDef.id) and Theme.TabActiveBorder or Theme.CardBorder
     fStroke.Thickness = 1
@@ -1105,9 +1110,8 @@ for _, fDef in ipairs(filterDefs) do
         for id, item in pairs(filterButtons) do
             local isActive = (id == activeFilter)
             TweenService:Create(item.btn, TweenInfo.new(0.12), {
-                BackgroundColor3 = isActive and Theme.TabActiveBg or Theme.CardBg
+                BackgroundColor3 = isActive and Theme.FilterActiveBg or Theme.CardBg
             }):Play()
-            item.btn.TextColor3 = isActive and Theme.TextPrimary or Theme.TextMuted
             item.stroke.Color = isActive and Theme.TabActiveBorder or Theme.CardBorder
         end
         RenderContent(activeCategoryIndex)
