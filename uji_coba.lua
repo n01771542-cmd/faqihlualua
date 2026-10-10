@@ -22,31 +22,31 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
--- [ 2. CONFIGURASI & THEME (PALET WARNA KODE KEDUA) ]
+-- [ 2. CONFIGURASI & THEME ]
 local Theme = {
-    Background = Color3.fromRGB(7, 10, 17),           -- Background Utama
+    Background = Color3.fromRGB(7, 10, 17),
     SidebarBg = Color3.fromRGB(10, 15, 24),            
-    CardBg = Color3.fromRGB(14, 20, 32),              -- Background Kartu
-    CardBorder = Color3.fromRGB(34, 48, 73),          -- Border Kartu
+    CardBg = Color3.fromRGB(14, 20, 32),              
+    CardBorder = Color3.fromRGB(34, 48, 73),          
 
-    Accent = Color3.fromRGB(37, 120, 255),            -- Accent Biru
-    AccentLight = Color3.fromRGB(82, 151, 255),       -- Accent Biru Terang
+    Accent = Color3.fromRGB(37, 120, 255),            
+    AccentLight = Color3.fromRGB(82, 151, 255),       
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(37, 120, 255),     
 
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
 
-    TextPrimary = Color3.fromRGB(245, 247, 255),       -- Teks Utama
+    TextPrimary = Color3.fromRGB(245, 247, 255),       
     TextSecondary = Color3.fromRGB(180, 195, 220),     
-    TextMuted = Color3.fromRGB(130, 145, 175),         -- Teks Muted
+    TextMuted = Color3.fromRGB(130, 145, 175),         
     BorderColor = Color3.fromRGB(37, 120, 255),        
 
     GoldBadge = Color3.fromRGB(255, 185, 0),
-    KeyTagBg = Color3.fromRGB(255, 75, 90),            -- Key Red
+    KeyTagBg = Color3.fromRGB(255, 75, 90),            
     KeyTagPill = Color3.fromRGB(50, 18, 22),
-    NoKeyTagBg = Color3.fromRGB(46, 146, 116),         -- OnStroke / No Key Green
-    NoKeyTagPill = Color3.fromRGB(18, 48, 43),         -- On / No Key Pill
+    NoKeyTagBg = Color3.fromRGB(46, 146, 116),         
+    NoKeyTagPill = Color3.fromRGB(18, 48, 43),         
     WaGreen = Color3.fromRGB(37, 211, 102),
     WaDarkGreen = Color3.fromRGB(18, 38, 28)
 }
@@ -284,6 +284,10 @@ end
 
 LoadHistory()
 
+-- Forward declaration tab & renderer
+local RenderContent
+local Categories
+
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
     local timeStr = string.format("%04d/%02d/%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.min)
@@ -307,9 +311,12 @@ local function AddToHistory(scriptEntry)
     end
     
     SaveHistory()
+    if Categories and Categories[3] then
+        Categories[3].scripts = HistoryList
+    end
 end
 
-local Categories = {
+Categories = {
     {
         key = "StealAnEgg",
         name = "steal an egg",
@@ -355,7 +362,6 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- Panel Utama Cyan/Dark Blue Style (Default Size: 480 x 300)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(480, 300)
@@ -379,7 +385,6 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ 5. LOGIKAPEMBUATAN LOGO F BERDASARKAN KODE KEDUA ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
@@ -455,13 +460,13 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- Tombol Close (X) dengan latar belakang kartu agar terlihat sangat jelas
+-- Tombol Close (X) dengan Font Standar & ukuran jelas agar terlihat
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.fromOffset(26, 26)
 CloseBtn.Position = UDim2.new(1, -36, 0, 15)
 CloseBtn.BackgroundColor3 = Theme.CardBg
-CloseBtn.Text = "✕"
+CloseBtn.Text = "X"
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 14
 CloseBtn.TextColor3 = Theme.TextPrimary
@@ -626,7 +631,6 @@ ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScriptScroll.Parent = Content
 
 local RenderSidebarTabs 
-local RenderContent
 
 -- [ 8. RENDER KONTEN ]
 RenderContent = function(categoryIndex)
@@ -738,7 +742,6 @@ RenderContent = function(categoryIndex)
         return
     end
 
-    -- Menampilkan pencarian di tab StealAnEgg & Favorite
     if category.key == "StealAnEgg" or category.key == "Favorite" then
         SearchBox.Visible = true
         FilterContainer.Visible = false
@@ -749,14 +752,14 @@ RenderContent = function(categoryIndex)
 
     ContentSub.Text = "Click run to execute a script!"
 
-    -- RENDER UNTUK TAB HISTORI (List Vertikal)
+    -- RENDER TAB HISTORI
     if category.key == "History" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
         ContentSub.Text = "Recently executed scripts history"
 
         local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim2.new(0, 6)
+        ListLayout.Padding = UDim.new(0, 6)
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         ListLayout.Parent = ScriptScroll
 
@@ -786,20 +789,18 @@ RenderContent = function(categoryIndex)
             cardStroke.Thickness = 1
             cardStroke.Parent = card
 
-            -- Nama Script
             local nameLbl = Instance.new("TextLabel")
             nameLbl.Font = Enum.Font.GothamBold
             nameLbl.TextSize = 10
             nameLbl.TextColor3 = Theme.TextPrimary
             nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(0.42, 0, 0, 18)
+            nameLbl.Size = UDim2.new(0.40, 0, 0, 18)
             nameLbl.Position = UDim2.new(0, 10, 0, 6)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
             nameLbl.Text = scriptEntry.name
             nameLbl.Parent = card
 
-            -- Status Badge (Key / No Key)
             local isKey = (scriptEntry.status == "Key")
             local tagPill = Instance.new("Frame")
             tagPill.Size = isKey and UDim2.fromOffset(40, 16) or UDim2.fromOffset(52, 16)
@@ -822,7 +823,6 @@ RenderContent = function(categoryIndex)
             statusText.Text = string.upper(scriptEntry.status)
             statusText.Parent = tagPill
 
-            -- Waktu Eksekusi (Tahun/Bulan/Hari Jam:Menit)
             local timeLbl = Instance.new("TextLabel")
             timeLbl.Font = Enum.Font.Gotham
             timeLbl.TextSize = 9
@@ -834,7 +834,6 @@ RenderContent = function(categoryIndex)
             timeLbl.Text = scriptEntry.time or "-"
             timeLbl.Parent = card
 
-            -- Tombol Execute (RUN) dengan outline hitam tipis & teks putih
             local runBtn = Instance.new("TextButton")
             runBtn.Name = "RunButton"
             runBtn.Size = UDim2.fromOffset(52, 22)
@@ -849,7 +848,7 @@ RenderContent = function(categoryIndex)
             Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
 
             local runStroke = Instance.new("UIStroke")
-            runStroke.Color = Color3.fromRGB(20, 20, 20) -- Outline hitam tipis
+            runStroke.Color = Color3.fromRGB(20, 20, 20)
             runStroke.Thickness = 1
             runStroke.Parent = runBtn
 
@@ -969,7 +968,6 @@ RenderContent = function(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol RUN dengan outline hitam tipis & teks putih
         local runBtn = Instance.new("TextButton")
         runBtn.Name = "RunButton"
         runBtn.Size = UDim2.fromOffset(52, 22)
@@ -984,7 +982,7 @@ RenderContent = function(categoryIndex)
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
 
         local runStroke = Instance.new("UIStroke")
-        runStroke.Color = Color3.fromRGB(20, 20, 20) -- Outline hitam tipis
+        runStroke.Color = Color3.fromRGB(20, 20, 20)
         runStroke.Thickness = 1
         runStroke.Parent = runBtn
 
