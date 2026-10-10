@@ -34,7 +34,7 @@ local Theme = {
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(0, 122, 255),     
 
-    FilterActiveBg = Color3.fromRGB(255, 255, 255),  -- Putih Bersih saat Dipilih
+    FilterActiveBg = Color3.fromRGB(18, 38, 65),     -- Latar belakang saat filter dipilih
 
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
@@ -408,10 +408,10 @@ MainFrame.Parent = ScreenGui
 
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
 
--- OUTLINE UTAMA UI DITEBALKAN
+-- OUTLINE UTAMA UI
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 6 -- Outline UI lebih tebal sesuai permintaan
+MainStroke.Thickness = 6
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
@@ -494,19 +494,20 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
+-- TOMBOL X (CLOSE) DIPERBESAR UKURANNYA
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
-CloseBtn.Size = UDim2.fromOffset(28, 28)
-CloseBtn.Position = UDim2.new(1, -38, 0, 12)
+CloseBtn.Size = UDim2.fromOffset(36, 36) -- Diperbesar dari 28 ke 36
+CloseBtn.Position = UDim2.new(1, -44, 0, 8)  -- Disesuaikan posisinya
 CloseBtn.BackgroundColor3 = Theme.CardBg
 CloseBtn.Text = "X"
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 14
+CloseBtn.TextSize = 16 -- Ukuran font X diperbesar
 CloseBtn.TextColor3 = Theme.TextPrimary
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Header
 
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 10)
 
 local CloseStroke = Instance.new("UIStroke")
 CloseStroke.Color = Theme.CardBorder
@@ -522,7 +523,7 @@ end)
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(120, 26)
-WaBtn.Position = UDim2.new(1, -165, 0, 13)
+WaBtn.Position = UDim2.new(1, -175, 0, 13) -- Disesuaikan posisinya agar tidak bertabrakan dengan tombol X yang baru
 WaBtn.BackgroundColor3 = Theme.WaGreen
 WaBtn.Text = "💬 SALURAN WA"
 WaBtn.Font = Enum.Font.GothamBold
@@ -592,6 +593,7 @@ Content.BackgroundTransparency = 1
 Content.Parent = Body
 
 local ContentHeader = Instance.new("Frame")
+ContentHeader.Name = "ContentHeader"
 ContentHeader.Size = UDim2.new(1, 0, 0, 54)
 ContentHeader.BackgroundTransparency = 1
 ContentHeader.Parent = Content
@@ -607,27 +609,27 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- [ PENCARIAN: LATAR GELAP DENGAN OUTLINE CARD BIRU ]
+-- [ PENCARIAN: LATAR GELAP DENGAN OUTLINE HITAM TIPIS ]
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 26)
 SearchBox.Position = UDim2.new(0, 135, 0, -3)
-SearchBox.BackgroundColor3 = Theme.CardBg                     -- Latar Belakang Gelap Khas Card
+SearchBox.BackgroundColor3 = Theme.CardBg                     
 SearchBox.PlaceholderText = "🔍 Cari nama script..."
 SearchBox.PlaceholderColor3 = Color3.fromRGB(180, 195, 220)
 SearchBox.Text = ""
-SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)         -- Teks Input Putih
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)         
 SearchBox.Font = Enum.Font.GothamBold
 SearchBox.TextSize = 10
 SearchBox.Visible = false
 SearchBox.Parent = ContentHeader
 
-Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(1, 0) -- Bentuk Oval/Pill Lengkung Sesuai Gambar
+Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(1, 0)
 
--- OUTLINE CARD WARNA BIRU UNTUK KOTAK PENCARIAN
+-- OUTLINE KOTAK PENCARIAN DIUBAH MENJADI HITAM TIPIS
 local SearchBoxBorder = Instance.new("UIStroke")
-SearchBoxBorder.Color = Theme.Accent                          -- Warna Biru Terang
-SearchBoxBorder.Thickness = 2                                 -- Outline Jelas Sesuai Gambar
+SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)              -- Outline Hitam
+SearchBoxBorder.Thickness = 1                                 -- Tipis
 SearchBoxBorder.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
@@ -1093,20 +1095,21 @@ for _, fDef in ipairs(filterDefs) do
     local fBtn = Instance.new("TextButton")
     fBtn.Name = "Filter_" .. fDef.id
     fBtn.Size = UDim2.fromOffset(66, 20)
-    -- LATAR BELAKANG WARNA PUTIH BERSIH SAAT DIPILIH, GELAP SAAT TIDAK DIPILIH
+    -- Warna latar belakang: Berubah sedikit saat dipilih, gelap saat tidak
     fBtn.BackgroundColor3 = isSelected and Theme.FilterActiveBg or Theme.CardBg
     fBtn.Text = fDef.text
     fBtn.Font = Enum.Font.GothamBold
     fBtn.TextSize = 8
-    -- TEKS HITAM SAAT BACKGROUND PUTIH, TEKS PUTIH SAAT BACKGROUND GELAP
-    fBtn.TextColor3 = isSelected and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 255, 255)
+    -- Warna teks SELALU PUTIH sesuai permintaan
+    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     fBtn.AutoButtonColor = false
     fBtn.Parent = FilterContainer
     Instance.new("UICorner", fBtn).CornerRadius = UDim.new(0, 5)
 
+    -- OUTLINE HITAM TIPIS PADA TOMBOL FILTER
     local fStroke = Instance.new("UIStroke")
-    fStroke.Color = isSelected and Theme.TabActiveBorder or Theme.CardBorder
-    fStroke.Thickness = 1
+    fStroke.Color = Color3.fromRGB(0, 0, 0) -- Hitam
+    fStroke.Thickness = 1                  -- Tipis
     fStroke.Parent = fBtn
 
     filterButtons[fDef.id] = { btn = fBtn, stroke = fStroke }
@@ -1118,8 +1121,8 @@ for _, fDef in ipairs(filterDefs) do
             TweenService:Create(item.btn, TweenInfo.new(0.12), {
                 BackgroundColor3 = active and Theme.FilterActiveBg or Theme.CardBg
             }):Play()
-            item.btn.TextColor3 = active and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 255, 255)
-            item.stroke.Color = active and Theme.TabActiveBorder or Theme.CardBorder
+            -- Warna teks tetap konsisten putih
+            item.btn.TextColor3 = Color3.fromRGB(255, 255, 255)
         end
         RenderContent(activeCategoryIndex)
     end)
