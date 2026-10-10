@@ -284,13 +284,25 @@ end
 
 LoadHistory()
 
--- Forward declaration tab & renderer
+local MonthNames = {
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+}
+
+local DayNames = {
+    "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"
+}
+
 local RenderContent
 local Categories
 
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
-    local timeStr = string.format("%04d/%02d/%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.min)
+    local monthName = MonthNames[t.month] or tostring(t.month)
+    local dayName = DayNames[t.wday] or ""
+    
+    -- Format Waktu: (tahun) (nama bulan) (nama hari) (jam)
+    local timeStr = string.format("%04d %s %s %02d:%02d", t.year, monthName, dayName, t.hour, t.min)
     
     for i = #HistoryList, 1, -1 do
         if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
@@ -311,11 +323,12 @@ local function AddToHistory(scriptEntry)
     end
     
     SaveHistory()
-    if Categories and Categories[3] then
-        Categories[3].scripts = HistoryList
+    if Categories and Categories[2] then
+        Categories[2].scripts = HistoryList
     end
 end
 
+-- [ TATA LETAK CATEGORIES : Steal An Egg -> Histori -> Favorite ]
 Categories = {
     {
         key = "StealAnEgg",
@@ -324,16 +337,16 @@ Categories = {
         scripts = CleanedScripts,
     },
     {
-        key = "Favorite",
-        name = "favorite",
-        type = "script_list",
-        scripts = FavoriteScriptsData,
-    },
-    {
         key = "History",
         name = "histori",
         type = "history_list",
         scripts = HistoryList,
+    },
+    {
+        key = "Favorite",
+        name = "favorite",
+        type = "script_list",
+        scripts = FavoriteScriptsData,
     },
     {
         key = "InfoAllScript",
@@ -460,15 +473,15 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- Tombol Close (X) dengan Font Standar & ukuran jelas agar terlihat
+-- Tombol Close (X) Diperbesar (30x30)
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
-CloseBtn.Size = UDim2.fromOffset(26, 26)
-CloseBtn.Position = UDim2.new(1, -36, 0, 15)
+CloseBtn.Size = UDim2.fromOffset(30, 30)
+CloseBtn.Position = UDim2.new(1, -40, 0, 13)
 CloseBtn.BackgroundColor3 = Theme.CardBg
 CloseBtn.Text = "X"
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 14
+CloseBtn.TextSize = 16
 CloseBtn.TextColor3 = Theme.TextPrimary
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Header
@@ -477,7 +490,7 @@ Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 
 local CloseStroke = Instance.new("UIStroke")
 CloseStroke.Color = Theme.CardBorder
-CloseStroke.Thickness = 1
+CloseStroke.Thickness = 1.5
 CloseStroke.Parent = CloseBtn
 
 CloseBtn.MouseButton1Click:Connect(function()
@@ -489,7 +502,7 @@ end)
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(115, 26)
-WaBtn.Position = UDim2.new(1, -158, 0, 15)
+WaBtn.Position = UDim2.new(1, -162, 0, 15)
 WaBtn.BackgroundColor3 = Theme.WaGreen
 WaBtn.Text = "💬 SALURAN WA"
 WaBtn.Font = Enum.Font.GothamBold
@@ -752,14 +765,14 @@ RenderContent = function(categoryIndex)
 
     ContentSub.Text = "Click run to execute a script!"
 
-    -- RENDER TAB HISTORI
+    -- RENDER TAB HISTORI (Sesuai Penyesuaian Waktu & Layout)
     if category.key == "History" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
         ContentSub.Text = "Recently executed scripts history"
 
         local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim.new(0, 6)
+        ListLayout.Padding = UDim.new(0, 8)
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         ListLayout.Parent = ScriptScroll
 
@@ -778,7 +791,7 @@ RenderContent = function(categoryIndex)
         for i, scriptEntry in ipairs(category.scripts) do
             local card = Instance.new("Frame")
             card.Name = "HistCard_" .. i
-            card.Size = UDim2.new(1, 0, 0, 44)
+            card.Size = UDim2.new(1, 0, 0, 52)
             card.BackgroundColor3 = Theme.CardBg
             card.LayoutOrder = i
             card.Parent = ScriptScroll
@@ -789,22 +802,24 @@ RenderContent = function(categoryIndex)
             cardStroke.Thickness = 1
             cardStroke.Parent = card
 
+            -- Nama Script
             local nameLbl = Instance.new("TextLabel")
             nameLbl.Font = Enum.Font.GothamBold
-            nameLbl.TextSize = 10
+            nameLbl.TextSize = 11
             nameLbl.TextColor3 = Theme.TextPrimary
             nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(0.40, 0, 0, 18)
+            nameLbl.Size = UDim2.new(1, -125, 0, 18)
             nameLbl.Position = UDim2.new(0, 10, 0, 6)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
             nameLbl.Text = scriptEntry.name
             nameLbl.Parent = card
 
+            -- Tag Key / No Key
             local isKey = (scriptEntry.status == "Key")
             local tagPill = Instance.new("Frame")
             tagPill.Size = isKey and UDim2.fromOffset(40, 16) or UDim2.fromOffset(52, 16)
-            tagPill.Position = UDim2.new(0, 10, 0, 24)
+            tagPill.Position = UDim2.new(0, 10, 0, 28)
             tagPill.BackgroundColor3 = isKey and Theme.KeyTagPill or Theme.NoKeyTagPill
             tagPill.Parent = card
             Instance.new("UICorner", tagPill).CornerRadius = UDim.new(0, 4)
@@ -823,25 +838,28 @@ RenderContent = function(categoryIndex)
             statusText.Text = string.upper(scriptEntry.status)
             statusText.Parent = tagPill
 
+            -- Teks Waktu (Diperbesar & Diperjelas)
             local timeLbl = Instance.new("TextLabel")
-            timeLbl.Font = Enum.Font.Gotham
-            timeLbl.TextSize = 9
-            timeLbl.TextColor3 = Theme.TextMuted
+            timeLbl.Font = Enum.Font.GothamBold
+            timeLbl.TextSize = 11
+            timeLbl.TextColor3 = Theme.AccentLight
             timeLbl.BackgroundTransparency = 1
-            timeLbl.Size = UDim2.new(0, 110, 1, 0)
-            timeLbl.Position = UDim2.new(0, 70, 0, 0)
+            timeLbl.Size = UDim2.new(1, -190, 0, 16)
+            timeLbl.Position = UDim2.new(0, 70, 0, 28)
             timeLbl.TextXAlignment = Enum.TextXAlignment.Left
+            timeLbl.TextTruncate = Enum.TextTruncate.AtEnd
             timeLbl.Text = scriptEntry.time or "-"
             timeLbl.Parent = card
 
+            -- Tombol Execute (RUN)
             local runBtn = Instance.new("TextButton")
             runBtn.Name = "RunButton"
-            runBtn.Size = UDim2.fromOffset(52, 22)
-            runBtn.Position = UDim2.new(1, -60, 0.5, -11)
+            runBtn.Size = UDim2.fromOffset(52, 24)
+            runBtn.Position = UDim2.new(1, -60, 0.5, -12)
             runBtn.BackgroundColor3 = Theme.RunPillBg
             runBtn.Text = "RUN"
             runBtn.Font = Enum.Font.GothamBold
-            runBtn.TextSize = 10
+            runBtn.TextSize = 11
             runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
             runBtn.AutoButtonColor = false
             runBtn.Parent = card
@@ -1034,7 +1052,7 @@ RenderContent = function(categoryIndex)
             end
             SaveFavorites()
             RefreshFavoritesData()
-            Categories[2].scripts = FavoriteScriptsData
+            Categories[3].scripts = FavoriteScriptsData
         end)
     end
 
@@ -1094,8 +1112,8 @@ local function SetActiveCategory(index)
     activeCategoryIndex = index
 
     RefreshFavoritesData()
-    Categories[2].scripts = FavoriteScriptsData
-    Categories[3].scripts = HistoryList
+    Categories[2].scripts = HistoryList
+    Categories[3].scripts = FavoriteScriptsData
 
     for i, btnData in ipairs(sidebarTabButtons) do
         local isActive = (i == index)
