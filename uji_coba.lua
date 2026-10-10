@@ -34,7 +34,7 @@ local Theme = {
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(37, 120, 255),     
 
-    FilterActiveBg = Color3.fromRGB(255, 255, 255), -- Warna Latar Belakang Putih saat Aktif
+    FilterActiveBg = Color3.fromRGB(255, 255, 255), -- Warna Putih saat Aktif
 
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
@@ -201,7 +201,7 @@ local RawNewScriptsData = {
     {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
     {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
     
-    -- [ SCRIPT BARU DARI PESAN ]
+    -- [ SCRIPT BARU ]
     {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
     {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
     {"TRIPSHUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TripNation/Trips-Hub/main/games/steal_an_egg.lua\"))()"},
@@ -413,50 +413,49 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
+-- [ F LOGO DESIGN YANG LEBIH RAPI & BERSIH ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
     LogoHolder.Size = size
-    LogoHolder.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
+    LogoHolder.BackgroundColor3 = Color3.fromRGB(12, 22, 38)
     LogoHolder.BorderSizePixel = 0
     LogoHolder.ClipsDescendants = true
 
-    local LogoCorner = Instance.new("UICorner")
-    LogoCorner.CornerRadius = UDim.new(0, 5)
-    LogoCorner.Parent = LogoHolder
+    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(0, 6)
 
     local LogoStroke = Instance.new("UIStroke")
     LogoStroke.Color = Theme.Accent
-    LogoStroke.Thickness = 1
-    LogoStroke.Transparency = 0.35
+    LogoStroke.Thickness = 1.2
+    LogoStroke.Transparency = 0.2
     LogoStroke.Parent = LogoHolder
 
-    local FVertical = Instance.new("Frame")
-    FVertical.Name = "FVertical"
-    FVertical.Size = UDim2.new(0.14, 0, 0.5, 0)
-    FVertical.Position = UDim2.new(0.3, 0, 0.25, 0)
-    FVertical.BackgroundColor3 = Theme.Accent
-    FVertical.BorderSizePixel = 0
-    FVertical.Rotation = -6
-    FVertical.Parent = LogoHolder
+    -- Batang Utama F
+    local FStem = Instance.new("Frame")
+    FStem.Size = UDim2.new(0.16, 0, 0.56, 0)
+    FStem.Position = UDim2.new(0.32, 0, 0.22, 0)
+    FStem.BackgroundColor3 = Theme.Accent
+    FStem.BorderSizePixel = 0
+    FStem.Parent = LogoHolder
+    Instance.new("UICorner", FStem).CornerRadius = UDim.new(1, 0)
 
-    local FTop = Instance.new("Frame")
-    FTop.Name = "FTop"
-    FTop.Size = UDim2.new(0.36, 0, 0.14, 0)
-    FTop.Position = UDim2.new(0.38, 0, 0.25, 0)
-    FTop.BackgroundColor3 = Theme.Accent
-    FTop.BorderSizePixel = 0
-    FTop.Rotation = -6
-    FTop.Parent = LogoHolder
+    -- Top Bar F
+    FStem = Instance.new("Frame")
+    FStem.Size = UDim2.new(0.38, 0, 0.15, 0)
+    FStem.Position = UDim2.new(0.32, 0, 0.22, 0)
+    FStem.BackgroundColor3 = Theme.Accent
+    FStem.BorderSizePixel = 0
+    FStem.Parent = LogoHolder
+    Instance.new("UICorner", FStem).CornerRadius = UDim.new(1, 0)
 
-    local FMiddle = Instance.new("Frame")
-    FMiddle.Name = "FMiddle"
-    FMiddle.Size = UDim2.new(0.28, 0, 0.11, 0)
-    FMiddle.Position = UDim2.new(0.36, 0, 0.44, 0)
-    FMiddle.BackgroundColor3 = Theme.AccentLight
-    FMiddle.BorderSizePixel = 0
-    FMiddle.Rotation = -6
-    FMiddle.Parent = LogoHolder
+    -- Middle Bar F
+    FStem = Instance.new("Frame")
+    FStem.Size = UDim2.new(0.30, 0, 0.13, 0)
+    FStem.Position = UDim2.new(0.32, 0, 0.43, 0)
+    FStem.BackgroundColor3 = Theme.AccentLight
+    FStem.BorderSizePixel = 0
+    FStem.Parent = LogoHolder
+    Instance.new("UICorner", FStem).CornerRadius = UDim.new(1, 0)
 
     return LogoHolder
 end
@@ -595,7 +594,7 @@ ContentTitle.Font = Enum.Font.GothamBold
 ContentTitle.TextSize = 16
 ContentTitle.TextColor3 = Theme.TextPrimary
 ContentTitle.BackgroundTransparency = 1
-ContentTitle.Size = UDim2.new(1, 0, 0, 18)
+ContentTitle.Size = UDim2.new(0, 150, 0, 18)
 ContentTitle.Position = UDim2.new(0, 0, 0, 0)
 ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
@@ -626,12 +625,13 @@ FilterLayout.Parent = FilterContainer
 
 local filterButtons = {}
 
+-- Kotak Pencarian diposisikan di sebelah nama tab (area kosong di sebelah kanan Header Konten)
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
-SearchBox.Size = UDim2.new(1, 0, 0, 22)
-SearchBox.Position = UDim2.new(0, 0, 0, 34)
+SearchBox.Size = UDim2.new(0, 145, 0, 22)
+SearchBox.Position = UDim2.new(1, -145, 0, 0)
 SearchBox.BackgroundColor3 = Theme.CardBg
-SearchBox.PlaceholderText = "🔍 Cari nama script..."
+SearchBox.PlaceholderText = "🔍 Cari script..."
 SearchBox.PlaceholderColor3 = Theme.TextMuted
 SearchBox.Text = ""
 SearchBox.TextColor3 = Theme.TextPrimary
@@ -769,9 +769,13 @@ RenderContent = function(categoryIndex)
         return
     end
 
-    -- Menampilkan Filter dan Opsi Pencarian untuk Steal An Egg dan Favorite
-    FilterContainer.Visible = true
-    SearchBox.Visible = false
+    if category.key == "StealAnEgg" or category.key == "Favorite" then
+        FilterContainer.Visible = true
+        SearchBox.Visible = true
+    else
+        FilterContainer.Visible = true
+        SearchBox.Visible = false
+    end
 
     ContentSub.Text = "Click run to execute a script!"
 
@@ -812,7 +816,6 @@ RenderContent = function(categoryIndex)
             cardStroke.Thickness = 1
             cardStroke.Parent = card
 
-            -- Nama Script
             local nameLbl = Instance.new("TextLabel")
             nameLbl.Font = Enum.Font.GothamBold
             nameLbl.TextSize = 11
@@ -825,7 +828,6 @@ RenderContent = function(categoryIndex)
             nameLbl.Text = scriptEntry.name
             nameLbl.Parent = card
 
-            -- Tag Key / No Key
             local isKey = (scriptEntry.status == "Key")
             local tagPill = Instance.new("Frame")
             tagPill.Size = isKey and UDim2.fromOffset(40, 16) or UDim2.fromOffset(52, 16)
@@ -848,7 +850,6 @@ RenderContent = function(categoryIndex)
             statusText.Text = string.upper(scriptEntry.status)
             statusText.Parent = tagPill
 
-            -- Teks Waktu
             local timeLbl = Instance.new("TextLabel")
             timeLbl.Font = Enum.Font.GothamBold
             timeLbl.TextSize = 10
@@ -861,7 +862,6 @@ RenderContent = function(categoryIndex)
             timeLbl.Text = scriptEntry.time or "-"
             timeLbl.Parent = card
 
-            -- Tombol Execute (RUN)
             local runBtn = Instance.new("TextButton")
             runBtn.Name = "RunButton"
             runBtn.Size = UDim2.fromOffset(52, 24)
@@ -1085,19 +1085,17 @@ for _, fDef in ipairs(filterDefs) do
     fBtn.Text = fDef.text
     fBtn.Font = Enum.Font.GothamBold
     fBtn.TextSize = 8
-    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255) -- Warna Teks Putih
+    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     fBtn.AutoButtonColor = false
     fBtn.Parent = FilterContainer
     Instance.new("UICorner", fBtn).CornerRadius = UDim.new(0, 5)
 
-    -- Outline Teks Hitam Tipis
     local textStroke = Instance.new("UIStroke")
     textStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
     textStroke.Color = Color3.fromRGB(0, 0, 0)
     textStroke.Thickness = 1
     textStroke.Parent = fBtn
 
-    -- Border Kartu Opsi
     local fStroke = Instance.new("UIStroke")
     fStroke.Color = (activeFilter == fDef.id) and Theme.TabActiveBorder or Theme.CardBorder
     fStroke.Thickness = 1
