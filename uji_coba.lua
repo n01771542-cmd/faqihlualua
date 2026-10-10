@@ -412,56 +412,62 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
 
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 3
+MainStroke.Thickness = 4 -- Outline UI ditebalkan sedikit
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO EMBLEM PRESI SIKET: LINGKARAN BLUE NEON + MAHKOTA + HURUF F RAPIS ]
+-- [ LOGO KEMBALI KE SEMULA ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
     LogoHolder.Size = size
-    LogoHolder.BackgroundColor3 = Color3.fromRGB(6, 12, 22)
+    LogoHolder.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
     LogoHolder.BorderSizePixel = 0
-    LogoHolder.ClipsDescendants = false
+    LogoHolder.ClipsDescendants = true
 
-    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(1, 0)
+    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(0, 8)
 
-    -- Cincin Biru Glowing Neon Luar
-    local OuterRing = Instance.new("UIStroke")
-    OuterRing.Color = Color3.fromRGB(30, 150, 255)
-    OuterRing.Thickness = 2
-    OuterRing.Parent = LogoHolder
+    local GlowStroke = Instance.new("UIStroke")
+    GlowStroke.Color = Theme.Accent
+    GlowStroke.Thickness = 1.5
+    GlowStroke.Transparency = 0.15
+    GlowStroke.Parent = LogoHolder
 
-    -- Mahkota Cyan Kecil di Atas
-    local CrownText = Instance.new("TextLabel")
-    CrownText.Name = "Crown"
-    CrownText.Size = UDim2.new(0.4, 0, 0.3, 0)
-    CrownText.Position = UDim2.new(0.5, -2, 0.08, 0)
-    CrownText.BackgroundTransparency = 1
-    CrownText.Text = "👑"
-    CrownText.TextSize = 10
-    CrownText.Parent = LogoHolder
+    local BgDecor = Instance.new("Frame")
+    BgDecor.Size = UDim2.fromScale(0.7, 0.7)
+    BgDecor.Position = UDim2.fromScale(0.15, 0.15)
+    BgDecor.BackgroundColor3 = Color3.fromRGB(20, 45, 80)
+    BgDecor.Rotation = 45
+    BgDecor.BorderSizePixel = 0
+    BgDecor.Parent = LogoHolder
+    Instance.new("UICorner", BgDecor).CornerRadius = UDim.new(0, 4)
 
-    -- Huruf F Bergaya Cyber/Gaming Modern
-    local FText = Instance.new("TextLabel")
-    FText.Name = "FLetter"
-    FText.Size = UDim2.fromScale(1, 1)
-    FText.Position = UDim2.new(0, -1, 0, 1)
-    FText.BackgroundTransparency = 1
-    FText.Font = Enum.Font.FredokaOne
-    FText.Text = "F"
-    FText.TextSize = 20
-    FText.TextColor3 = Color3.fromRGB(40, 170, 255)
-    FText.Parent = LogoHolder
+    local Stem = Instance.new("Frame")
+    Stem.Size = UDim2.new(0.18, 0, 0.6, 0)
+    Stem.Position = UDim2.new(0.3, 0, 0.2, 0)
+    Stem.BackgroundColor3 = Theme.AccentLight
+    Stem.BorderSizePixel = 0
+    Stem.Parent = LogoHolder
+    Instance.new("UICorner", Stem).CornerRadius = UDim.new(1, 0)
 
-    local TextGlow = Instance.new("UIStroke")
-    TextGlow.Color = Color3.fromRGB(0, 230, 255)
-    TextGlow.Thickness = 1.2
-    TextGlow.Parent = FText
+    local TopBar = Instance.new("Frame")
+    TopBar.Size = UDim2.new(0.42, 0, 0.16, 0)
+    TopBar.Position = UDim2.new(0.3, 0, 0.2, 0)
+    TopBar.BackgroundColor3 = Theme.Accent
+    TopBar.BorderSizePixel = 0
+    TopBar.Parent = LogoHolder
+    Instance.new("UICorner", TopBar).CornerRadius = UDim.new(1, 0)
+
+    local MidBar = Instance.new("Frame")
+    MidBar.Size = UDim2.new(0.32, 0, 0.14, 0)
+    MidBar.Position = UDim2.new(0.3, 0, 0.44, 0)
+    MidBar.BackgroundColor3 = Color3.fromRGB(120, 180, 255)
+    MidBar.BorderSizePixel = 0
+    MidBar.Parent = LogoHolder
+    Instance.new("UICorner", MidBar).CornerRadius = UDim.new(1, 0)
 
     return LogoHolder
 end
@@ -476,8 +482,8 @@ Header.BackgroundTransparency = 1
 Header.Active = true
 Header.Parent = MainFrame
 
-local LogoF = CreateFLogo(UDim2.fromOffset(32, 32))
-LogoF.Position = UDim2.new(0, 14, 0, 10)
+local LogoF = CreateFLogo(UDim2.fromOffset(30, 30))
+LogoF.Position = UDim2.new(0, 16, 0, 11)
 LogoF.Parent = Header
 
 local Title = Instance.new("TextLabel")
@@ -606,14 +612,14 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- Kotak Pencarian dengan Outline Opsi Putih Redup & Teks Bergaris Tepi Hitam Tipis
+-- Kotak Pencarian dengan Outline Kotak Tempat Pencarian (Border Putih Redup) & Teks Putih Beroutline Hitam
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 26)
 SearchBox.Position = UDim2.new(0, 135, 0, -3)
 SearchBox.BackgroundColor3 = Theme.CardBg
 SearchBox.PlaceholderText = "🔍 Cari nama script..."
-SearchBox.PlaceholderColor3 = Color3.fromRGB(240, 240, 240)
+SearchBox.PlaceholderColor3 = Color3.fromRGB(220, 230, 245)
 SearchBox.Text = ""
 SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 SearchBox.Font = Enum.Font.GothamBold
@@ -623,18 +629,18 @@ SearchBox.Parent = ContentHeader
 
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
 
--- Outline Opsi Pencarian (Garis Frame Putih Redup)
-local SearchFrameBorder = Instance.new("UIStroke")
-SearchFrameBorder.Color = Color3.fromRGB(160, 185, 215)
-SearchFrameBorder.Thickness = 1.2
-SearchFrameBorder.Parent = SearchBox
+-- Outline Tempat / Kotak Pencarian
+local SearchBoxBorder = Instance.new("UIStroke")
+SearchBoxBorder.Color = Color3.fromRGB(180, 200, 225)
+SearchBoxBorder.Thickness = 1.4
+SearchBoxBorder.Parent = SearchBox
 
--- Outline Teks Tipis Hitam pada Tulisan Ketik
-local TextOutline = Instance.new("UIStroke")
-TextOutline.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-TextOutline.Color = Color3.fromRGB(0, 0, 0)
-TextOutline.Thickness = 1
-TextOutline.Parent = SearchBox
+-- Outline Hitam Tipis pada Teks Pencarian
+local SearchTextStroke = Instance.new("UIStroke")
+SearchTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+SearchTextStroke.Color = Color3.fromRGB(0, 0, 0)
+SearchTextStroke.Thickness = 1
+SearchTextStroke.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
 ContentSub.Font = Enum.Font.Gotham
