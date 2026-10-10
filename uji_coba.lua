@@ -28,28 +28,27 @@ local Theme = {
     SidebarBg = Color3.fromRGB(10, 15, 24),            
     CardBg = Color3.fromRGB(14, 20, 32),              -- Background Kartu
     CardBorder = Color3.fromRGB(34, 48, 73),          -- Border Kartu
-    
+
     Accent = Color3.fromRGB(37, 120, 255),            -- Accent Biru
     AccentLight = Color3.fromRGB(82, 151, 255),       -- Accent Biru Terang
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(37, 120, 255),     
-    
+
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
-    
+
     TextPrimary = Color3.fromRGB(245, 247, 255),       -- Teks Utama
     TextSecondary = Color3.fromRGB(180, 195, 220),     
     TextMuted = Color3.fromRGB(130, 145, 175),         -- Teks Muted
     BorderColor = Color3.fromRGB(37, 120, 255),        
-    
+
     GoldBadge = Color3.fromRGB(255, 185, 0),
     KeyTagBg = Color3.fromRGB(255, 75, 90),            -- Key Red
     KeyTagPill = Color3.fromRGB(50, 18, 22),
     NoKeyTagBg = Color3.fromRGB(46, 146, 116),         -- OnStroke / No Key Green
     NoKeyTagPill = Color3.fromRGB(18, 48, 43),         -- On / No Key Pill
     WaGreen = Color3.fromRGB(37, 211, 102),
-    WaDarkGreen = Color3.fromRGB(18, 38, 28),
-    CloseRed = Color3.fromRGB(255, 60, 70)
+    WaDarkGreen = Color3.fromRGB(18, 38, 28)
 }
 
 local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
@@ -404,25 +403,18 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- Tombol Close (X) Merah Kanan Atas
+-- Tombol Close (X) Tanpa Latar Belakang Merah
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.fromOffset(26, 26)
 CloseBtn.Position = UDim2.new(1, -36, 0, 15)
-CloseBtn.BackgroundColor3 = Theme.CloseRed
+CloseBtn.BackgroundTransparency = 1
 CloseBtn.Text = "✕"
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 13
+CloseBtn.TextSize = 16
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Header
-
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
-
-local CloseStroke = Instance.new("UIStroke")
-CloseStroke.Color = Color3.fromRGB(200, 30, 45)
-CloseStroke.Thickness = 1.5
-CloseStroke.Parent = CloseBtn
 
 CloseBtn.MouseButton1Click:Connect(function()
     if ToggleMainUI then
@@ -643,7 +635,7 @@ local function RenderContent(categoryIndex)
         GridContainer.AutomaticSize = Enum.AutomaticSize.Y
         GridContainer.BackgroundTransparency = 1
         GridContainer.LayoutOrder = 2
-        GridContainer.Parent = ScriptScroll
+        GridContainer.Parent = GridContainer
 
         local GridLayout = Instance.new("UIGridLayout")
         GridLayout.CellSize = UDim2.new(0.485, 0, 0, 34)
@@ -688,7 +680,15 @@ local function RenderContent(categoryIndex)
         return
     end
 
-    FilterContainer.Visible = true
+    -- Mengaktifkan pencarian untuk tab "steal an egg" dan "favorite"
+    if category.key == "StealAnEgg" or category.key == "Favorite" then
+        SearchBox.Visible = true
+        FilterContainer.Visible = false
+    else
+        SearchBox.Visible = false
+        FilterContainer.Visible = true
+    end
+
     ContentSub.Text = "Click run to execute a script!"
 
     local GridLayout = Instance.new("UIGridLayout")
@@ -702,7 +702,7 @@ local function RenderContent(categoryIndex)
 
     for _, scriptEntry in ipairs(category.scripts) do
         local matchesFilter = false
-        if activeFilter == "ALL" then
+        if activeFilter == "ALL" or category.key == "StealAnEgg" or category.key == "Favorite" then
             matchesFilter = true
         elseif activeFilter == "Key" then
             matchesFilter = (scriptEntry.status == "Key")
@@ -780,7 +780,7 @@ local function RenderContent(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol RUN / Execute
+        -- Tombol RUN / Execute dengan warna teks Putih
         local runBtn = Instance.new("TextButton")
         runBtn.Name = "RunButton"
         runBtn.Size = UDim2.fromOffset(52, 22)
@@ -789,7 +789,7 @@ local function RenderContent(categoryIndex)
         runBtn.Text = "RUN"
         runBtn.Font = Enum.Font.GothamBold
         runBtn.TextSize = 11
-        runBtn.TextColor3 = Theme.TextPrimary
+        runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         runBtn.AutoButtonColor = false
         runBtn.Parent = card
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
@@ -801,11 +801,9 @@ local function RenderContent(categoryIndex)
 
         runBtn.MouseEnter:Connect(function()
             TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
-            runBtn.TextColor3 = Theme.Background
         end)
         runBtn.MouseLeave:Connect(function()
             TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
-            runBtn.TextColor3 = Theme.TextPrimary
         end)
 
         runBtn.MouseButton1Click:Connect(function()
@@ -913,7 +911,7 @@ local function SetActiveCategory(index)
 
     for i, btnData in ipairs(sidebarTabButtons) do
         local isActive = (i == index)
-        
+
         TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
             BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
         }):Play()
