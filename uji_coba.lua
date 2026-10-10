@@ -221,7 +221,7 @@ end
 
 local CleanedScripts = ScriptDataStealAnEgg
 
--- [ SYSTEM CONFIG FAVORITE ]
+-- [ SYSTEM CONFIG FAVORITE & HISTORY ]
 local FavoriteConfigName = "leon4951hub_favorites.json"
 local FavoriteList = {}
 
@@ -259,6 +259,56 @@ local function RefreshFavoritesData()
 end
 RefreshFavoritesData()
 
+local HistoryConfigName = "leon4951hub_history.json"
+local HistoryList = {}
+
+local function LoadHistory()
+    if not readfile then return end
+    local success, raw = pcall(readfile, HistoryConfigName)
+    if not success or type(raw) ~= "string" or raw == "" then return end
+    local decodedOk, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if decodedOk and type(decoded) == "table" then
+        HistoryList = decoded
+    end
+end
+
+local function SaveHistory()
+    if writefile then
+        pcall(function()
+            writefile(HistoryConfigName, HttpService:JSONEncode(HistoryList))
+        end)
+    end
+end
+
+LoadHistory()
+
+local function AddToHistory(scriptEntry)
+    local t = os.date("*t")
+    local timeStr = string.format("%04d/%02d/%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.min)
+    
+    for i = #HistoryList, 1, -1 do
+        if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
+            table.remove(HistoryList, i)
+        end
+    end
+    
+    table.insert(HistoryList, 1, {
+        name = scriptEntry.name,
+        status = scriptEntry.status,
+        recommended = scriptEntry.recommended,
+        url = scriptEntry.url,
+        time = timeStr
+    })
+    
+    if #HistoryList > 30 then
+        table.remove(HistoryList)
+    end
+    
+    SaveHistory()
+end
+
 local Categories = {
     {
         key = "StealAnEgg",
@@ -271,6 +321,12 @@ local Categories = {
         name = "favorite",
         type = "script_list",
         scripts = FavoriteScriptsData,
+    },
+    {
+        key = "History",
+        name = "histori",
+        type = "history_list",
+        scripts = HistoryList,
     },
     {
         key = "InfoAllScript",
@@ -342,7 +398,6 @@ local function CreateFLogo(size)
     LogoStroke.Transparency = 0.35
     LogoStroke.Parent = LogoHolder
 
-    -- Batang vertikal F
     local FVertical = Instance.new("Frame")
     FVertical.Name = "FVertical"
     FVertical.Size = UDim2.new(0.14, 0, 0.5, 0)
@@ -352,7 +407,6 @@ local function CreateFLogo(size)
     FVertical.Rotation = -6
     FVertical.Parent = LogoHolder
 
-    -- Garis horizontal atas F
     local FTop = Instance.new("Frame")
     FTop.Name = "FTop"
     FTop.Size = UDim2.new(0.36, 0, 0.14, 0)
@@ -362,7 +416,6 @@ local function CreateFLogo(size)
     FTop.Rotation = -6
     FTop.Parent = LogoHolder
 
-    -- Garis horizontal tengah F
     local FMiddle = Instance.new("Frame")
     FMiddle.Name = "FMiddle"
     FMiddle.Size = UDim2.new(0.28, 0, 0.11, 0)
@@ -375,7 +428,6 @@ local function CreateFLogo(size)
     return LogoHolder
 end
 
--- Forward declaration untuk Toggle function
 local ToggleMainUI
 
 -- [ 6. HEADER ]
@@ -403,18 +455,25 @@ Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- Tombol Close (X) Tanpa Latar Belakang Merah
+-- Tombol Close (X) dengan latar belakang kartu agar terlihat sangat jelas
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.fromOffset(26, 26)
 CloseBtn.Position = UDim2.new(1, -36, 0, 15)
-CloseBtn.BackgroundTransparency = 1
+CloseBtn.BackgroundColor3 = Theme.CardBg
 CloseBtn.Text = "✕"
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 16
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 14
+CloseBtn.TextColor3 = Theme.TextPrimary
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Header
+
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+
+local CloseStroke = Instance.new("UIStroke")
+CloseStroke.Color = Theme.CardBorder
+CloseStroke.Thickness = 1
+CloseStroke.Parent = CloseBtn
 
 CloseBtn.MouseButton1Click:Connect(function()
     if ToggleMainUI then
@@ -422,7 +481,6 @@ CloseBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Tombol Saluran WA Ringkas & Rapi di Samping Tombol X
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(115, 26)
@@ -458,7 +516,6 @@ WaBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Header Line Separator
 local HeaderLine = Instance.new("Frame")
 HeaderLine.Size = UDim2.new(1, -32, 0, 1)
 HeaderLine.Position = UDim2.new(0, 16, 0, 52)
@@ -569,9 +626,10 @@ ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScriptScroll.Parent = Content
 
 local RenderSidebarTabs 
+local RenderContent
 
 -- [ 8. RENDER KONTEN ]
-local function RenderContent(categoryIndex)
+RenderContent = function(categoryIndex)
     local category = Categories[categoryIndex]
 
     for _, child in ipairs(ScriptScroll:GetChildren()) do
@@ -595,11 +653,11 @@ local function RenderContent(categoryIndex)
         ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         ListLayout.Parent = ScriptScroll
 
-        local totalCount = #category.scripts
+        local totalCount = #CleanedScripts
         local keyCount = 0
         local noKeyCount = 0
 
-        for _, s in ipairs(category.scripts) do
+        for _, s in ipairs(CleanedScripts) do
             if s.status == "Key" then keyCount = keyCount + 1
             elseif s.status == "No Key" then noKeyCount = noKeyCount + 1 end
         end
@@ -635,7 +693,7 @@ local function RenderContent(categoryIndex)
         GridContainer.AutomaticSize = Enum.AutomaticSize.Y
         GridContainer.BackgroundTransparency = 1
         GridContainer.LayoutOrder = 2
-        GridContainer.Parent = GridContainer
+        GridContainer.Parent = ScriptScroll
 
         local GridLayout = Instance.new("UIGridLayout")
         GridLayout.CellSize = UDim2.new(0.485, 0, 0, 34)
@@ -643,7 +701,7 @@ local function RenderContent(categoryIndex)
         GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
         GridLayout.Parent = GridContainer
 
-        for idx, scriptEntry in ipairs(category.scripts) do
+        for idx, scriptEntry in ipairs(CleanedScripts) do
             local card = Instance.new("Frame")
             card.Name = "Card_" .. idx
             card.BackgroundColor3 = Theme.CardBg
@@ -680,7 +738,7 @@ local function RenderContent(categoryIndex)
         return
     end
 
-    -- Mengaktifkan pencarian untuk tab "steal an egg" dan "favorite"
+    -- Menampilkan pencarian di tab StealAnEgg & Favorite
     if category.key == "StealAnEgg" or category.key == "Favorite" then
         SearchBox.Visible = true
         FilterContainer.Visible = false
@@ -690,6 +748,138 @@ local function RenderContent(categoryIndex)
     end
 
     ContentSub.Text = "Click run to execute a script!"
+
+    -- RENDER UNTUK TAB HISTORI (List Vertikal)
+    if category.key == "History" then
+        FilterContainer.Visible = false
+        SearchBox.Visible = false
+        ContentSub.Text = "Recently executed scripts history"
+
+        local ListLayout = Instance.new("UIListLayout")
+        ListLayout.Padding = UDim2.new(0, 6)
+        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        ListLayout.Parent = ScriptScroll
+
+        if #category.scripts == 0 then
+            local empty = Instance.new("TextLabel")
+            empty.Font = Enum.Font.GothamBold
+            empty.TextSize = 11
+            empty.TextColor3 = Theme.TextMuted
+            empty.BackgroundTransparency = 1
+            empty.Size = UDim2.new(1, 0, 0, 40)
+            empty.Text = "Belum ada histori eksekusi script."
+            empty.Parent = ScriptScroll
+            return
+        end
+
+        for i, scriptEntry in ipairs(category.scripts) do
+            local card = Instance.new("Frame")
+            card.Name = "HistCard_" .. i
+            card.Size = UDim2.new(1, 0, 0, 44)
+            card.BackgroundColor3 = Theme.CardBg
+            card.LayoutOrder = i
+            card.Parent = ScriptScroll
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+
+            local cardStroke = Instance.new("UIStroke")
+            cardStroke.Color = Theme.CardBorder
+            cardStroke.Thickness = 1
+            cardStroke.Parent = card
+
+            -- Nama Script
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.TextSize = 10
+            nameLbl.TextColor3 = Theme.TextPrimary
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Size = UDim2.new(0.42, 0, 0, 18)
+            nameLbl.Position = UDim2.new(0, 10, 0, 6)
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.Text = scriptEntry.name
+            nameLbl.Parent = card
+
+            -- Status Badge (Key / No Key)
+            local isKey = (scriptEntry.status == "Key")
+            local tagPill = Instance.new("Frame")
+            tagPill.Size = isKey and UDim2.fromOffset(40, 16) or UDim2.fromOffset(52, 16)
+            tagPill.Position = UDim2.new(0, 10, 0, 24)
+            tagPill.BackgroundColor3 = isKey and Theme.KeyTagPill or Theme.NoKeyTagPill
+            tagPill.Parent = card
+            Instance.new("UICorner", tagPill).CornerRadius = UDim.new(0, 4)
+
+            local tagStroke = Instance.new("UIStroke")
+            tagStroke.Color = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+            tagStroke.Thickness = 1
+            tagStroke.Parent = tagPill
+
+            local statusText = Instance.new("TextLabel")
+            statusText.Font = Enum.Font.GothamBold
+            statusText.TextSize = 8
+            statusText.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+            statusText.BackgroundTransparency = 1
+            statusText.Size = UDim2.fromScale(1, 1)
+            statusText.Text = string.upper(scriptEntry.status)
+            statusText.Parent = tagPill
+
+            -- Waktu Eksekusi (Tahun/Bulan/Hari Jam:Menit)
+            local timeLbl = Instance.new("TextLabel")
+            timeLbl.Font = Enum.Font.Gotham
+            timeLbl.TextSize = 9
+            timeLbl.TextColor3 = Theme.TextMuted
+            timeLbl.BackgroundTransparency = 1
+            timeLbl.Size = UDim2.new(0, 110, 1, 0)
+            timeLbl.Position = UDim2.new(0, 70, 0, 0)
+            timeLbl.TextXAlignment = Enum.TextXAlignment.Left
+            timeLbl.Text = scriptEntry.time or "-"
+            timeLbl.Parent = card
+
+            -- Tombol Execute (RUN) dengan outline hitam tipis & teks putih
+            local runBtn = Instance.new("TextButton")
+            runBtn.Name = "RunButton"
+            runBtn.Size = UDim2.fromOffset(52, 22)
+            runBtn.Position = UDim2.new(1, -60, 0.5, -11)
+            runBtn.BackgroundColor3 = Theme.RunPillBg
+            runBtn.Text = "RUN"
+            runBtn.Font = Enum.Font.GothamBold
+            runBtn.TextSize = 10
+            runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            runBtn.AutoButtonColor = false
+            runBtn.Parent = card
+            Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
+
+            local runStroke = Instance.new("UIStroke")
+            runStroke.Color = Color3.fromRGB(20, 20, 20) -- Outline hitam tipis
+            runStroke.Thickness = 1
+            runStroke.Parent = runBtn
+
+            runBtn.MouseEnter:Connect(function()
+                TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
+            end)
+            runBtn.MouseLeave:Connect(function()
+                TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
+            end)
+
+            runBtn.MouseButton1Click:Connect(function()
+                if scriptEntry.url and scriptEntry.url ~= "" then
+                    AddToHistory(scriptEntry)
+                    local ok, err = pcall(function()
+                        if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
+                            loadstring(scriptEntry.url)()
+                        else
+                            loadstring(game:HttpGet(scriptEntry.url))()
+                        end
+                    end)
+                    if not ok then
+                        warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+                    end
+                end
+            end)
+        end
+
+        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+        return
+    end
 
     local GridLayout = Instance.new("UIGridLayout")
     GridLayout.CellSize = UDim2.new(0.485, 0, 0, 64)
@@ -757,7 +947,6 @@ local function RenderContent(categoryIndex)
         nameLabel.Text = scriptEntry.name
         nameLabel.Parent = card
 
-        -- Teks KEY / NO KEY Kapsul Badge
         local isKey = (scriptEntry.status == "Key")
         local tagPill = Instance.new("Frame")
         tagPill.Size = isKey and UDim2.fromOffset(42, 18) or UDim2.fromOffset(56, 18)
@@ -780,7 +969,7 @@ local function RenderContent(categoryIndex)
         statusText.Text = string.upper(scriptEntry.status)
         statusText.Parent = tagPill
 
-        -- Tombol RUN / Execute dengan warna teks Putih
+        -- Tombol RUN dengan outline hitam tipis & teks putih
         local runBtn = Instance.new("TextButton")
         runBtn.Name = "RunButton"
         runBtn.Size = UDim2.fromOffset(52, 22)
@@ -795,8 +984,8 @@ local function RenderContent(categoryIndex)
         Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
 
         local runStroke = Instance.new("UIStroke")
-        runStroke.Color = Theme.Accent
-        runStroke.Thickness = 1.2
+        runStroke.Color = Color3.fromRGB(20, 20, 20) -- Outline hitam tipis
+        runStroke.Thickness = 1
         runStroke.Parent = runBtn
 
         runBtn.MouseEnter:Connect(function()
@@ -808,6 +997,7 @@ local function RenderContent(categoryIndex)
 
         runBtn.MouseButton1Click:Connect(function()
             if scriptEntry.url and scriptEntry.url ~= "" then
+                AddToHistory(scriptEntry)
                 local ok, err = pcall(function()
                     if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
                         loadstring(scriptEntry.url)()
@@ -821,7 +1011,6 @@ local function RenderContent(categoryIndex)
             end
         end)
 
-        -- Favorite Button Star (KANAN ATAS KARTU)
         local favBtn = Instance.new("TextButton")
         favBtn.Name = "FavoriteBtn"
         favBtn.Size = UDim2.fromOffset(24, 24)
@@ -908,6 +1097,7 @@ local function SetActiveCategory(index)
 
     RefreshFavoritesData()
     Categories[2].scripts = FavoriteScriptsData
+    Categories[3].scripts = HistoryList
 
     for i, btnData in ipairs(sidebarTabButtons) do
         local isActive = (i == index)
