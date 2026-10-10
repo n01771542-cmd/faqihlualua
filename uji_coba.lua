@@ -1,5 +1,5 @@
 -- ============================================================================
--- LEON4951 HUB v2 - FINAL VERSION
+-- LEON4951 HUB v2 - FINAL REDESIGN EDITION
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
@@ -29,12 +29,12 @@ local Theme = {
     CardBg = Color3.fromRGB(14, 20, 32),              
     CardBorder = Color3.fromRGB(34, 48, 73),          
 
-    Accent = Color3.fromRGB(37, 120, 255),            
+    Accent = Color3.fromRGB(0, 122, 255),            -- Warna Biru Utama
     AccentLight = Color3.fromRGB(82, 151, 255),       
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
-    TabActiveBorder = Color3.fromRGB(37, 120, 255),     
+    TabActiveBorder = Color3.fromRGB(0, 122, 255),     
 
-    FilterActiveBg = Color3.fromRGB(180, 190, 205),
+    FilterActiveBg = Color3.fromRGB(255, 255, 255),  -- Putih Bersih saat Dipilih
 
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
@@ -42,7 +42,7 @@ local Theme = {
     TextPrimary = Color3.fromRGB(245, 247, 255),       
     TextSecondary = Color3.fromRGB(180, 195, 220),     
     TextMuted = Color3.fromRGB(130, 145, 175),         
-    BorderColor = Color3.fromRGB(37, 120, 255),        
+    BorderColor = Color3.fromRGB(0, 122, 255),        
 
     GoldBadge = Color3.fromRGB(255, 185, 0),
     KeyTagBg = Color3.fromRGB(255, 75, 90),            
@@ -408,9 +408,10 @@ MainFrame.Parent = ScreenGui
 
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
 
+-- OUTLINE UTAMA UI DITEBALKAN
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 4
+MainStroke.Thickness = 6 -- Outline UI lebih tebal sesuai permintaan
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
@@ -432,8 +433,8 @@ local function CreateFLogo(size)
 
     local LogoStroke = Instance.new("UIStroke")
     LogoStroke.Color = Theme.Accent
-    LogoStroke.Thickness = 1
-    LogoStroke.Transparency = 0.35
+    LogoStroke.Thickness = 1.5
+    LogoStroke.Transparency = 0.2
     LogoStroke.Parent = LogoHolder
 
     local FVertical = Instance.new("Frame")
@@ -606,27 +607,27 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- [ PENCARIAN: PUTIH BERSIH DENGAN OUTLINE HITAM TIPIS ]
+-- [ PENCARIAN: LATAR GELAP DENGAN OUTLINE CARD BIRU ]
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 26)
 SearchBox.Position = UDim2.new(0, 135, 0, -3)
-SearchBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- Putih Bersih
+SearchBox.BackgroundColor3 = Theme.CardBg                     -- Latar Belakang Gelap Khas Card
 SearchBox.PlaceholderText = "🔍 Cari nama script..."
-SearchBox.PlaceholderColor3 = Color3.fromRGB(130, 130, 130)  -- Abu-abu jelas
+SearchBox.PlaceholderColor3 = Color3.fromRGB(180, 195, 220)
 SearchBox.Text = ""
-SearchBox.TextColor3 = Color3.fromRGB(0, 0, 0)               -- Teks Hitam
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)         -- Teks Input Putih
 SearchBox.Font = Enum.Font.GothamBold
 SearchBox.TextSize = 10
 SearchBox.Visible = false
 SearchBox.Parent = ContentHeader
 
-Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(1, 0) -- Bentuk Oval/Pill Lengkung Sesuai Gambar
 
--- Outline Kotak Warna Hitam Tipis
+-- OUTLINE CARD WARNA BIRU UNTUK KOTAK PENCARIAN
 local SearchBoxBorder = Instance.new("UIStroke")
-SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)
-SearchBoxBorder.Thickness = 1
+SearchBoxBorder.Color = Theme.Accent                          -- Warna Biru Terang
+SearchBoxBorder.Thickness = 2                                 -- Outline Jelas Sesuai Gambar
 SearchBoxBorder.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
@@ -1088,26 +1089,23 @@ local filterDefs = {
 }
 
 for _, fDef in ipairs(filterDefs) do
+    local isSelected = (activeFilter == fDef.id)
     local fBtn = Instance.new("TextButton")
     fBtn.Name = "Filter_" .. fDef.id
     fBtn.Size = UDim2.fromOffset(66, 20)
-    fBtn.BackgroundColor3 = (activeFilter == fDef.id) and Theme.FilterActiveBg or Theme.CardBg
+    -- LATAR BELAKANG WARNA PUTIH BERSIH SAAT DIPILIH, GELAP SAAT TIDAK DIPILIH
+    fBtn.BackgroundColor3 = isSelected and Theme.FilterActiveBg or Theme.CardBg
     fBtn.Text = fDef.text
     fBtn.Font = Enum.Font.GothamBold
     fBtn.TextSize = 8
-    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    -- TEKS HITAM SAAT BACKGROUND PUTIH, TEKS PUTIH SAAT BACKGROUND GELAP
+    fBtn.TextColor3 = isSelected and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 255, 255)
     fBtn.AutoButtonColor = false
     fBtn.Parent = FilterContainer
     Instance.new("UICorner", fBtn).CornerRadius = UDim.new(0, 5)
 
-    local textStroke = Instance.new("UIStroke")
-    textStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-    textStroke.Color = Color3.fromRGB(0, 0, 0)
-    textStroke.Thickness = 1
-    textStroke.Parent = fBtn
-
     local fStroke = Instance.new("UIStroke")
-    fStroke.Color = (activeFilter == fDef.id) and Theme.TabActiveBorder or Theme.CardBorder
+    fStroke.Color = isSelected and Theme.TabActiveBorder or Theme.CardBorder
     fStroke.Thickness = 1
     fStroke.Parent = fBtn
 
@@ -1116,11 +1114,12 @@ for _, fDef in ipairs(filterDefs) do
     fBtn.MouseButton1Click:Connect(function()
         activeFilter = fDef.id
         for id, item in pairs(filterButtons) do
-            local isActive = (id == activeFilter)
+            local active = (id == activeFilter)
             TweenService:Create(item.btn, TweenInfo.new(0.12), {
-                BackgroundColor3 = isActive and Theme.FilterActiveBg or Theme.CardBg
+                BackgroundColor3 = active and Theme.FilterActiveBg or Theme.CardBg
             }):Play()
-            item.stroke.Color = isActive and Theme.TabActiveBorder or Theme.CardBorder
+            item.btn.TextColor3 = active and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 255, 255)
+            item.stroke.Color = active and Theme.TabActiveBorder or Theme.CardBorder
         end
         RenderContent(activeCategoryIndex)
     end)
