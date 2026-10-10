@@ -34,7 +34,7 @@ local Theme = {
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(37, 120, 255),     
 
-    FilterActiveBg = Color3.fromRGB(180, 190, 205), -- Putih Keabu-abuan / Gelap
+    FilterActiveBg = Color3.fromRGB(180, 190, 205),
 
     BadgeBg = Color3.fromRGB(14, 20, 32),
     RunPillBg = Color3.fromRGB(20, 35, 60),
@@ -419,62 +419,49 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO KUSTOM MIRIP GAMBAR REFERENSI (EMBLEM BLUE NEON + CROWN + HURUF F) ]
+-- [ LOGO EMBLEM PRESI SIKET: LINGKARAN BLUE NEON + MAHKOTA + HURUF F RAPIS ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
     LogoHolder.Size = size
-    LogoHolder.BackgroundColor3 = Color3.fromRGB(8, 14, 25)
+    LogoHolder.BackgroundColor3 = Color3.fromRGB(6, 12, 22)
     LogoHolder.BorderSizePixel = 0
     LogoHolder.ClipsDescendants = false
 
-    -- Cincin Luar Biru Bercahaya (Gaya Emblem)
+    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(1, 0)
+
+    -- Cincin Biru Glowing Neon Luar
     local OuterRing = Instance.new("UIStroke")
-    OuterRing.Color = Color3.fromRGB(50, 160, 255)
+    OuterRing.Color = Color3.fromRGB(30, 150, 255)
     OuterRing.Thickness = 2
     OuterRing.Parent = LogoHolder
 
-    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(1, 0)
+    -- Mahkota Cyan Kecil di Atas
+    local CrownText = Instance.new("TextLabel")
+    CrownText.Name = "Crown"
+    CrownText.Size = UDim2.new(0.4, 0, 0.3, 0)
+    CrownText.Position = UDim2.new(0.5, -2, 0.08, 0)
+    CrownText.BackgroundTransparency = 1
+    CrownText.Text = "👑"
+    CrownText.TextSize = 10
+    CrownText.Parent = LogoHolder
 
-    -- Mahkota Kecil di Atas F
-    local Crown = Instance.new("Frame")
-    Crown.Size = UDim2.new(0.35, 0, 0.25, 0)
-    Crown.Position = UDim2.new(0.52, 0, 0.12, 0)
-    Crown.BackgroundColor3 = Color3.fromRGB(0, 190, 255)
-    Crown.Rotation = 12
-    Crown.BorderSizePixel = 0
-    Crown.Parent = LogoHolder
-    Instance.new("UICorner", Crown).CornerRadius = UDim.new(0, 3)
+    -- Huruf F Bergaya Cyber/Gaming Modern
+    local FText = Instance.new("TextLabel")
+    FText.Name = "FLetter"
+    FText.Size = UDim2.fromScale(1, 1)
+    FText.Position = UDim2.new(0, -1, 0, 1)
+    FText.BackgroundTransparency = 1
+    FText.Font = Enum.Font.FredokaOne
+    FText.Text = "F"
+    FText.TextSize = 20
+    FText.TextColor3 = Color3.fromRGB(40, 170, 255)
+    FText.Parent = LogoHolder
 
-    -- Batang Utama F (Miring / Italic & Glossy)
-    local Stem = Instance.new("Frame")
-    Stem.Size = UDim2.new(0.2, 0, 0.58, 0)
-    Stem.Position = UDim2.new(0.32, 0, 0.26, 0)
-    Stem.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
-    Stem.Rotation = -14
-    Stem.BorderSizePixel = 0
-    Stem.Parent = LogoHolder
-    Instance.new("UICorner", Stem).CornerRadius = UDim.new(1, 0)
-
-    -- Bar Atas F
-    local TopBar = Instance.new("Frame")
-    TopBar.Size = UDim2.new(0.48, 0, 0.18, 0)
-    TopBar.Position = UDim2.new(0.32, 0, 0.26, 0)
-    TopBar.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
-    TopBar.Rotation = -14
-    TopBar.BorderSizePixel = 0
-    TopBar.Parent = LogoHolder
-    Instance.new("UICorner", TopBar).CornerRadius = UDim.new(1, 0)
-
-    -- Bar Tengah F
-    local MidBar = Instance.new("Frame")
-    MidBar.Size = UDim2.new(0.38, 0, 0.15, 0)
-    MidBar.Position = UDim2.new(0.34, 0, 0.5, 0)
-    MidBar.BackgroundColor3 = Color3.fromRGB(140, 220, 255)
-    MidBar.Rotation = -14
-    MidBar.BorderSizePixel = 0
-    MidBar.Parent = LogoHolder
-    Instance.new("UICorner", MidBar).CornerRadius = UDim.new(1, 0)
+    local TextGlow = Instance.new("UIStroke")
+    TextGlow.Color = Color3.fromRGB(0, 230, 255)
+    TextGlow.Thickness = 1.2
+    TextGlow.Parent = FText
 
     return LogoHolder
 end
@@ -489,8 +476,8 @@ Header.BackgroundTransparency = 1
 Header.Active = true
 Header.Parent = MainFrame
 
-local LogoF = CreateFLogo(UDim2.fromOffset(30, 30))
-LogoF.Position = UDim2.new(0, 16, 0, 11)
+local LogoF = CreateFLogo(UDim2.fromOffset(32, 32))
+LogoF.Position = UDim2.new(0, 14, 0, 10)
 LogoF.Parent = Header
 
 local Title = Instance.new("TextLabel")
@@ -619,26 +606,35 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- Kotak Pencarian dengan Outline Putih Redup (Agar mudah dilihat & tidak terlalu terang)
+-- Kotak Pencarian dengan Outline Opsi Putih Redup & Teks Bergaris Tepi Hitam Tipis
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
-SearchBox.Size = UDim2.new(1, -140, 0, 24)
-SearchBox.Position = UDim2.new(0, 135, 0, -2)
+SearchBox.Size = UDim2.new(1, -140, 0, 26)
+SearchBox.Position = UDim2.new(0, 135, 0, -3)
 SearchBox.BackgroundColor3 = Theme.CardBg
 SearchBox.PlaceholderText = "🔍 Cari nama script..."
-SearchBox.PlaceholderColor3 = Theme.TextMuted
+SearchBox.PlaceholderColor3 = Color3.fromRGB(240, 240, 240)
 SearchBox.Text = ""
-SearchBox.TextColor3 = Theme.TextPrimary
-SearchBox.Font = Enum.Font.Gotham
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBox.Font = Enum.Font.GothamBold
 SearchBox.TextSize = 10
 SearchBox.Visible = false
 SearchBox.Parent = ContentHeader
-Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
 
-local SearchStroke = Instance.new("UIStroke")
-SearchStroke.Color = Color3.fromRGB(130, 150, 180) -- Outline Putih Redup
-SearchStroke.Thickness = 1.2
-SearchStroke.Parent = SearchBox
+Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
+
+-- Outline Opsi Pencarian (Garis Frame Putih Redup)
+local SearchFrameBorder = Instance.new("UIStroke")
+SearchFrameBorder.Color = Color3.fromRGB(160, 185, 215)
+SearchFrameBorder.Thickness = 1.2
+SearchFrameBorder.Parent = SearchBox
+
+-- Outline Teks Tipis Hitam pada Tulisan Ketik
+local TextOutline = Instance.new("UIStroke")
+TextOutline.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+TextOutline.Color = Color3.fromRGB(0, 0, 0)
+TextOutline.Thickness = 1
+TextOutline.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
 ContentSub.Font = Enum.Font.Gotham
