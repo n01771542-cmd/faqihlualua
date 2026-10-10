@@ -1,5 +1,5 @@
 -- ============================================================================
--- LEON4951 HUB v2 - FINAL REDESIGN EDITION
+-- LEON4951 HUB v2 - FINAL REDESIGN EDITION WITH NEW LOGO & TOGGLE
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
@@ -30,6 +30,7 @@ local Theme = {
     CardBorder = Color3.fromRGB(34, 48, 73),          
 
     Accent = Color3.fromRGB(0, 122, 255),            -- Warna Biru Utama
+    AccentBlue = Color3.fromRGB(0, 122, 255),         -- Alias untuk Accent
     AccentLight = Color3.fromRGB(82, 151, 255),       
     TabActiveBg = Color3.fromRGB(18, 32, 54),         
     TabActiveBorder = Color3.fromRGB(0, 122, 255),     
@@ -418,53 +419,37 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO F ]
-local function CreateFLogo(size)
-    local LogoHolder = Instance.new("Frame")
-    LogoHolder.Name = "LogoHolder"
-    LogoHolder.Size = size
-    LogoHolder.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
-    LogoHolder.BorderSizePixel = 0
-    LogoHolder.ClipsDescendants = true
+-- [ 5. LOGO VEKTOR "F" BARU ]
+local function CreateFLogo(size, rotation)
+    local container = Instance.new("Frame")
+    container.Size = size
+    container.BackgroundTransparency = 1
+    container.Rotation = rotation or -12
 
-    local LogoCorner = Instance.new("UICorner")
-    LogoCorner.CornerRadius = UDim.new(0, 5)
-    LogoCorner.Parent = LogoHolder
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))
+    topBar.BackgroundColor3 = Theme.AccentBlue
+    topBar.BorderSizePixel = 0
+    topBar.Parent = container
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 2)
 
-    local LogoStroke = Instance.new("UIStroke")
-    LogoStroke.Color = Theme.Accent
-    LogoStroke.Thickness = 1.5
-    LogoStroke.Transparency = 0.2
-    LogoStroke.Parent = LogoHolder
+    local midBar = Instance.new("Frame")
+    midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))
+    midBar.Position = UDim2.new(0.2, 0, 0.4, 0)
+    midBar.BackgroundColor3 = Theme.AccentBlue
+    midBar.BorderSizePixel = 0
+    midBar.Parent = container
+    Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 2)
 
-    local FVertical = Instance.new("Frame")
-    FVertical.Name = "FVertical"
-    FVertical.Size = UDim2.new(0.14, 0, 0.5, 0)
-    FVertical.Position = UDim2.new(0.3, 0, 0.25, 0)
-    FVertical.BackgroundColor3 = Theme.Accent
-    FVertical.BorderSizePixel = 0
-    FVertical.Rotation = -6
-    FVertical.Parent = LogoHolder
+    local stem = Instance.new("Frame")
+    stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)
+    stem.Position = UDim2.new(0.08, 0, 0, 0)
+    stem.BackgroundColor3 = Theme.AccentBlue
+    stem.BorderSizePixel = 0
+    stem.Parent = container
+    Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 2)
 
-    local FTop = Instance.new("Frame")
-    FTop.Name = "FTop"
-    FTop.Size = UDim2.new(0.36, 0, 0.14, 0)
-    FTop.Position = UDim2.new(0.38, 0, 0.25, 0)
-    FTop.BackgroundColor3 = Theme.Accent
-    FTop.BorderSizePixel = 0
-    FTop.Rotation = -6
-    FTop.Parent = LogoHolder
-
-    local FMiddle = Instance.new("Frame")
-    FMiddle.Name = "FMiddle"
-    FMiddle.Size = UDim2.new(0.28, 0, 0.11, 0)
-    FMiddle.Position = UDim2.new(0.36, 0, 0.44, 0)
-    FMiddle.BackgroundColor3 = Theme.AccentLight
-    FMiddle.BorderSizePixel = 0
-    FMiddle.Rotation = -6
-    FMiddle.Parent = LogoHolder
-
-    return LogoHolder
+    return container
 end
 
 local ToggleMainUI
@@ -477,8 +462,8 @@ Header.BackgroundTransparency = 1
 Header.Active = true
 Header.Parent = MainFrame
 
-local LogoF = CreateFLogo(UDim2.fromOffset(30, 30))
-LogoF.Position = UDim2.new(0, 16, 0, 11)
+local LogoF = CreateFLogo(UDim2.fromOffset(26, 26), -12)
+LogoF.Position = UDim2.new(0, 16, 0, 13)
 LogoF.Parent = Header
 
 local Title = Instance.new("TextLabel")
@@ -488,7 +473,7 @@ Title.TextSize = 20
 Title.TextColor3 = Theme.Accent
 Title.BackgroundTransparency = 1
 Title.Size = UDim2.new(0, 200, 0, 26)
-Title.Position = UDim2.new(0, 54, 0, 13)
+Title.Position = UDim2.new(0, 50, 0, 13)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.RichText = true
 Title.Text = "LEON4951 HUB"
@@ -497,12 +482,12 @@ Title.Parent = Header
 -- TOMBOL X (CLOSE) DIPERBESAR UKURANNYA
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
-CloseBtn.Size = UDim2.fromOffset(36, 36) -- Diperbesar dari 28 ke 36
-CloseBtn.Position = UDim2.new(1, -44, 0, 8)  -- Disesuaikan posisinya
+CloseBtn.Size = UDim2.fromOffset(36, 36)
+CloseBtn.Position = UDim2.new(1, -44, 0, 8)
 CloseBtn.BackgroundColor3 = Theme.CardBg
 CloseBtn.Text = "X"
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 16 -- Ukuran font X diperbesar
+CloseBtn.TextSize = 16
 CloseBtn.TextColor3 = Theme.TextPrimary
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Header
@@ -523,7 +508,7 @@ end)
 local WaBtn = Instance.new("TextButton")
 WaBtn.Name = "WaChannelBtn"
 WaBtn.Size = UDim2.fromOffset(120, 26)
-WaBtn.Position = UDim2.new(1, -175, 0, 13) -- Disesuaikan posisinya agar tidak bertabrakan dengan tombol X yang baru
+WaBtn.Position = UDim2.new(1, -175, 0, 13)
 WaBtn.BackgroundColor3 = Theme.WaGreen
 WaBtn.Text = "💬 SALURAN WA"
 WaBtn.Font = Enum.Font.GothamBold
@@ -628,8 +613,8 @@ Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(1, 0)
 
 -- OUTLINE KOTAK PENCARIAN DIUBAH MENJADI HITAM TIPIS
 local SearchBoxBorder = Instance.new("UIStroke")
-SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)              -- Outline Hitam
-SearchBoxBorder.Thickness = 1                                 -- Tipis
+SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)
+SearchBoxBorder.Thickness = 1
 SearchBoxBorder.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
@@ -1095,12 +1080,10 @@ for _, fDef in ipairs(filterDefs) do
     local fBtn = Instance.new("TextButton")
     fBtn.Name = "Filter_" .. fDef.id
     fBtn.Size = UDim2.fromOffset(66, 20)
-    -- Warna latar belakang: Berubah sedikit saat dipilih, gelap saat tidak
     fBtn.BackgroundColor3 = isSelected and Theme.FilterActiveBg or Theme.CardBg
     fBtn.Text = fDef.text
     fBtn.Font = Enum.Font.GothamBold
     fBtn.TextSize = 8
-    -- Warna teks SELALU PUTIH sesuai permintaan
     fBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     fBtn.AutoButtonColor = false
     fBtn.Parent = FilterContainer
@@ -1108,8 +1091,8 @@ for _, fDef in ipairs(filterDefs) do
 
     -- OUTLINE HITAM TIPIS PADA TOMBOL FILTER
     local fStroke = Instance.new("UIStroke")
-    fStroke.Color = Color3.fromRGB(0, 0, 0) -- Hitam
-    fStroke.Thickness = 1                  -- Tipis
+    fStroke.Color = Color3.fromRGB(0, 0, 0)
+    fStroke.Thickness = 1
     fStroke.Parent = fBtn
 
     filterButtons[fDef.id] = { btn = fBtn, stroke = fStroke }
@@ -1121,7 +1104,6 @@ for _, fDef in ipairs(filterDefs) do
             TweenService:Create(item.btn, TweenInfo.new(0.12), {
                 BackgroundColor3 = active and Theme.FilterActiveBg or Theme.CardBg
             }):Play()
-            -- Warna teks tetap konsisten putih
             item.btn.TextColor3 = Color3.fromRGB(255, 255, 255)
         end
         RenderContent(activeCategoryIndex)
@@ -1320,7 +1302,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- [ 12. FLOATING TOGGLE BUTTON ]
+-- [ 12. FLOATING TOGGLE BUTTON BARU ]
 local FloatingBtn = Instance.new("TextButton")
 FloatingBtn.Name = "FloatingToggleBtn"
 FloatingBtn.Size = UDim2.fromOffset(44, 44)
@@ -1333,15 +1315,15 @@ FloatingBtn.Active = true
 FloatingBtn.Text = ""
 FloatingBtn.Parent = ScreenGui
 
-Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 11)
 
 local FloatingStroke = Instance.new("UIStroke")
-FloatingStroke.Color = Theme.Accent
-FloatingStroke.Thickness = 2
+FloatingStroke.Color = Theme.AccentBlue
+FloatingStroke.Thickness = 1.5
 FloatingStroke.Parent = FloatingBtn
 
-local FloatingLogo = CreateFLogo(UDim2.fromOffset(28, 28))
-FloatingLogo.Position = UDim2.new(0.5, -14, 0.5, -14)
+local FloatingLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
+FloatingLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
 FloatingLogo.Parent = FloatingBtn
 
 local FloatingScale = Instance.new("UIScale")
@@ -1381,24 +1363,37 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- [ 13. TOGGLE UI <-> FLOATING BUTTON ]
+-- [ 13. TOGGLE UI <-> FLOATING BUTTON BARU ]
 ToggleMainUI = function(show)
     if show then
+        MainFrame.Size = UDim2.fromOffset(560, 340)
         MainFrame.Visible = true
         MainScale.Scale = 0
 
-        TweenService:Create(FloatingScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0 }):Play()
-        TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+        TweenService:Create(FloatingScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Scale = 0
+        }):Play()
 
-        task.delay(0.12, function() FloatingBtn.Visible = false end)
+        TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Scale = 1
+        }):Play()
+
+        task.delay(0.12, function()
+            FloatingBtn.Visible = false
+        end)
     else
-        TweenService:Create(MainScale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0 }):Play()
+        TweenService:Create(MainScale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Scale = 0
+        }):Play()
 
         task.delay(0.16, function()
             MainFrame.Visible = false
             FloatingBtn.Visible = true
             FloatingScale.Scale = 0
-            TweenService:Create(FloatingScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+
+            TweenService:Create(FloatingScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Scale = 1
+            }):Play()
         end)
     end
 end
@@ -1425,8 +1420,8 @@ BootStroke.Color = Theme.Accent
 BootStroke.Thickness = 2
 BootStroke.Parent = BootScreen
 
-local BootLogo = CreateFLogo(UDim2.fromOffset(28, 28))
-BootLogo.Position = UDim2.new(0.5, -14, 0, 14)
+local BootLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
+BootLogo.Position = UDim2.new(0.5, -10, 0, 20)
 BootLogo.Parent = BootScreen
 
 local BootTitle = Instance.new("TextLabel")
