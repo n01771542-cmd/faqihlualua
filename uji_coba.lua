@@ -38,6 +38,7 @@ local Theme = {
     FilterActiveBg = Color3.fromRGB(18, 38, 65),     -- Latar belakang saat filter dipilih
 
     BadgeBg = Color3.fromRGB(14, 20, 32),
+    BadgeBorder = Color3.fromRGB(34, 50, 86),
     RunPillBg = Color3.fromRGB(20, 35, 60),
 
     TextPrimary = Color3.fromRGB(245, 247, 255),       
@@ -201,7 +202,7 @@ local RawNewScriptsData = {
     {"OJIASA","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
     {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
     {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
-    
+
     -- [ SCRIPT BARU ]
     {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
     {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
@@ -322,15 +323,15 @@ local Categories
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
     local monthStr = MonthShortNames[t.month] or tostring(t.month)
-    
+
     local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
-    
+
     for i = #HistoryList, 1, -1 do
         if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
             table.remove(HistoryList, i)
         end
     end
-    
+
     table.insert(HistoryList, 1, {
         name = scriptEntry.name,
         status = scriptEntry.status,
@@ -338,11 +339,11 @@ local function AddToHistory(scriptEntry)
         url = scriptEntry.url,
         time = timeStr
     })
-    
+
     if #HistoryList > 30 then
         table.remove(HistoryList)
     end
-    
+
     SaveHistory()
     if Categories and Categories[2] then
         Categories[2].scripts = HistoryList
@@ -469,15 +470,34 @@ LogoF.Parent = Header
 local Title = Instance.new("TextLabel")
 Title.Name = "Title"
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 20
+Title.TextSize = 15
 Title.TextColor3 = Theme.Accent
 Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(0, 200, 0, 26)
-Title.Position = UDim2.new(0, 50, 0, 13)
+Title.Size = UDim2.new(0, 200, 0, 16)
+Title.Position = UDim2.new(0, 50, 0, 8)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
+
+-- SUB-JUDUL PROFESSIONAL "script steal an egg" DI BAWAH NAMA LEON4951
+local Badge = Instance.new("TextLabel")
+Badge.Name = "Badge"
+Badge.Font = Enum.Font.GothamBold
+Badge.TextSize = 8
+Badge.TextColor3 = Color3.fromRGB(111, 168, 255)
+Badge.BackgroundColor3 = Theme.BadgeBg
+Badge.Size = UDim2.fromOffset(105, 16)
+Badge.Position = UDim2.new(0, 50, 0, 27)
+Badge.Text = "script steal an egg"
+Badge.TextXAlignment = Enum.TextXAlignment.Center
+Badge.Parent = Header
+
+Instance.new("UICorner", Badge).CornerRadius = UDim.new(1, 0)
+local BadgeStroke = Instance.new("UIStroke")
+BadgeStroke.Color = Theme.BadgeBorder
+BadgeStroke.Thickness = 1
+BadgeStroke.Parent = Badge
 
 -- TOMBOL X (CLOSE) DIPERBESAR UKURANNYA
 local CloseBtn = Instance.new("TextButton")
