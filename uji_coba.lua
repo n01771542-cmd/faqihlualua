@@ -221,7 +221,6 @@ local RawNewScriptsData = {
     {"SKRR HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/skrrhubontop-design/skrrhub/main/skrrhub.txt\"))()"},
 }
 
--- Otomatis menambahkan akhiran berwarna Emas dan Emoji Api (tanpa love)
 local function NormalizeScriptData(raw)
     local result = {}
     for i, entry in ipairs(raw) do
@@ -349,7 +348,6 @@ local function AddToHistory(scriptEntry)
     end
 end
 
--- [ TATA LETAK CATEGORIES ]
 Categories = {
     {
         key = "StealAnEgg",
@@ -412,62 +410,58 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
 
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 4 -- Outline UI dipertebal
+MainStroke.Thickness = 4
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO KEMBALI KE LOGO PALING AWAL ]
+-- [ LOGO F (KEMBALI KE PILIHAN LOGO KAMU) ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
     LogoHolder.Size = size
-    LogoHolder.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+    LogoHolder.BackgroundColor3 = Color3.fromRGB(10, 18, 32)
     LogoHolder.BorderSizePixel = 0
     LogoHolder.ClipsDescendants = true
 
-    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(0, 8)
+    local LogoCorner = Instance.new("UICorner")
+    LogoCorner.CornerRadius = UDim.new(0, 5)
+    LogoCorner.Parent = LogoHolder
 
-    local GlowStroke = Instance.new("UIStroke")
-    GlowStroke.Color = Theme.Accent
-    GlowStroke.Thickness = 1.5
-    GlowStroke.Transparency = 0.15
-    GlowStroke.Parent = LogoHolder
+    local LogoStroke = Instance.new("UIStroke")
+    LogoStroke.Color = Theme.Accent
+    LogoStroke.Thickness = 1
+    LogoStroke.Transparency = 0.35
+    LogoStroke.Parent = LogoHolder
 
-    local BgDecor = Instance.new("Frame")
-    BgDecor.Size = UDim2.fromScale(0.7, 0.7)
-    BgDecor.Position = UDim2.fromScale(0.15, 0.15)
-    BgDecor.BackgroundColor3 = Color3.fromRGB(20, 45, 80)
-    BgDecor.Rotation = 45
-    BgDecor.BorderSizePixel = 0
-    BgDecor.Parent = LogoHolder
-    Instance.new("UICorner", BgDecor).CornerRadius = UDim.new(0, 4)
+    local FVertical = Instance.new("Frame")
+    FVertical.Name = "FVertical"
+    FVertical.Size = UDim2.new(0.14, 0, 0.5, 0)
+    FVertical.Position = UDim2.new(0.3, 0, 0.25, 0)
+    FVertical.BackgroundColor3 = Theme.Accent
+    FVertical.BorderSizePixel = 0
+    FVertical.Rotation = -6
+    FVertical.Parent = LogoHolder
 
-    local Stem = Instance.new("Frame")
-    Stem.Size = UDim2.new(0.18, 0, 0.6, 0)
-    Stem.Position = UDim2.new(0.3, 0, 0.2, 0)
-    Stem.BackgroundColor3 = Theme.AccentLight
-    Stem.BorderSizePixel = 0
-    Stem.Parent = LogoHolder
-    Instance.new("UICorner", Stem).CornerRadius = UDim.new(1, 0)
+    local FTop = Instance.new("Frame")
+    FTop.Name = "FTop"
+    FTop.Size = UDim2.new(0.36, 0, 0.14, 0)
+    FTop.Position = UDim2.new(0.38, 0, 0.25, 0)
+    FTop.BackgroundColor3 = Theme.Accent
+    FTop.BorderSizePixel = 0
+    FTop.Rotation = -6
+    FTop.Parent = LogoHolder
 
-    local TopBar = Instance.new("Frame")
-    TopBar.Size = UDim2.new(0.42, 0, 0.16, 0)
-    TopBar.Position = UDim2.new(0.3, 0, 0.2, 0)
-    TopBar.BackgroundColor3 = Theme.Accent
-    TopBar.BorderSizePixel = 0
-    TopBar.Parent = LogoHolder
-    Instance.new("UICorner", TopBar).CornerRadius = UDim.new(1, 0)
-
-    local MidBar = Instance.new("Frame")
-    MidBar.Size = UDim2.new(0.32, 0, 0.14, 0)
-    MidBar.Position = UDim2.new(0.3, 0, 0.44, 0)
-    MidBar.BackgroundColor3 = Color3.fromRGB(120, 180, 255)
-    MidBar.BorderSizePixel = 0
-    MidBar.Parent = LogoHolder
-    Instance.new("UICorner", MidBar).CornerRadius = UDim.new(1, 0)
+    local FMiddle = Instance.new("Frame")
+    FMiddle.Name = "FMiddle"
+    FMiddle.Size = UDim2.new(0.28, 0, 0.11, 0)
+    FMiddle.Position = UDim2.new(0.36, 0, 0.44, 0)
+    FMiddle.BackgroundColor3 = Theme.AccentLight
+    FMiddle.BorderSizePixel = 0
+    FMiddle.Rotation = -6
+    FMiddle.Parent = LogoHolder
 
     return LogoHolder
 end
@@ -612,16 +606,16 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- Kotak Pencarian dengan Garis Tepi (Outline Tempat Pencarian) Terang & Teks Putih ber-Outline Hitam Tipis
+-- [ PENCARIAN: WARNA PUTIH DENGAN OUTLINE HITAM TIPIS ]
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 26)
 SearchBox.Position = UDim2.new(0, 135, 0, -3)
 SearchBox.BackgroundColor3 = Theme.CardBg
 SearchBox.PlaceholderText = "🔍 Cari nama script..."
-SearchBox.PlaceholderColor3 = Color3.fromRGB(220, 230, 245)
+SearchBox.PlaceholderColor3 = Color3.fromRGB(200, 210, 225)
 SearchBox.Text = ""
-SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)       -- Teks Putih
 SearchBox.Font = Enum.Font.GothamBold
 SearchBox.TextSize = 10
 SearchBox.Visible = false
@@ -629,13 +623,13 @@ SearchBox.Parent = ContentHeader
 
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
 
--- Garis Tepi Kotak Pencarian
+-- Outline Putih pada Kotak Pencarian
 local SearchBoxBorder = Instance.new("UIStroke")
-SearchBoxBorder.Color = Color3.fromRGB(180, 200, 225)
-SearchBoxBorder.Thickness = 1.4
+SearchBoxBorder.Color = Color3.fromRGB(255, 255, 255)
+SearchBoxBorder.Thickness = 1.2
 SearchBoxBorder.Parent = SearchBox
 
--- Outline Hitam Tipis pada Teks Pencarian
+-- Outline Hitam Tipis pada Teks dalam Kotak Pencarian
 local SearchTextStroke = Instance.new("UIStroke")
 SearchTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
 SearchTextStroke.Color = Color3.fromRGB(0, 0, 0)
@@ -801,7 +795,6 @@ RenderContent = function(categoryIndex)
 
     ContentSub.Text = "Click run to execute a script!"
 
-    -- RENDER TAB HISTORI
     if category.key == "History" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
