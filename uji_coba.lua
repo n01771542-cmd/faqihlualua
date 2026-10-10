@@ -417,7 +417,7 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO F (KEMBALI KE PILIHAN LOGO KAMU) ]
+-- [ LOGO F ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
@@ -606,16 +606,16 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- [ PENCARIAN: WARNA PUTIH DENGAN OUTLINE HITAM TIPIS ]
+-- [ PENCARIAN: PUTIH BERSIH DENGAN OUTLINE HITAM TIPIS ]
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 26)
 SearchBox.Position = UDim2.new(0, 135, 0, -3)
-SearchBox.BackgroundColor3 = Theme.CardBg
+SearchBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- Putih Bersih
 SearchBox.PlaceholderText = "🔍 Cari nama script..."
-SearchBox.PlaceholderColor3 = Color3.fromRGB(200, 210, 225)
+SearchBox.PlaceholderColor3 = Color3.fromRGB(130, 130, 130)  -- Abu-abu jelas
 SearchBox.Text = ""
-SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)       -- Teks Putih
+SearchBox.TextColor3 = Color3.fromRGB(0, 0, 0)               -- Teks Hitam
 SearchBox.Font = Enum.Font.GothamBold
 SearchBox.TextSize = 10
 SearchBox.Visible = false
@@ -623,18 +623,11 @@ SearchBox.Parent = ContentHeader
 
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
 
--- Outline Putih pada Kotak Pencarian
+-- Outline Kotak Warna Hitam Tipis
 local SearchBoxBorder = Instance.new("UIStroke")
-SearchBoxBorder.Color = Color3.fromRGB(255, 255, 255)
-SearchBoxBorder.Thickness = 1.2
+SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)
+SearchBoxBorder.Thickness = 1
 SearchBoxBorder.Parent = SearchBox
-
--- Outline Hitam Tipis pada Teks dalam Kotak Pencarian
-local SearchTextStroke = Instance.new("UIStroke")
-SearchTextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-SearchTextStroke.Color = Color3.fromRGB(0, 0, 0)
-SearchTextStroke.Thickness = 1
-SearchTextStroke.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
 ContentSub.Font = Enum.Font.Gotham
