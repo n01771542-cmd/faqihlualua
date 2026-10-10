@@ -221,14 +221,14 @@ local RawNewScriptsData = {
     {"SKRR HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/skrrhubontop-design/skrrhub/main/skrrhub.txt\"))()"},
 }
 
--- Otomatis menambahkan akhiran REC❤️‍🔥 jika script merupakan rekomendasi
+-- Otomatis menambahkan akhiran berwarna Emas dan Emoji Api (tanpa love)
 local function NormalizeScriptData(raw)
     local result = {}
     for i, entry in ipairs(raw) do
         local name = entry[1]
         local isRec = entry[3]
-        if isRec and not string.find(name, "REC❤️‍🔥") then
-            name = name .. " REC❤️‍🔥"
+        if isRec and not string.find(name, "REC") then
+            name = name .. ' <font color="rgb(255, 185, 0)"><b>REC</b></font> 🔥'
         end
         result[i] = {
             name = name,
@@ -387,7 +387,7 @@ Categories = {
 local activeCategoryIndex = 1
 local activeFilter = "ALL"
 
--- [ 4. ROOT UI (DIPERBESAR AGAR TEKS TIDAK KEPOTONG) ]
+-- [ 4. ROOT UI ]
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "leon4951HubGuiV2"
 ScreenGui.ResetOnSpawn = false
@@ -398,7 +398,7 @@ if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("Player
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.fromOffset(560, 340) -- Ukuran diperbesar
+MainFrame.Size = UDim2.fromOffset(560, 340)
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 MainFrame.Position = UDim2.fromScale(0.5, 0.5)
 MainFrame.BackgroundColor3 = Theme.Background
@@ -419,56 +419,59 @@ local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO F MODERN, ELEGAN & KEREN ]
+-- [ LOGO KUSTOM MIRIP GAMBAR REFERENSI (EMBLEM BLUE NEON + CROWN + HURUF F) ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
     LogoHolder.Size = size
-    LogoHolder.BackgroundColor3 = Color3.fromRGB(11, 18, 30)
+    LogoHolder.BackgroundColor3 = Color3.fromRGB(8, 14, 25)
     LogoHolder.BorderSizePixel = 0
-    LogoHolder.ClipsDescendants = true
+    LogoHolder.ClipsDescendants = false
 
-    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(0, 8)
+    -- Cincin Luar Biru Bercahaya (Gaya Emblem)
+    local OuterRing = Instance.new("UIStroke")
+    OuterRing.Color = Color3.fromRGB(50, 160, 255)
+    OuterRing.Thickness = 2
+    OuterRing.Parent = LogoHolder
 
-    local GlowStroke = Instance.new("UIStroke")
-    GlowStroke.Color = Theme.Accent
-    GlowStroke.Thickness = 1.5
-    GlowStroke.Transparency = 0.15
-    GlowStroke.Parent = LogoHolder
+    Instance.new("UICorner", LogoHolder).CornerRadius = UDim.new(1, 0)
 
-    -- Aksen Segitiga Belakang
-    local BgDecor = Instance.new("Frame")
-    BgDecor.Size = UDim2.fromScale(0.7, 0.7)
-    BgDecor.Position = UDim2.fromScale(0.15, 0.15)
-    BgDecor.BackgroundColor3 = Color3.fromRGB(20, 45, 80)
-    BgDecor.Rotation = 45
-    BgDecor.BorderSizePixel = 0
-    BgDecor.Parent = LogoHolder
-    Instance.new("UICorner", BgDecor).CornerRadius = UDim.new(0, 4)
+    -- Mahkota Kecil di Atas F
+    local Crown = Instance.new("Frame")
+    Crown.Size = UDim2.new(0.35, 0, 0.25, 0)
+    Crown.Position = UDim2.new(0.52, 0, 0.12, 0)
+    Crown.BackgroundColor3 = Color3.fromRGB(0, 190, 255)
+    Crown.Rotation = 12
+    Crown.BorderSizePixel = 0
+    Crown.Parent = LogoHolder
+    Instance.new("UICorner", Crown).CornerRadius = UDim.new(0, 3)
 
-    -- Batang Utama F
+    -- Batang Utama F (Miring / Italic & Glossy)
     local Stem = Instance.new("Frame")
-    Stem.Size = UDim2.new(0.18, 0, 0.6, 0)
-    Stem.Position = UDim2.new(0.3, 0, 0.2, 0)
-    Stem.BackgroundColor3 = Theme.AccentLight
+    Stem.Size = UDim2.new(0.2, 0, 0.58, 0)
+    Stem.Position = UDim2.new(0.32, 0, 0.26, 0)
+    Stem.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+    Stem.Rotation = -14
     Stem.BorderSizePixel = 0
     Stem.Parent = LogoHolder
     Instance.new("UICorner", Stem).CornerRadius = UDim.new(1, 0)
 
     -- Bar Atas F
     local TopBar = Instance.new("Frame")
-    TopBar.Size = UDim2.new(0.42, 0, 0.16, 0)
-    TopBar.Position = UDim2.new(0.3, 0, 0.2, 0)
-    TopBar.BackgroundColor3 = Theme.Accent
+    TopBar.Size = UDim2.new(0.48, 0, 0.18, 0)
+    TopBar.Position = UDim2.new(0.32, 0, 0.26, 0)
+    TopBar.BackgroundColor3 = Color3.fromRGB(40, 140, 255)
+    TopBar.Rotation = -14
     TopBar.BorderSizePixel = 0
     TopBar.Parent = LogoHolder
     Instance.new("UICorner", TopBar).CornerRadius = UDim.new(1, 0)
 
     -- Bar Tengah F
     local MidBar = Instance.new("Frame")
-    MidBar.Size = UDim2.new(0.32, 0, 0.14, 0)
-    MidBar.Position = UDim2.new(0.3, 0, 0.44, 0)
-    MidBar.BackgroundColor3 = Color3.fromRGB(120, 180, 255)
+    MidBar.Size = UDim2.new(0.38, 0, 0.15, 0)
+    MidBar.Position = UDim2.new(0.34, 0, 0.5, 0)
+    MidBar.BackgroundColor3 = Color3.fromRGB(140, 220, 255)
+    MidBar.Rotation = -14
     MidBar.BorderSizePixel = 0
     MidBar.Parent = LogoHolder
     Instance.new("UICorner", MidBar).CornerRadius = UDim.new(1, 0)
@@ -616,7 +619,7 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- Kotak Pencarian Diperlebar dan Didekatkan ke Teks Nama Tab
+-- Kotak Pencarian dengan Outline Putih Redup (Agar mudah dilihat & tidak terlalu terang)
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 24)
@@ -633,8 +636,8 @@ SearchBox.Parent = ContentHeader
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
 
 local SearchStroke = Instance.new("UIStroke")
-SearchStroke.Color = Theme.CardBorder
-SearchStroke.Thickness = 1
+SearchStroke.Color = Color3.fromRGB(130, 150, 180) -- Outline Putih Redup
+SearchStroke.Thickness = 1.2
 SearchStroke.Parent = SearchBox
 
 local ContentSub = Instance.new("TextLabel")
@@ -777,6 +780,7 @@ RenderContent = function(categoryIndex)
             nameLbl.Position = UDim2.new(0, 14, 0, 0)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.RichText = true
             nameLbl.Text = scriptEntry.name
             nameLbl.Parent = card
         end
@@ -841,6 +845,7 @@ RenderContent = function(categoryIndex)
             nameLbl.Position = UDim2.new(0, 10, 0, 6)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.RichText = true
             nameLbl.Text = scriptEntry.name
             nameLbl.Parent = card
 
@@ -925,7 +930,7 @@ RenderContent = function(categoryIndex)
     end
 
     local GridLayout = Instance.new("UIGridLayout")
-    GridLayout.CellSize = UDim2.new(0.485, 0, 0, 68) -- Diperlebar/diperluas
+    GridLayout.CellSize = UDim2.new(0.485, 0, 0, 68)
     GridLayout.CellPadding = UDim2.new(0.03, 0, 0, 8)
     GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
     GridLayout.Parent = ScriptScroll
@@ -987,6 +992,7 @@ RenderContent = function(categoryIndex)
         nameLabel.Position = UDim2.new(0, 10, 0, 6)
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
         nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLabel.RichText = true
         nameLabel.Text = scriptEntry.name
         nameLabel.Parent = card
 
