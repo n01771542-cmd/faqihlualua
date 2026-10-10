@@ -200,9 +200,7 @@ local RawNewScriptsData = {
     {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
     
     -- [ TAMBAHAN SCRIPT BARU DARI PESAN ]
-    {"LEON4951 HUB (TEMP)","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faluahub/refs/heads/main/Loader.lua\"))()"},
     {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
-    {"MIRANDA HUB V3 (AFK)","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/mirandaafk.lua\"))()"},
     {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
     {"TRIPSHUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TripNation/Trips-Hub/main/games/steal_an_egg.lua\"))()"},
     {"VANTABLACK","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tranduykhanh08428-web/VantablackHub/refs/heads/main/Stealanegg.lua.txt\"))()"},
@@ -212,7 +210,7 @@ local RawNewScriptsData = {
     {"TITANIC HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TITANIC-HUB/StealAnEgg/main/Loader.lua\"))()"},
     {"ASTRAL HUB","No Key",false,"loadstring(game:HttpGet(\"https://api.polsec.sh/loader/57d088befe906a8e/76f9bde1349c5eb9\"))()"},
     {"THANHDUY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Game/refs/heads/main/Steal-An-Egg.lua\"))()"},
-    {"LEON4951 HUB (AUTO HOP)","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/leon4951.lua\"))()"},
+    {"LEON HOP SERVER","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/leon4951.lua\"))()"},
     {"CM HUB","Key",false,"loadstring(game:HttpGet(\"https://cmhub-key-system.vercel.app/roblox/loader.lua\"))()"},
     {"SYNEXHUD","Key",false,"loadstring(game:HttpGet(\"https://synex.lat/loaders/stealegg.lua\"))()"},
     {"POLLUTED HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PollutedHub/Sae/refs/heads/main/SaePolluted\"))()"},
@@ -317,7 +315,7 @@ local function AddToHistory(scriptEntry)
     local t = os.date("*t")
     local monthStr = MonthShortNames[t.month] or tostring(t.month)
     
-    -- Format ringkas & padat agar jam tidak terpotong (misal: 2026 Okt 10:36)
+    -- Format ringkas & padat agar jam tidak terpotong
     local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
     
     for i = #HistoryList, 1, -1 do
@@ -780,7 +778,7 @@ RenderContent = function(categoryIndex)
 
     ContentSub.Text = "Click run to execute a script!"
 
-    -- RENDER TAB HISTORI (Sesuai Penyesuaian Waktu & Penataan Ulang)
+    -- RENDER TAB HISTORI
     if category.key == "History" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
