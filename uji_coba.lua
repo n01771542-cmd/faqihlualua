@@ -1,5 +1,5 @@
 -- ============================================================================
--- LEON4951 HUB v2 - REDESIGN (ELEGANT DARK BLUE EDITION)
+-- LEON4951 HUB v2 - FINAL VERSION
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
@@ -412,14 +412,14 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
 
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 4 -- Outline UI ditebalkan sedikit
+MainStroke.Thickness = 4 -- Outline UI dipertebal
 MainStroke.Parent = MainFrame
 
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ LOGO KEMBALI KE SEMULA ]
+-- [ LOGO KEMBALI KE LOGO PALING AWAL ]
 local function CreateFLogo(size)
     local LogoHolder = Instance.new("Frame")
     LogoHolder.Name = "LogoHolder"
@@ -612,7 +612,7 @@ ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
 ContentTitle.Text = "SCRIPTS"
 ContentTitle.Parent = ContentHeader
 
--- Kotak Pencarian dengan Outline Kotak Tempat Pencarian (Border Putih Redup) & Teks Putih Beroutline Hitam
+-- Kotak Pencarian dengan Garis Tepi (Outline Tempat Pencarian) Terang & Teks Putih ber-Outline Hitam Tipis
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Size = UDim2.new(1, -140, 0, 26)
@@ -629,7 +629,7 @@ SearchBox.Parent = ContentHeader
 
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 8)
 
--- Outline Tempat / Kotak Pencarian
+-- Garis Tepi Kotak Pencarian
 local SearchBoxBorder = Instance.new("UIStroke")
 SearchBoxBorder.Color = Color3.fromRGB(180, 200, 225)
 SearchBoxBorder.Thickness = 1.4
