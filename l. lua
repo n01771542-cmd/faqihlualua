@@ -1,0 +1,1906 @@
+-- ==========================================
+-- SIMPLE UI ADDED (TIDAK MENGUBAH KODE ASLI)
+-- ==========================================
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SenaV4_SimpleUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 250, 0, 110)
+Frame.Position = UDim2.new(0.5, -125, 0.5, -55)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = Frame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(232, 232, 238)
+UIStroke.Thickness = 2
+UIStroke.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Title.Text = "Sena V4 Loader"
+Title.TextColor3 = Color3.fromRGB(232, 232, 238)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.Parent = Frame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 10)
+TitleCorner.Parent = Title
+
+local TextButton = Instance.new("TextButton")
+TextButton.Size = UDim2.new(1, -20, 1, -45)
+TextButton.Position = UDim2.new(0, 10, 0, 40)
+TextButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+TextButton.Text = "Execute Sena V4"
+TextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextButton.TextSize = 16
+TextButton.Font = Enum.Font.GothamBold
+TextButton.Parent = Frame
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 6)
+BtnCorner.Parent = TextButton
+
+-- Logika Dragging (Agar UI bisa digeser)
+local dragging = false
+local dragInput, mousePos, framePos
+
+Frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        mousePos = input.Position
+        framePos = Frame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+Frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - mousePos
+        Frame.Position = UDim2.new(
+            framePos.X.Scale, framePos.X.Offset + delta.X,
+            framePos.Y.Scale, framePos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- Eksekusi Script
+TextButton.MouseButton1Click:Connect(function()
+    TextButton.Text = "Loading..."
+    TextButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    
+    task.spawn(function()
+        -- ==========================================
+        -- KODE ASLI DIMULAI DI SINI (TIDAK DIUBAH)
+        -- ==========================================
+                                        if v4731 then
+                                                return
+                                        end
+
+                                        if type(p1056) == "function" then
+                                                p1056(p1057)
+                                        end
+                                end
+
+                                return v4767
+                        end
+                        __SenaV4PlayerSteal = genv.__SenaV4PlayerSteal
+                        v4734 = function(p1058)
+                                senaV4Config.StealPlayers = p1058 == true
+
+                                if __SenaV4PlayerSteal then
+                                        __SenaV4PlayerSteal:setEnabled(senaV4Config.StealPlayers)
+                                end
+                        end
+                        v4735 = function(p1059)
+                                senaV4Config.StealPlayerRarities = v4320(p1059)
+                        end
+
+                        local function v4768(p1060)
+                                local v4769 = string.lower(tostring(p1060 or "")):gsub("[%s,]", "")
+
+                                if v4769 == "" then
+                                        return 0
+                                end
+
+                                local v4770, v4771 = string.match(v4769, "^([%d]+%.?[%d]*)([kmb]?)$")
+                                local v4772 = tonumber(v4770)
+
+                                if not v4772 then
+                                        return 0
+                                end
+
+                                if v4771 == "k" then
+                                        return v4772 * 1000
+                                end
+
+                                if v4771 == "m" then
+                                        return v4772 * 1000000
+                                end
+
+                                if v4771 == "b" then
+                                        return v4772 * 1e9
+                                end
+
+                                return v4772
+                        end
+
+                        v4736 = function(p1061)
+                                senaV4Config.StealPlayerMinValue = v4768(p1061)
+                        end
+                        v4737 = function(p1062)
+                                senaV4Config.AutoIndex = p1062 == true
+
+                                if v612 then
+                                        v612:setIndexObjective(senaV4Config.AutoIndex)
+                                end
+                        end
+                        v4738 = function(p1063)
+                                senaV4Config.WebhookEnabled = p1063 == true
+                        end
+                        v4739 = function(p1064)
+                                senaV4Config.WebhookURL = type(p1064) == "string" and p1064 or ""
+                        end
+                        v4740 = function(p1065)
+                                senaV4Config.WebhookRarities = v4320(p1065)
+                        end
+                        v4741 = function(p1066)
+                                senaV4Config.WebhookMinValue = v4768(p1066)
+                        end
+
+                        local t219 = {
+                                "Set",
+                                "SetValue",
+                                "LoadValue",
+                                "ResetValue",
+                                "SetContent",
+                                "SetTitle",
+                                "SetOptions",
+                                "Update",
+                                "Refresh",
+                                "Lock",
+                                "Unlock",
+                                "SetVisible"
+                        }
+
+                        local function v4774(p1067)
+                                if type(p1067) ~= "table" then
+                                        return p1067
+                                end
+
+                                if rawget(p1067, "__senaElevated") then
+                                        return p1067
+                                end
+
+                                for _, v in ipairs(t219) do
+                                        local value = rawget(p1067, v)
+
+                                        if type(value) == "function" then
+                                                rawset(p1067, v, function(...)
+                                                        v4730()
+
+                                                        return value(...)
+                                                end)
+                                        end
+                                end
+
+                                rawset(p1067, "__senaElevated", true)
+
+                                return p1067
+                        end
+
+                        local t220 = {
+                                "AddToggle",
+                                "AddSlider",
+                                "AddDropdown",
+                                "AddInput",
+                                "AddButton",
+                                "AddParagraph",
+                                "AddKeybind",
+                                "AddColorPicker",
+                                "AddActionList",
+                                "AddLiveChat",
+                                "AddSupportCard",
+                                "AddSubSection",
+                                "AddSection",
+                                "AddTab",
+                                "AddForum"
+                        }
+
+                        local function v4779(p1068)
+                                if type(p1068) ~= "table" then
+                                        return p1068
+                                end
+
+                                v4774(p1068)
+
+                                if rawget(p1068, "__senaFactoryGuarded") then
+                                        return p1068
+                                end
+
+                                for _, v in ipairs(t220) do
+                                        local value = rawget(p1068, v)
+
+                                        if type(value) == "function" then
+                                                rawset(p1068, v, function(...)
+                                                        v4730()
+
+                                                        local v4783 = table.pack(value(...))
+
+                                                        if v4783.n > 0 then
+                                                                v4783[1] = v4779(v4783[1])
+                                                        end
+
+                                                        return table.unpack(v4783, 1, v4783.n)
+                                                end)
+                                        end
+                                end
+
+                                rawset(p1068, "__senaFactoryGuarded", true)
+
+                                return p1068
+                        end
+
+                        v4730()
+                        v4742 = SenaLibOverride:Window({
+                                Title = "Sena BETA |",
+                                Footer = "Steal An Egg",
+                                Folder = "SenaSAEv4",
+                                Version = 1,
+                                Color = Color3.fromRGB(232, 232, 238),
+                                Image = "http://56.10.112.179:8080/visual/sena_bg.jpg"
+                        })
+                        v4779(v4742)
+                        t216 = {}
+                        t217 = { "Respawn Point" }
+
+                        local __SenaV4Roaming = genv.__SenaV4Roaming
+
+                        if __SenaV4Roaming and type(__SenaV4Roaming.waypointList) == "function" then
+                                local ok, result = pcall(__SenaV4Roaming.waypointList)
+
+                                if ok and type(result) == "table" and #result > 0 then
+                                        t217 = result
+                                end
+                        end
+
+                        u4745 = t217[1]
+                        t218 = {}
+
+                        local __SenaV4ScrambleRuntime = genv.__SenaV4ScrambleRuntime
+
+                        if __SenaV4ScrambleRuntime and type(__SenaV4ScrambleRuntime.snapshot) == "function" then
+                                pcall(function()
+                                        local v4788 = __SenaV4ScrambleRuntime.snapshot()
+
+                                        if v4788 and type(v4788.Shop) == "table" then
+                                                for _, v in pairs(v4788.Shop) do
+                                                        if v and v.Label then
+                                                                t218[#t218 + 1] = tostring(v.Label)
+                                                        end
+                                                end
+                                        end
+                                end)
+                        end
+
+                        local v4791 = v4742:AddTab({
+                                Name = "Admin Abuse",
+                                Icon = "flame"
+                        })
+
+                        t216.autoStealCapture = v4791:AddSection("Capture The Egg"):AddToggle({
+                                Title = "Auto Steal Capture",
+                                Content = "For the Capture The Egg event. Grabs the event egg for you and keeps you holding it in a safe spot so your time keeps going. Turn off normal Auto Steal while using this.",
+                                Default = false,
+                                Callback = v4732(v4724)
+                        })
+
+                        local Movement = v4791:AddSection("Movement")
+
+                        t216.adminBoost = Movement:AddToggle({
+                                Title = "Admin Abuse Boost",
+                                Content = "Only works during Admin Abuse. Do not use it when there is no Admin Abuse.",
+                                Default = false,
+                                Callback = v4732(v4750)
+                        })
+                        t216.flyForCapture = Movement:AddToggle({
+                                Title = "Fly For Capture",
+                                Content = "For the Capture The Egg event. After you pick up an egg, you fly up and stay still in the air so nobody can take it.",
+                                Default = false,
+                                Callback = v4732(v4722)
+                        })
+                        t216.instantGrab = Movement:AddToggle({
+                                Title = "Instant Grab",
+                                Content = "Picking up an egg only needs a quick tap instead of a long hold.",
+                                Default = false,
+                                Callback = v4732(v4723)
+                        })
+                        t216.infiniteJump = Movement:AddToggle({
+                                Title = "Infinite Jump",
+                                Content = "Jump again in mid-air, as often as you like.",
+                                Default = false,
+                                Callback = v4732(v4725)
+                        })
+                        t216.noclip = Movement:AddToggle({
+                                Title = "Noclip",
+                                Content = "Walk through walls and doors.",
+                                Default = false,
+                                Callback = v4732(v4560)
+                        })
+                        t216.autoRingEvent = v4791:AddSection("Ring Event"):AddToggle({
+                                Title = "Auto Ring Event",
+                                Content = "Starts at the safe zone, then glides Forest -> Angels & Demons -> back to Forest on a loop. Turn off Auto Steal while using this.",
+                                Default = false,
+                                Callback = v4732(v4569)
+                        })
+                end
+
+                do
+                        local v4793 = v4742:AddTab({
+                                Name = "Main",
+                                Icon = "home"
+                        })
+                        local v4794 = v4793:AddSection("Auto Steal")
+
+                        t216.autoSteal = v4794:AddToggle({
+                                Title = "Auto Steal",
+                                Content = "Steals eggs that match your filters and brings them home.",
+                                Default = false,
+                                Callback = v4732(v4526)
+                        })
+                        t216.helpFriend = v4794:AddToggle({
+                                Title = "Help Friend",
+                                Content = "Instead of banking a stolen egg, drops it just before the safe zone line so a friend can pick it up.",
+                                Default = false,
+                                Callback = v4732(function(p1069)
+                                        senaV4Config.HelpFriend = p1069 == true
+                                end)
+                        })
+                        v4794:AddButton({
+                                Title = "Egg Checker",
+                                Content = "Every egg on the field right now, best money first. Pick one and steal it.",
+                                Callback = v4732(function()
+                                        senaPanels.openChecker()
+                                end)
+                        })
+                        v4794:AddButton({
+                                Title = "Egg Spawn Analyst",
+                                Content = "Live global spawn tracker, timeline & forecast synced across active online players.",
+                                Callback = v4732(function()
+                                        senaPanels.openAnalyst()
+                                end)
+                        })
+                        t216.godMode = v4794:AddToggle({
+                                Title = "Aura Bat",
+                                Content = "",
+                                Default = false,
+                                Callback = v4732(v4528)
+                        })
+                        t216.stealMode = v4794:AddDropdown({
+                                Title = "Steal Mode",
+                                Content = "If you have good speed better use High Speed User, but if you are newbie, use Low Speed User",
+                                Options = {
+                                        "Low Speed User",
+                                        "High Speed User",
+                                        "High Speed User (Fly)"
+                                },
+                                MaxVisible = 3,
+                                Default = "High Speed User",
+                                Multi = false,
+                                Callback = v4732(v4536)
+                        })
+
+                        if (tonumber(senaV4Config.StealHoldSeconds) or 5) > 10 then
+                                senaV4Config.StealHoldSeconds = 5
+                        end
+
+                        t216.stealHold = v4794:AddSlider({
+                                Title = "Low Speed Multiplier",
+                                Content = "For Low Speed User. Higher = faster grab, lower = safer. Lower it if steals keep failing.",
+                                Min = 1,
+                                Max = 10,
+                                Default = 5,
+                                Increment = 1,
+                                Callback = v4732(v4527)
+                        })
+
+                        local v4795 = v4793:AddSection("Egg Filter")
+
+                        v4795:AddSubSection("Egg")
+                        t216.names = v4795:AddDropdown({
+                                Title = "Filter By Egg Name",
+                                Content = "Only steal these eggs. Leave empty for any egg.",
+                                Options = v4522,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1070)
+                                        v4538("names", "name", p1070)
+                                end)
+                        })
+                        t216.rarities = v4795:AddDropdown({
+                                Title = "Filter By Rarity",
+                                Content = "Only steal these rarities. Leave empty for any rarity.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1071)
+                                        v4538("rarities", "rarity", p1071)
+                                end)
+                        })
+                        v4795:AddSubSection("Area & Value")
+                        t216.areas = v4795:AddDropdown({
+                                Title = "Select Area",
+                                Content = "Only steal from these areas. Leave empty for every area.",
+                                Options = v4523,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1072)
+                                        v4538("areas", "area", p1072)
+                                end)
+                        })
+                        t216.value = v4795:AddInput({
+                                Title = "Steal By Value",
+                                Content = "Minimum money per second. Supports k, m and b.",
+                                Placeholder = "e.g. 500k, 2m, 1b",
+                                Default = "",
+                                Callback = v4732(v4539)
+                        })
+                        t216.mutations = v4795:AddDropdown({
+                                Title = "Filter By Mutation",
+                                Content = "Only steal eggs carrying one of these mutations. Leave empty for any egg.",
+                                Options = t199,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4540)
+                        })
+                        t216.weight = v4795:AddInput({
+                                Title = "Steal By Weight",
+                                Content = "Minimum egg weight in kilograms. 0 accepts any weight.",
+                                Placeholder = "e.g. 12000",
+                                Default = "",
+                                Callback = v4732(v4541)
+                        })
+                        t216.priority = v4795:AddDropdown({
+                                Title = "Steal Priority",
+                                Content = "Which egg to go for first when more than one passes the filters.",
+                                Options = {
+                                        "Rarity",
+                                        "Highest Value",
+                                        "Heaviest"
+                                },
+                                Default = "Rarity",
+                                Callback = v4732(v4542)
+                        })
+                        t216.autoIndex = v4795:AddToggle({
+                                Title = "Auto Index",
+                                Content = "Also steal eggs whose pet is still missing from your Pet Index, in any area, on top of the filters above. An egg you already hold counts as covered until it hatches.",
+                                Default = false,
+                                Callback = v4732(v4737)
+                        })
+
+                        local v4796 = v4793:AddSection("Egg ESP")
+
+                        t216.eggEsp = v4796:AddToggle({
+                                Title = "Egg ESP",
+                                Content = "Draws a label over every egg on the field so you can read it from across the map.",
+                                Default = false,
+                                Callback = v4732(v4543)
+                        })
+                        t216.espDetails = v4796:AddDropdown({
+                                Title = "ESP Details",
+                                Content = "What each label shows. Placed Eggs also labels the eggs sitting on plots.",
+                                Options = {
+                                        "Name",
+                                        "Rarity",
+                                        "Value",
+                                        "Weight",
+                                        "Mutation",
+                                        "Placed Eggs"
+                                },
+                                Multi = true,
+                                Default = {
+                                        "Name",
+                                        "Rarity",
+                                        "Value"
+                                },
+                                Callback = v4732(v4544)
+                        })
+                        t216.backpackRates = v4796:AddToggle({
+                                Title = "Backpack Value/s",
+                                Content = "Shows how much money per second each egg in your backpack makes, right on its slot.",
+                                Default = false,
+                                Callback = v4732(v4546)
+                        })
+
+                        local v4797 = v4793:AddSection("Steal Webhook")
+
+                        t216.webhookEnabled = v4797:AddToggle({
+                                Title = "Steal Webhook",
+                                Content = "Posts a Discord embed the moment a stolen egg is banked, with its rarity, size, weight and cash per second.",
+                                Default = false,
+                                Callback = v4732(v4738)
+                        })
+                        t216.webhookUrl = v4797:AddInput({
+                                Title = "Webhook URL",
+                                Content = "Paste the Discord webhook URL for the channel you want.",
+                                Placeholder = "https://discord.com/api/webhooks/...",
+                                Default = "",
+                                Callback = v4732(v4739)
+                        })
+                        v4797:AddSubSection("Filter")
+                        t216.webhookRarities = v4797:AddDropdown({
+                                Title = "Notify Rarities",
+                                Content = "Only post these rarities. Empty = every egg you steal.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4740)
+                        })
+                        t216.webhookValue = v4797:AddInput({
+                                Title = "Notify Minimum Value",
+                                Content = "Only post eggs worth at least this per second. Supports k, m and b.",
+                                Placeholder = "e.g. 500k, 2m, 1b",
+                                Default = "",
+                                Callback = v4732(v4741)
+                        })
+                        v4797:AddButton({
+                                Title = "Test Webhook",
+                                Content = "Sends one test embed so you can confirm the URL works.",
+                                Callback = v4732(function()
+                                        local __SenaV4Webhook = genv.__SenaV4Webhook
+
+                                        if not __SenaV4Webhook or not __SenaV4Webhook.test() then
+                                                SenaLibOverride:Notify({
+                                                        Title = "Steal Webhook",
+                                                        Content = "Enter a webhook URL first",
+                                                        Duration = 3
+                                                })
+
+                                                return
+                                        end
+
+                                        SenaLibOverride:Notify({
+                                                Title = "Steal Webhook",
+                                                Content = "Test embed sent",
+                                                Duration = 3
+                                        })
+                                end)
+                        })
+                end
+
+                do
+                        local v4799 = v4742:AddTab({
+                                Name = "Auto",
+                                Icon = "repeat"
+                        })
+
+                        t216.privateTab = v4742:AddTab({
+                                Name = "Private Server",
+                                Icon = "users"
+                        })
+
+                        local v4800 = v4799:AddSection("Egg Automation")
+
+                        v4800:AddSubSection("Place")
+                        t216.autoPlace = v4800:AddToggle({
+                                Title = "Auto Place Egg",
+                                Content = "Places eggs from your inventory on your plot.",
+                                Default = false,
+                                Callback = v4732(v4566)
+                        })
+                        t216.placeRarity = v4800:AddDropdown({
+                                Title = "Place Egg Rarity",
+                                Content = "Only place these rarities. Leave empty for all.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1073)
+                                        senaV4Config.PlaceRarities = v4320(p1073)
+                                end)
+                        })
+                        v4800:AddSubSection("Hatch")
+                        t216.autoHatch = v4800:AddToggle({
+                                Title = "Auto Hatch Egg",
+                                Content = "Hatches your placed eggs when they are ready.",
+                                Default = false,
+                                Callback = v4732(v4567)
+                        })
+                        v4800:AddSubSection("Mutate")
+                        t216.mutationChoice = v4800:AddDropdown({
+                                Title = "Select Mutation",
+                                Content = "Which mutation to apply to your placed eggs.",
+                                Options = {
+                                        "Scrambled",
+                                        "Fractured"
+                                },
+                                Multi = false,
+                                Default = "Scrambled",
+                                Callback = v4732(v4570)
+                        })
+                        t216.mutationSpecies = v4800:AddDropdown({
+                                Title = "Mutate Egg Name",
+                                Content = "Only mutate these eggs by name. Leave empty for every placed egg.",
+                                Options = v4522,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4571)
+                        })
+                        t216.mutationRarity = v4800:AddDropdown({
+                                Title = "Mutate Egg Rarity",
+                                Content = "Only mutate placed eggs of these rarities. Leave empty for every rarity.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4572)
+                        })
+                        t216.mutationRetry = v4800:AddToggle({
+                                Title = "Retry Until Mutated",
+                                Content = "Keep applying to one egg until it mutates or charges run out (10% per use).",
+                                Default = true,
+                                Callback = v4732(v4573)
+                        })
+                        t216.autoMutation = v4800:AddToggle({
+                                Title = "Auto Apply Mutation",
+                                Content = "Equips the selected mutation consumable and applies it to your placed eggs.",
+                                Default = false,
+                                Callback = v4732(v4568)
+                        })
+                        v4800:AddButton({
+                                Title = "Apply Mutation Now",
+                                Content = "Run one mutation pass over your placed eggs right now.",
+                                Callback = v4732(function()
+                                        task.spawn(function()
+                                                pcall(t24.mutationSweep)
+                                        end)
+                                end)
+                        })
+
+                        local v4801 = v4742:AddTab({
+                                Name = "Pets",
+                                Icon = "sparkles"
+                        })
+                        local v4802 = v4801:AddSection("Pet Selling")
+
+                        t216.autoSell = v4802:AddToggle({
+                                Title = "Auto Sell Pet",
+                                Content = "Sells pets that match a filter below. Favorite, placed and equipped pets are kept.",
+                                Default = false,
+                                Callback = v4732(v4574)
+                        })
+                        v4802:AddSubSection("Filter")
+                        v4519 = v4802:AddDropdown({
+                                Title = "Pet Name Filter",
+                                Content = "Pets to sell by name. Pick All for every name.",
+                                Options = v4525,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1074)
+                                        senaV4Config.SellNames = v4320(p1074)
+                                end)
+                        })
+                        v4520 = v4802:AddDropdown({
+                                Title = "Pet Rarity Filter",
+                                Content = "Pets to sell by rarity. Pick All for every rarity.",
+                                Options = v4330(v4524),
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1075)
+                                        senaV4Config.SellRarities = v4320(p1075)
+                                end)
+                        })
+                        t216.sellPetValue = v4802:AddInput({
+                                Flag = "sellPetValue",
+                                Title = "Sell By Value (max money/s)",
+                                Content = "Only sell pets whose money per second is this or lower. Blank = no value limit. Supports k, m, b.",
+                                Placeholder = "e.g. 100k, 2m",
+                                Default = "",
+                                Callback = v4732(v4576)
+                        })
+
+                        local v4803 = v4801:AddSection("Egg Selling")
+
+                        t216.autoSellEgg = v4803:AddToggle({
+                                Title = "Auto Sell Egg",
+                                Content = "Sells unplaced eggs of the rarities below.",
+                                Default = false,
+                                Callback = v4732(v4575)
+                        })
+                        v4521 = v4803:AddDropdown({
+                                Title = "Egg Rarity Filter",
+                                Content = "Egg rarities to sell. Pick All for every rarity.",
+                                Options = v4330(v4524),
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1076)
+                                        senaV4Config.SellEggRarities = v4320(p1076)
+                                end)
+                        })
+                        t216.sellEggValue = v4803:AddInput({
+                                Flag = "sellEggValue",
+                                Title = "Sell By Value (max money/s)",
+                                Content = "Only sell eggs whose money per second is this or lower. Blank = no value limit. Supports k, m, b.",
+                                Placeholder = "e.g. 100k, 2m",
+                                Default = "",
+                                Callback = v4732(v4577)
+                        })
+
+                        local v4804 = v4742:AddTab({
+                                Name = "Events",
+                                Icon = "flame"
+                        })
+                        local v4805 = v4801:AddSection("Pet Favorite")
+
+                        t216.autoFavorite = v4805:AddToggle({
+                                Title = "Auto Favorite",
+                                Content = "Marks every pet that matches the rule below as a favorite, so Auto Sell and Auto Fuse leave it alone.",
+                                Default = false,
+                                Callback = v4732(v4548)
+                        })
+                        t216.favoriteRule = v4805:AddDropdown({
+                                Title = "Favorite Rule",
+                                Content = "Match pets by rarity or by species.",
+                                Options = {
+                                        "Rarity",
+                                        "Species"
+                                },
+                                Default = "Rarity",
+                                Callback = v4732(v4549)
+                        })
+                        v4805:AddSubSection("Only when Rule = Rarity")
+                        t216.favoriteRarities = v4805:AddDropdown({
+                                Title = "Rarities to Keep",
+                                Content = "Pets of these rarities get favorited.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4550)
+                        })
+                        v4805:AddSubSection("Only when Rule = Species")
+                        t216.favoriteSpecies = v4805:AddDropdown({
+                                Title = "Species to Keep",
+                                Content = "Pets of these species get favorited.",
+                                Options = v4522,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4551)
+                        })
+                        t216.unfavoriteAll = v4805:AddButton({
+                                Title = "Unfavorite Everything",
+                                Content = "Clears the favorite flag on every pet you own.",
+                                Callback = v4732(function()
+                                        local __SenaV4PetBarn = genv.__SenaV4PetBarn
+                                        local n83 = 0
+
+                                        if __SenaV4PetBarn and type(__SenaV4PetBarn.unfavoriteAll) == "function" then
+                                                n83 = __SenaV4PetBarn.unfavoriteAll() or 0
+                                        end
+
+                                        SenaLibOverride:Notify({
+                                                Title = "Pet Favorite",
+                                                Content = n83 .. " pets unfavorited",
+                                                Duration = 3
+                                        })
+                                end)
+                        })
+
+                        local v4808 = v4801:AddSection("Pet Fusion")
+
+                        t216.autoFuse = v4808:AddToggle({
+                                Title = "Auto Fuse",
+                                Content = "Feeds three matching pets into the Fusion machine over and over. Favorited and equipped pets are never used.",
+                                Default = false,
+                                Callback = v4732(v4556)
+                        })
+                        t216.fuseRule = v4808:AddDropdown({
+                                Title = "Fusion Rule",
+                                Content = "Fuse anything that passes the rarity filter, or only the species you pick below.",
+                                Options = {
+                                        "Any Species",
+                                        "Selected Species"
+                                },
+                                Default = "Any Species",
+                                Callback = v4732(v4557)
+                        })
+                        t216.fuseRarities = v4808:AddDropdown({
+                                Title = "Rarities to Fuse",
+                                Content = "Only fuse pets of these rarities. Leave empty for any rarity.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4558)
+                        })
+                        v4808:AddSubSection("Only when Rule = Selected Species")
+                        t216.fuseSpecies = v4808:AddDropdown({
+                                Title = "Species to Fuse",
+                                Content = "Only these species go into the machine.",
+                                Options = v4522,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4559)
+                        })
+
+                        local v4809 = v4799:AddSection("Equip & Collect")
+
+                        t216.autoEquipBest = v4809:AddToggle({
+                                Title = "Auto Equip Best",
+                                Content = "Keeps your strongest pets equipped as better ones hatch.",
+                                Default = false,
+                                Callback = v4732(v4552)
+                        })
+                        t216.autoClaimOffline = v4809:AddToggle({
+                                Title = "Collect Offline Income",
+                                Content = "Claims the money your base earned while you were away, as soon as there is any.",
+                                Default = false,
+                                Callback = v4732(v4553)
+                        })
+                        t216.autoBaseUpgrade = v4809:AddToggle({
+                                Title = "Auto Upgrade Base",
+                                Content = "Buys the next base tier the moment you can afford it.",
+                                Default = false,
+                                Callback = v4732(v4554)
+                        })
+                        t216.autoClaimAlmanac = v4809:AddToggle({
+                                Title = "Auto Claim Almanac",
+                                Content = "Redeems every Pet Index reward that is ready. This is the reward claim, not the steal objective.",
+                                Default = false,
+                                Callback = v4732(v4555)
+                        })
+                        t216.upgradeBaseOnce = v4809:AddButton({
+                                Title = "Upgrade Base Now",
+                                Content = "Buys one base tier right away.",
+                                Callback = v4732(function()
+                                        local __SenaV4Upgrades = genv.__SenaV4Upgrades
+                                        local v4811 = false
+                                        local s18 = "Upgrades not ready"
+
+                                        if __SenaV4Upgrades and type(__SenaV4Upgrades.upgradeBase) == "function" then
+                                                v4811, s18 = __SenaV4Upgrades.upgradeBase()
+                                        end
+
+                                        local v4813 = SenaLibOverride
+                                        local Notify = SenaLibOverride.Notify
+                                        local t221 = {
+                                                Title = "Base"
+                                        }
+                                        local content = v4811 and "Base upgraded"
+
+                                        if not content then
+                                                content = tostring(s18 or "Could not upgrade")
+                                        end
+
+                                        t221.Content = content
+                                        t221.Duration = 3
+                                        Notify(v4813, t221)
+                                end)
+                        })
+
+                        local __SenaV4ButterflyRuntime = genv.__SenaV4ButterflyRuntime
+                        local v4818 = v4804:AddSection("Butterfly Bloom")
+                        local v4819 = v4818:AddParagraph({
+                                Title = "Bloom Status",
+                                Content = "Reading the Bloom schedule..."
+                        })
+
+                        t216.bloomAutoNet = v4818:AddToggle({
+                                Title = "Auto Claim Net",
+                                Content = "Goes into the Enchanted Tree and claims your free Butterfly Net once.",
+                                Default = false,
+                                Callback = v4732(function(p1077)
+                                        senaV4Config.ButterflyAutoNet = p1077 == true
+                                end)
+                        })
+                        t216.bloomAutoCatch = v4818:AddToggle({
+                                Title = "Auto Catch",
+                                Content = "During every Bloom (every 30 min, 5 min long) flies to the Enchanted Forest, equips the net and catches with the Catch Mode below.",
+                                Default = false,
+                                Callback = v4732(function(p1078)
+                                        senaV4Config.ButterflyAutoCatch = p1078 == true
+                                end)
+                        })
+
+                        local v4820 = __SenaV4ButterflyRuntime and __SenaV4ButterflyRuntime.modeOptions() or { "Tween to Butterfly" }
+
+                        t216.bloomMode = v4818:AddDropdown({
+                                Title = "Catch Mode",
+                                Content = "Tween to Butterfly chases one butterfly at a time. Stand waits in the thickest part of the swarm, Zigzag sweeps back and forth across the forest, Circle loops around the swarm.",
+                                Options = v4820,
+                                Multi = false,
+                                Default = v4820[1],
+                                Callback = v4732(function(p1079)
+                                        if __SenaV4ButterflyRuntime then
+                                                __SenaV4ButterflyRuntime.setMode(p1079)
+                                        end
+                                end)
+                        })
+                        t216.bloomTiers = v4818:AddDropdown({
+                                Title = "Catch Tiers",
+                                Content = "Only swing at these butterflies. Leave empty to catch every tier.",
+                                Options = __SenaV4ButterflyRuntime and __SenaV4ButterflyRuntime.tierOptions() or {
+                                        "Radiant",
+                                        "Amethyst",
+                                        "Sapphire",
+                                        "Emerald"
+                                },
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(function(p1080)
+                                        if __SenaV4ButterflyRuntime then
+                                                __SenaV4ButterflyRuntime.setTiers(v4320(p1080))
+                                        end
+                                end)
+                        })
+                        t216.bloomEsp = v4818:AddToggle({
+                                Title = "Butterfly ESP",
+                                Content = "Shows every butterfly's tier and distance while a Bloom is live.",
+                                Default = false,
+                                Callback = v4732(function(p1081)
+                                        senaV4Config.ButterflyEsp = p1081 == true
+                                end)
+                        })
+                        v4818:AddSubSection("Trade & Craft")
+                        t216.bloomAutoTrade = v4818:AddToggle({
+                                Title = "Auto Trade Up",
+                                Content = "After each Bloom, trades your butterflies up at the machine inside the Enchanted Tree.",
+                                Default = false,
+                                Callback = v4732(function(p1082)
+                                        senaV4Config.ButterflyAutoTrade = p1082 == true
+                                end)
+                        })
+
+                        local v4821 = __SenaV4ButterflyRuntime and __SenaV4ButterflyRuntime.recipeOptions() or { "All Recipes" }
+
+                        t216.bloomRecipe = v4818:AddDropdown({
+                                Title = "Trade Recipe",
+                                Content = "Which trade Auto Trade Up runs. For Essence only trades up what the essence recipe is still short of.",
+                                Options = v4821,
+                                Multi = false,
+                                Default = v4821[1],
+                                Callback = v4732(function(p1083)
+                                        if __SenaV4ButterflyRuntime then
+                                                __SenaV4ButterflyRuntime.setRecipe(p1083)
+                                        end
+                                end)
+                        })
+                        t216.bloomAutoCraft = v4818:AddToggle({
+                                Title = "Auto Craft Essence",
+                                Content = "After each Bloom, crafts Enchanted Essence at the shrine once you hold the full recipe.",
+                                Default = false,
+                                Callback = v4732(function(p1084)
+                                        senaV4Config.ButterflyAutoCraft = p1084 == true
+                                end)
+                        })
+
+                        local function v4822(p1085, p1086, p1087, p1088)
+                                v4818:AddButton({
+                                        Title = p1085,
+                                        Content = p1086,
+                                        Callback = v4732(function()
+                                                if not __SenaV4ButterflyRuntime then
+                                                        return
+                                                end
+
+                                                task.spawn(function()
+                                                        __SenaV4ButterflyRuntime.manual = true
+
+                                                        local ok, result, result2 = pcall(p1087)
+
+                                                        __SenaV4ButterflyRuntime.manual = false
+
+                                                        if not ok then
+                                                                local v4826 = result
+
+                                                                result = false
+                                                                result2 = v4826
+                                                        end
+
+                                                        local v4827 = SenaLibOverride
+                                                        local Notify = SenaLibOverride.Notify
+                                                        local t222 = {
+                                                                Title = "Butterfly Bloom"
+                                                        }
+                                                        local content = result and p1088(result2)
+
+                                                        if not content then
+                                                                content = tostring(result2 or "Could not do that")
+                                                        end
+
+                                                        t222.Content = content
+                                                        t222.Duration = 4
+                                                        Notify(v4827, t222)
+                                                end)
+                                        end)
+                                })
+                        end
+
+                        v4822("Claim Net Now", "Claims the Butterfly Net right now.", function()
+                                return __SenaV4ButterflyRuntime.claimNet()
+                        end, function()
+                                return "Butterfly Net claimed"
+                        end)
+                        v4822("Trade Up Now", "Runs the trade recipe once, even with Auto Trade Up off.", function()
+                                return __SenaV4ButterflyRuntime.tradeUp()
+                        end, function(p1089)
+                                return ("Traded up %d time(s)"):format(tonumber(p1089) or 0)
+                        end)
+                        v4822("Craft Essence Now", "Crafts Enchanted Essence right now if you hold the full recipe.", function()
+                                return __SenaV4ButterflyRuntime.craft()
+                        end, function(p1090)
+                                return ("Crafted %d Enchanted Essence"):format(tonumber(p1090) or 0)
+                        end)
+                        task.spawn(function()
+                                while v16() do
+                                        if __SenaV4ButterflyRuntime then
+                                                pcall(function()
+                                                        local snap = __SenaV4ButterflyRuntime.snap
+                                                        local v4832 = __SenaV4ButterflyRuntime.tiers() or {}
+                                                        local v4833
+
+                                                        if snap.active then
+                                                                local v4834 = math.floor(snap.left or 0)
+
+                                                                v4833 = ("LIVE - ends in %dm %02ds"):format(math.floor(v4834 / 60), v4834 % 60)
+                                                        elseif snap.enabled == false then
+                                                                v4833 = "Disabled on this server"
+                                                        elseif snap.nextIn then
+                                                                local v4835 = math.floor(snap.nextIn)
+
+                                                                v4833 = ("Next in %dm %02ds"):format(math.floor(v4835 / 60), v4835 % 60)
+                                                        else
+                                                                v4833 = "Not running"
+                                                        end
+
+                                                        local t223 = {}
+
+                                                        for _, v in ipairs({
+                                                                "Golden",
+                                                                "Purple",
+                                                                "Blue",
+                                                                "Green"
+                                                        }) do
+                                                                t223[#t223 + 1] = ("%s %d"):format(v4832[v] and v4832[v].name or v, snap.counts and snap.counts[v] or 0)
+                                                        end
+
+                                                        v4819:SetContent(("%s\n%s  ·  Essence %d  ·  Caught %d\n%s\n%s"):format(v4833, snap.net and (snap.holding and "Net equipped" or "Net owned") or "No Butterfly Net", snap.essence or 0, snap.caught or 0, table.concat(t223, "  ·  "), tostring(__SenaV4ButterflyRuntime.status or "Idle")))
+                                                end)
+                                        end
+
+                                        task.wait(1)
+                                end
+                        end)
+
+                        local v4839 = v4804:AddSection("Dr Scramble Event")
+
+                        v4839:AddParagraph({
+                                Title = "About This Event",
+                                Content = "Dr Scramble's shop, trade-in and boss still run while the event is live. The drones, lost parts and vault are gone from the game."
+                        })
+                        t216.scrambleBuy = v4839:AddToggle({
+                                Title = "Auto Buy Shop",
+                                Content = "Spends samples on the shop items you pick below, as soon as you can afford them.",
+                                Default = false,
+                                Callback = v4732(v4564)
+                        })
+                        t216.scrambleBuyList = v4839:AddDropdown({
+                                Title = "Shop Buy List",
+                                Content = "Which shop items Auto Buy should purchase. This list fills in once the event shop is open.",
+                                Options = t218,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4565)
+                        })
+                        v4839:AddSubSection("Trade-In (Experimental Pets)")
+                        t216.scrambleTradeInTrade = v4839:AddToggle({
+                                Title = "Auto Trade-In",
+                                Content = "When the recipe's three requirements are covered, sacrifices the cheapest pet that fits each slot. Favorited, equipped, placed and fusing pets are never spent.",
+                                Default = false,
+                                Callback = v4732(function(p1091)
+                                        senaV4Config.ScrambleTradeInTrade = p1091 == true
+                                end)
+                        })
+                        t216.scrambleTradeInReroll = v4839:AddToggle({
+                                Title = "Auto Free Reroll",
+                                Content = "When pets are missing and a free reroll is left, rerolls the recipe instead of waiting.",
+                                Default = false,
+                                Callback = v4732(function(p1092)
+                                        senaV4Config.ScrambleTradeInReroll = p1092 == true
+                                end)
+                        })
+                        t216.scrambleTradeInBanners = v4839:AddDropdown({
+                                Title = "Target Banners",
+                                Content = "Only work the trade-in while one of these banners is up. Leave empty to accept any banner.",
+                                Options = {
+                                        "Biohazard Pets",
+                                        "Experimental Pets",
+                                        "Unstable DNA"
+                                },
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4545)
+                        })
+                        v4839:AddButton({
+                                Title = "Trade-In Once",
+                                Content = "Runs one sacrifice right now, even with Auto Trade-In off.",
+                                Callback = v4732(function()
+                                        local __SenaV4ScrambleTradeIn = genv.__SenaV4ScrambleTradeIn
+                                        local v4841 = false
+                                        local s19 = "Trade-In not ready"
+
+                                        if __SenaV4ScrambleTradeIn then
+                                                v4841, s19 = __SenaV4ScrambleTradeIn.tradeOnce()
+                                        end
+
+                                        SenaLibOverride:Notify({
+                                                Title = "Dr Scramble",
+                                                Content = v4841 and "Sacrifice complete" or tostring(s19),
+                                                Duration = 4
+                                        })
+                                end)
+                        })
+                        v4839:AddButton({
+                                Title = "Use Free Reroll",
+                                Content = "Spends one of today's free rerolls on a new recipe.",
+                                Callback = v4732(function()
+                                        local __SenaV4ScrambleTradeIn = genv.__SenaV4ScrambleTradeIn
+                                        local v4844 = false
+                                        local s20 = "Trade-In not ready"
+
+                                        if __SenaV4ScrambleTradeIn then
+                                                v4844, s20 = __SenaV4ScrambleTradeIn.reroll()
+                                        end
+
+                                        SenaLibOverride:Notify({
+                                                Title = "Dr Scramble",
+                                                Content = v4844 and "Recipe rerolled" or tostring(s20),
+                                                Duration = 4
+                                        })
+                                end)
+                        })
+                        v4839:AddButton({
+                                Title = "Open Trade-In UI",
+                                Content = "Opens Dr Scramble's Lab window so you can pick pets by hand.",
+                                Callback = v4732(function()
+                                        if not pcall(function()
+                                                require(ReplicatedStorage.Client.Tabs).Activate("DrScrambleTradeIn")
+                                        end) then
+                                                SenaLibOverride:Notify({
+                                                        Title = "Dr Scramble",
+                                                        Content = "Could not open the trade-in window",
+                                                        Duration = 3
+                                                })
+                                        end
+                                end)
+                        })
+
+                        local v4846 = v4839:AddParagraph({
+                                Title = "Trade-In Status",
+                                Content = "Turn a trade-in toggle on to start reading the recipe."
+                        })
+
+                        task.spawn(function()
+                                while v16() do
+                                        local __SenaV4ScrambleTradeIn = genv.__SenaV4ScrambleTradeIn
+
+                                        if __SenaV4ScrambleTradeIn then
+                                                pcall(function()
+                                                        v4846:SetContent(string.format([[%s  ·  %s
+Rotates in %02d:%02d  ·  Pity %d/%d  ·  Free rerolls %d  ·  Traded %d
+Recipe (%d/%d): %s
+Held: %s
+Missing: %s]], __SenaV4ScrambleTradeIn.banner, __SenaV4ScrambleTradeIn.status, math.floor(__SenaV4ScrambleTradeIn.rotation / 60), __SenaV4ScrambleTradeIn.rotation % 60, __SenaV4ScrambleTradeIn.pity, __SenaV4ScrambleTradeIn.pityMax, __SenaV4ScrambleTradeIn.free, __SenaV4ScrambleTradeIn.trades, __SenaV4ScrambleTradeIn.ready, __SenaV4ScrambleTradeIn.total, __SenaV4ScrambleTradeIn.demands, __SenaV4ScrambleTradeIn.stock, __SenaV4ScrambleTradeIn.missing))
+                                                end)
+                                        end
+
+                                        task.wait(1)
+                                end
+                        end)
+                        v4839:AddSubSection("Boss Fight")
+                        t216.scrambleBossAuto = v4839:AddToggle({
+                                Title = "Auto Boss",
+                                Content = "When Dr Scramble's boss is live, walks into the arena portal, joins the fight, hits the nearest target with your bat and breaks free from grabs. The clear reward lands automatically. While Auto Steal is on and this is off, an accidental touch on the arena portal is bounced back out so your steal is never hijacked.",
+                                Default = false,
+                                Callback = v4732(function(p1093)
+                                        senaV4Config.ScrambleBossAuto = p1093 == true
+
+                                        if v612 and type(v612._reconcileScramblePortal) == "function" then
+                                                pcall(v612._reconcileScramblePortal, v612)
+                                        end
+                                end)
+                        })
+
+                        local v4848 = v4839:AddParagraph({
+                                Title = "Boss Status",
+                                Content = "Turn Auto Boss on. It sits idle until the boss event goes live."
+                        })
+
+                        task.spawn(function()
+                                while v16() do
+                                        local __SenaV4ScrambleBoss = genv.__SenaV4ScrambleBoss
+
+                                        if __SenaV4ScrambleBoss then
+                                                pcall(function()
+                                                        v4848:SetContent(string.format("%s  ·  joins %d  ·  hits %d", tostring(__SenaV4ScrambleBoss.status), __SenaV4ScrambleBoss.joins or 0, __SenaV4ScrambleBoss.hits or 0))
+                                                end)
+                                        end
+
+                                        task.wait(1)
+                                end
+                        end)
+
+                        local Treadmill = v4799:AddSection("Treadmill")
+
+                        t216.autoTreadmill = Treadmill:AddToggle({
+                                Title = "Auto Treadmill",
+                                Content = "Walks to your treadmill and farms speed whenever nothing else is running.",
+                                Default = false,
+                                Callback = v4732(v4529)
+                        })
+                        t216.treadmillUpgrade = Treadmill:AddToggle({
+                                Title = "Auto Upgrade Treadmill",
+                                Content = "Buys the next treadmill tier with cash as soon as you can afford it.",
+                                Default = false,
+                                Callback = v4732(v4535)
+                        })
+                end
+
+                do
+                        local v4851 = v4742:AddTab({
+                                Name = "Misc",
+                                Icon = "settings"
+                        })
+                        local Performance = v4851:AddSection("Performance")
+
+                        t216.startupBoost = Performance:AddToggle({
+                                Title = "Startup Boost",
+                                Content = "Lowers graphics when the script starts. Turn it off to get the graphics back; hidden pets and eggs return after a rejoin.",
+                                Default = true,
+                                Callback = v4732(v4717)
+                        })
+                        t216.boostFps = Performance:AddToggle({
+                                Title = "Boost FPS",
+                                Content = "Removes extra map details and other players' plots for more FPS.",
+                                Default = false,
+                                Callback = v4732(v4719)
+                        })
+                        t216.uncapFps = Performance:AddToggle({
+                                Title = "Uncap FPS",
+                                Content = "Raises the FPS cap to 240.",
+                                Default = true,
+                                Callback = v4732(v4720)
+                        })
+
+                        local Guard = v4851:AddSection("Guard")
+
+                        t216.antiGuardKnockback = Guard:AddToggle({
+                                Title = "Anti Guard Knockback",
+                                Content = "Cancels the knockback the Forest guard puts on you, so a hit never throws you off the lane.",
+                                Default = true,
+                                Callback = v4732(v4547)
+                        })
+                        t216.antiHitGuard = Guard:AddToggle({
+                                Title = "Anti Hit Guard",
+                                Content = "For eggs you pick up by hand. Pins you in the safe zone behind a look-alike clone until the guard goes back to sleep. Auto Steal has its own guard handling and always wins.",
+                                Default = false,
+                                Callback = v4732(v4726)
+                        })
+
+                        local Windows = v4851:AddSection("Windows")
+
+                        Windows:AddButton({
+                                Title = "Egg Logs",
+                                Content = "Live feed of every egg that spawns on the server.",
+                                Callback = v4732(function()
+                                        senaPanels.openLogs()
+                                end)
+                        })
+                        Windows:AddButton({
+                                Title = "Egg Board",
+                                Content = "Sortable list of the eggs currently up for grabs.",
+                                Callback = v4732(function()
+                                        senaPanels.openBoard()
+                                end)
+                        })
+                        Windows:AddButton({
+                                Title = "Inventory & Base",
+                                Content = "Your pets, eggs and plot status in one window.",
+                                Callback = v4732(function()
+                                        senaPanels.openInventory()
+                                end)
+                        })
+                        Windows:AddButton({
+                                Title = "Egg Checker",
+                                Content = "Pick eggs off the field by hand, then send them all to the steal queue.",
+                                Callback = v4732(function()
+                                        senaPanels.openChecker()
+                                end)
+                        })
+                        Windows:AddButton({
+                                Title = "Egg Data & History",
+                                Content = "Drop-table values per area, plus what has actually spawned this session.",
+                                Callback = v4732(function()
+                                        senaPanels.openAnalyst()
+                                end)
+                        })
+                        Windows:AddButton({
+                                Title = "Open All Windows",
+                                SubTitle = "Close All Windows",
+                                Content = "Opens every window at once, or hides them again.",
+                                Callback = v4732(function()
+                                        senaPanels.openAll()
+                                end),
+                                SubCallback = v4732(function()
+                                        senaPanels.closeAll()
+                                end)
+                        })
+                        t216.antiTreadmill = v4851:AddSection("Blocker"):AddToggle({
+                                Title = "Anti Treadmill",
+                                Content = "Never stay on a treadmill: any mount is dropped right away, and Auto Treadmill is held off while this is on.",
+                                Default = false,
+                                Callback = v4732(v4530)
+                        })
+
+                        local v4855 = v4851:AddSection("Server Hop")
+
+                        t216.hopNoMatch = v4855:AddToggle({
+                                Title = "Hop When Nothing Matches",
+                                Content = "Hop to the emptiest server when no egg matches your filters.",
+                                Default = false,
+                                Callback = v4732(v4531)
+                        })
+                        v4855:AddSubSection("Limits")
+                        t216.hopCooldown = v4855:AddSlider({
+                                Title = "Hop Cooldown",
+                                Content = "Seconds between auto hops and wait after rejoining.",
+                                Min = 1,
+                                Max = 60,
+                                Default = 5,
+                                Increment = 1,
+                                Callback = v4732(v4534)
+                        })
+
+                        local v4856 = t216.privateTab:AddSection("Find Private Server", true)
+                        local v4857 = v4856:AddParagraph({
+                                Title = "Current Server",
+                                Content = "Checking..."
+                        })
+
+                        t216.privateServerMax = v4856:AddDropdown({
+                                Title = "Max Players",
+                                Content = "The most players you want in your server, you included. 2 (you + 1) is the easiest to find.",
+                                Options = {
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5"
+                                },
+                                Default = "2",
+                                Multi = false,
+                                Callback = v4732(v4532)
+                        })
+                        v4856:AddButton({
+                                Title = "Hop Server Now",
+                                Content = "Moves you to a quieter server right away.",
+                                Callback = v4732(function()
+                                        task.spawn(function()
+                                                t145.hopPrivateOnce()
+                                        end)
+                                end)
+                        })
+                        t216.privateServerAuto = v4856:AddToggle({
+                                Title = "Auto Hop",
+                                Content = "Keeps moving you to quieter servers until the player count is at or under your max.",
+                                Default = false,
+                                Callback = v4732(v4533)
+                        })
+                        task.spawn(function()
+                                local v4858
+
+                                while v16() do
+                                        local v4859 = "Now: " .. #Players:GetPlayers() .. " player(s)  ·  Max: " .. t145.privateMax() .. "\n" .. tostring(t145.privateStatus or "")
+
+                                        if v4859 ~= v4858 then
+                                                v4858 = v4859
+                                                pcall(function()
+                                                        v4857:SetContent(v4859)
+                                                end)
+                                        end
+
+                                        task.wait(1)
+                                end
+                        end)
+
+                        local Roaming = v4851:AddSection("Roaming")
+
+                        t216.waypoint = Roaming:AddDropdown({
+                                Title = "Waypoint",
+                                Content = "Pick a place, then hit Teleport below.",
+                                Options = t217,
+                                Default = t217[1],
+                                Callback = v4732(function(p1094)
+                                        u4745 = p1094
+                                end)
+                        })
+                        Roaming:AddButton({
+                                Title = "Teleport To Waypoint",
+                                Content = "Moves you straight to the waypoint you picked.",
+                                Callback = v4732(function()
+                                        local __SenaV4Roaming = genv.__SenaV4Roaming
+                                        local v4862 = false
+
+                                        if __SenaV4Roaming and type(__SenaV4Roaming.teleportWaypoint) == "function" then
+                                                v4862 = __SenaV4Roaming.teleportWaypoint(u4745) == true
+                                        end
+
+                                        SenaLibOverride:Notify({
+                                                Title = "Waypoint",
+                                                Content = v4862 and "Moved to " .. tostring(u4745) or "That waypoint is not in this server",
+                                                Duration = 3
+                                        })
+                                end)
+                        })
+
+                        local v4863 = v4851:AddSection("Run Once")
+
+                        v4863:AddButton({
+                                Title = "Place Everything Now",
+                                Content = "Runs one pass of Auto Place, even while the toggle is off.",
+                                Callback = v4732(function()
+                                        runOnce("AutoPlace", t24.AutoPlaceLoop)
+                                end)
+                        })
+                        v4863:AddButton({
+                                Title = "Hatch Everything Ready",
+                                Content = "Runs one pass of Auto Hatch, even while the toggle is off.",
+                                Callback = v4732(function()
+                                        runOnce("AutoHatch", t24.AutoHatchLoop)
+                                end)
+                        })
+                        v4863:AddButton({
+                                Title = "Sell Pets Now",
+                                Content = "Runs one pass of Auto Sell Pet using the filters above.",
+                                Callback = v4732(function()
+                                        runOnce("AutoSell", t24.startAutoSellLoop)
+                                end)
+                        })
+                        v4863:AddButton({
+                                Title = "Sell Eggs Now",
+                                Content = "Runs one pass of Auto Sell Egg using the filters above.",
+                                Callback = v4732(function()
+                                        runOnce("AutoSellEgg", t24.startAutoSellEggLoop)
+                                end)
+                        })
+
+                        local Session = v4851:AddSection("Session")
+
+                        t216.bottingMode = Session:AddToggle({
+                                Title = "Botting Mode",
+                                Content = "Turns off 3D rendering and covers the screen in black. Everything keeps running, your GPU does not.",
+                                Default = false,
+                                Callback = v4732(v4561)
+                        })
+                        t216.antiCutscene = Session:AddToggle({
+                                Title = "Anti Cutscene",
+                                Content = "Closes event cutscenes and the intro as soon as the game opens them, so nothing locks your camera.",
+                                Default = false,
+                                Callback = v4732(v4562)
+                        })
+                        Session:AddButton({
+                                Title = "Rejoin This Server",
+                                Content = "Teleports you back into the exact server you are in now.",
+                                Callback = v4732(function()
+                                        pcall(function()
+                                                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                                        end)
+                                end)
+                        })
+                        Session:AddButton({
+                                Title = "Stop & Unload",
+                                Content = "Turns every loop off and closes the hub. Run the script again to bring it back.",
+                                Callback = v4732(function()
+                                        for _, v in ipairs({
+                                                "AutoSteal",
+                                                "AutoPlace",
+                                                "AutoHatch",
+                                                "AutoSell",
+                                                "AutoSellEgg",
+                                                "StealPlayers",
+                                                "AutoFavorite",
+                                                "AutoFusePets",
+                                                "AutoEquipBest",
+                                                "AutoClaimOffline",
+                                                "AutoBaseUpgrade",
+                                                "AutoClaimAlmanac",
+                                                "Noclip",
+                                                "BottingMode",
+                                                "AntiCutscene"
+                                        }) do
+                                                senaV4Config[v] = false
+                                        end
+
+                                        v4560(false)
+                                        v4561(false)
+
+                                        if v612 then
+                                                pcall(v612.setEnabled, v612, false)
+                                        end
+
+                                        local __SenaV4HubShutdown = genv.__SenaV4HubShutdown
+
+                                        if type(__SenaV4HubShutdown) == "function" then
+                                                task.delay(0.2, function()
+                                                        pcall(__SenaV4HubShutdown)
+                                                end)
+                                        end
+                                end)
+                        })
+
+                        local Player = v4851:AddSection("Player")
+
+                        t216.antiAfk = Player:AddToggle({
+                                Title = "Anti AFK",
+                                Content = "Blocks the game's idle kick while the script runs.",
+                                Default = true,
+                                Callback = v4732(v4727)
+                        })
+                        t216.autoReconnect = Player:AddToggle({
+                                Title = "Auto Reconnect",
+                                Content = "Automatically reconnects you back to the server upon kick or disconnect.",
+                                Default = true,
+                                Callback = v4732(v4728)
+                        })
+                        t216.autoExecute = Player:AddToggle({
+                                Title = "Auto Execute (Rejoin)",
+                                Content = "Prepares the bootstrapper so the script runs automatically after teleport or reconnect.",
+                                Default = false,
+                                Callback = v4732(v4729)
+                        })
+                end
+
+                do
+                        local v4869 = v4742:AddTab({
+                                Name = "Steal Players",
+                                Icon = "swords"
+                        })
+                        local v4870 = v4869:AddSection("Auto Steal")
+
+                        t216.stealPlayers = v4870:AddToggle({
+                                Title = "Auto Steal From Players",
+                                Content = "Chases anyone carrying an egg in the field, bats them until the egg drops, grabs it and banks it. A carrier is only chased when the egg clears the filters below.",
+                                Default = false,
+                                Callback = v4732(v4734)
+                        })
+                        t216.stealPlayerRarities = v4870:AddDropdown({
+                                Title = "Rarity Filter",
+                                Content = "Only chase eggs of these rarities. Empty = uses the Auto Steal rarity filter.",
+                                Options = v4524,
+                                Multi = true,
+                                Default = {},
+                                Callback = v4732(v4735)
+                        })
+                        t216.stealPlayerValue = v4870:AddInput({
+                                Title = "Minimum Value",
+                                Content = "Skip carriers holding less than this per second. Supports k, m and b.",
+                                Placeholder = "e.g. 500k, 2m, 1b",
+                                Default = "",
+                                Callback = v4732(v4736)
+                        })
+
+                        local v4871 = v4869:AddSection("Steal From Specific Player", true)
+                        local v4872 = v4869:AddSection("Steal History", true)
+                        local v4873
+                        local v4874
+
+                        if v4871.AddActionList then
+                                v4873 = v4871:AddActionList({
+                                        Title = "Players in this server",
+                                        EmptyText = "Nobody else is in this server.",
+                                        VisibleRows = 6,
+                                        ButtonWidth = 76
+                                })
+                                v4874 = v4872:AddActionList({
+                                        Title = "History of stolen eggs from players",
+                                        EmptyText = "No player steals yet.",
+                                        VisibleRows = 5,
+                                        ButtonWidth = 72
+                                })
+                        else
+                                v4871:AddParagraph({
+                                        Title = "Update required",
+                                        Content = "This Sena UI build has no player list yet. Rejoin to pull the latest version."
+                                })
+                        end
+
+                        v4872:AddButton({
+                                Title = "Clear History",
+                                Content = "Wipe the list above.",
+                                Callback = v4732(function()
+                                        if __SenaV4PlayerSteal then
+                                                __SenaV4PlayerSteal:clearHistory()
+                                        end
+                                end)
+                        })
+
+                        if __SenaV4PlayerSteal and v4873 then
+                                local __SenaV4IdentitySetter = genv.__SenaV4IdentitySetter
+                                local __SenaV4UICapabilityIdentity = genv.__SenaV4UICapabilityIdentity or 8
+
+                                local function v4877(p1095)
+                                        if __SenaV4IdentitySetter then
+                                                pcall(__SenaV4IdentitySetter, __SenaV4UICapabilityIdentity)
+                                        end
+
+                                        if not v4874 or not v4874:Alive() then
+                                                return
+                                        end
+
+                                        local t224 = {}
+
+                                        for i, v in ipairs(p1095.history) do
+                                                t224[i] = {
+                                                        id = tostring(i),
+                                                        name = v.player,
+                                                        sub = string.format("<font color=\"#A2A2AE\">%s</font>", os.date("!%H:%M:%S", v.at)),
+                                                        status = v.egg,
+                                                        statusSub = v.outcome,
+                                                        button = false
+                                                }
+                                        end
+
+                                        v4874:Update(t224)
+                                end
+
+                                __SenaV4PlayerSteal:onChanged(v4877)
+                                v4877(__SenaV4PlayerSteal)
+                                task.spawn(function()
+                                        while genv.__SenaV4PlayerSteal == __SenaV4PlayerSteal do
+                                                local ok, result = pcall(function()
+                                                        local v4883 = __SenaV4PlayerSteal:listEntries()
+
+                                                        if __SenaV4IdentitySetter then
+                                                                pcall(__SenaV4IdentitySetter, __SenaV4UICapabilityIdentity)
+                                                        end
+
+                                                        if v4873:Alive() then
+                                                                v4873:Update(v4883)
+                                                        end
+                                                end)
+
+                                                if not ok then
+                                                        warn("[Sena Steal] Player list update loop error:", result)
+                                                end
+
+                                                task.wait(1)
+                                        end
+                                end)
+                        end
+                end
+
+                v4742:AddTab({
+                        Name = "Live Chat",
+                        Icon = "chat"
+                }):AddSection("Global Chat", true):AddLiveChat({
+                        Title = "Live Chat",
+                        Height = 300
+                })
+
+                if type(v4742.AddForum) == "function" then
+                        v4742:AddForum({
+                                Name = "Forum",
+                                Icon = "forum",
+                                Section = "Config Forum"
+                        })
+                end
+
+                do
+                        local __SenaV4Visual = genv.__SenaV4Visual
+                        local v4885 = v4742:AddTab({
+                                Name = "Visual",
+                                Icon = "eye"
+                        })
+                        local t225 = {
+                                rods = nil,
+                                fish = nil
+                        }
+                        local v4887
+
+                        local function v4888()
+                                if v4887 and __SenaV4Visual then
+                                        pcall(function()
+                                                v4887:SetContent(__SenaV4Visual.status)
+                                        end)
+                                end
+                        end
+                        local function v4889(p1096)
+                                if not __SenaV4Visual then
+                                        return
+                                end
+
+                                task.spawn(function()
+                                        __SenaV4Visual.spawn(p1096, t225[p1096])
+                                        v4888()
+                                        SenaLibOverride:Notify({
+                                                Title = "Visual",
+                                                Content = __SenaV4Visual.status,
+                                                Duration = 3
+                                        })
+                                end)
+                                task.delay(0.1, v4888)
+                        end
+
+                        local v4890 = v4885:AddSection("Fish It")
+
+                        v4890:AddSubSection("Rods")
+
+                        local v4891 = v4890:AddDropdown({
+                                Title = "Select Rod",
+                                Content = "Rods and skins from Fish It. Loading list...",
+                                Options = {},
+                                Multi = false,
+                                Default = nil,
+                                Callback = v4732(function(p1097)
+                                        t225.rods = p1097
+                                end)
+                        })
+
+                        v4890:AddButton({
+                                Title = "Spawn Rod",
+                                Content = "Downloads the rod and puts it in your backpack. Equip it like a bat. Only you can see it.",
+                                Callback = v4732(function()
+                                        v4889("rods")
+                                end)
+                        })
+                        v4890:AddSlider({
+                                Title = "Rod Size",
+                                Content = "1 = the size it has in Fish It. Spawned rods update right away.",
+                                Min = 0.5,
+                                Max = 2,
+                                Default = 1,
+                                Increment = 0.1,
+                                Callback = v4732(function(p1098)
+                                        if not __SenaV4Visual or __SenaV4Visual.rodScale == p1098 then
+                                                return
+                                        end
+
+                                        __SenaV4Visual.rodScale = p1098
+                                        task.spawn(__SenaV4Visual.respawn, "rods")
+                                end)
+                        })
+                        v4890:AddSubSection("Fish")
+
+                        local v4892 = v4890:AddDropdown({
+                                Title = "Select Fish",
+                                Content = "Secret and Forgotten fish from Fish It. Loading list...",
+                                Options = {},
+                                Multi = false,
+                                Default = nil,
+                                Callback = v4732(function(p1099)
+                                        t225.fish = p1099
+                                end)
+                        })
+
+                        v4890:AddButton({
+                                Title = "Spawn Fish",
+                                Content = "Downloads the fish and puts it in your backpack under Pets. Only you can see it.",
+                                Callback = v4732(function()
+                                        v4889("fish")
+                                end)
+                        })
+                        v4890:AddSlider({
+                                Title = "Fish Weight",
+                                Content = "0% = lightest catch, 100% = heaviest Big catch. Size follows Fish It: weight / min weight.",
+                                Min = 0,
+                                Max = 100,
+                                Default = 0,
+                                Increment = 5,
+                                Callback = v4732(function(p1100)
+                                        local fishWeight = (tonumber(p1100) or 0) / 100
+
+                                        if not __SenaV4Visual or __SenaV4Visual.fishWeight == fishWeight then
+                                                return
+                                        end
+
+                                        __SenaV4Visual.fishWeight = fishWeight
+                                        task.spawn(__SenaV4Visual.respawn, "fish")
+                                end)
+                        })
+                        v4890:AddSubSection("Manage")
+                        v4887 = v4890:AddParagraph({
+                                Title = "Status",
+                                Content = "Idle"
+                        })
+                        v4890:AddButton({
+                                Title = "Remove All Visual Items",
+                                Content = "Takes every spawned rod and fish out of your backpack.",
+                                Callback = v4732(function()
+                                        if __SenaV4Visual then
+                                                __SenaV4Visual.clear()
+                                        end
+
+                                        v4888()
+                                end)
+                        })
+                        task.spawn(function()
+                                if not __SenaV4Visual then
+                                        return
+                                end
+
+                                local rods = __SenaV4Visual.names("rods")
+                                local fish = __SenaV4Visual.names("fish")
+
+                                pcall(function()
+                                        v4891:Refresh(rods)
+                                end)
+                                pcall(function()
+                                        v4892:Refresh(fish)
+                                end)
+                                __SenaV4Visual.status = #rods > 0 and string.format("%d rods and %d fish available", #rods, #fish) or "Could not load the item list. Try again later."
+                                v4888()
+                        end)
+
+                        local v4896 = v4885:AddSection("Steal an Egg")
+                        local s21 = "Egg"
+                        local n84 = 50
+                        local Egg = genv.__SenaV4VisualSAE and genv.__SenaV4VisualSAE.categories("Egg") or {}
+                        local u4900 = Egg[1]
+
+                        v4896:AddDropdown({
+                                Title = "Type",
+                                Content = "Egg shows in the Eggs tab, Pet under Pets. Both are fake and local-only.",
+                                Options = {
+                                        "Egg",
+                                        "Pet"
+                                },
+                                Multi = false,
+                                Default = "Egg",
+                                Callback = v4732(function(p1101)
+                                        s21 = p1101 or "Egg"
+                                end)
+                        })
+                        v4896:AddDropdown({
+                                Title = "Select Egg / Pet",
+                                Content = "Which egg or pet to spawn.",
+                                Options = Egg,
+                                Multi = false,
+                                Default = Egg[1],
+                                MaxVisible = 8,
+                                Callback = v4732(function(p1102)
+                                        u4900 = p1102
+                                end)
+                        })
+                        v4896:AddSlider({
+                                Title = "Size / Flex",
+                                Content = "Bigger = heavier Kg & higher value (Kg = base weight x scale^3) AND a bigger egg in your hand. 50 hits the billions.",
+                                Min = 1,
+                                Max = 100,
+                                Default = 50,
+                                Increment = 1,
+                                Callback = v4732(function(p1103)
+                                        n84 = tonumber(p1103) or 50
+                                end)
+                        })
+                        v4896:AddButton({
+                                Title = "Hold in Hand",
+                                Content = "Spawns a model of it in your hand. Press again for more. (In-hand only - use the other button to also add it to All Items.)",
+                                Callback = v4732(function()
