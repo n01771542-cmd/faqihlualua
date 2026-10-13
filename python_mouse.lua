@@ -7,15 +7,14 @@
     v391 = Boost FPS, v4720 = Uncap FPS). Yang dibuang: UI hub, auto steal,
     anti guard, anti trap, fly, visual spoof, dan semua logic exploit lain.
 
-    Nilai default sama seperti hub:
-      Startup Boost = ON, Uncap FPS = ON, Boost FPS = OFF (di sini diaktifkan,
-      ubah Config.BoostFps kalau mau default aslinya).
+    Saat pertama kali di-execute semuanya OFF. Nyalakan lewat tombol
+    "FPS Boost" di UI (kanan atas layar) -> Startup Boost + Boost FPS + Uncap FPS.
 ]]
 
 local Config = {
-	StartupBoost = true,
-	BoostFps     = true,
-	UncapFps     = true,
+	StartupBoost = false,   -- OFF saat pertama kali execute (nyalakan lewat tombol di UI)
+	BoostFps     = false,
+	UncapFps     = false,
 }
 
 ---------------------------------------------------------------------
@@ -26,18 +25,23 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer       = Players.LocalPlayer
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
-local TweenService      = game:GetService("TweenService")
 
 local genv = getgenv and getgenv() or _G
 local senaV4Config = {}                       -- tabel state (_fps*, StartupBoost)
 local v14 = function()                        -- folder world milik game
 	return Workspace:FindFirstChild("World") or Workspace:FindFirstChild("__OBJECTS")
 end
-local v16 = function() return true end        -- cek session hub (selalu aktif)
+local FPSSession = {}                          -- sama seperti __SenaV4HubSession di hub asli
+genv.__FPSBoostSession = FPSSession
+local v16 = function()                        -- v16 asli: true selama session ini yang aktif
+	return genv.__FPSBoostSession == FPSSession
+end
 
 ---------------------------------------------------------------------
 -- UNCAP FPS: helper setfpscap (asli)
 ---------------------------------------------------------------------
+if not (rawget(_G, "setfpscap") or rawget(_G, "set_fps_cap")) and type(setfpscap) == "function" then
+end
 genv.__SenaV4SetCapFps = function(p1)
 local v37 = math.clamp(math.floor(tonumber(p1) or 240), 1, 999)
 local setfpscap_ = rawget(_G, "setfpscap") or rawget(_G, "set_fps_cap") or type(setfpscap) == "function" and setfpscap
@@ -953,7 +957,7 @@ senaV4Config._fpsEggsReady = v462() == true
 u456 = senaV4Config._fpsEggsReady and senaV4Config._fpsPetsReady and senaV4Config._fpsWorldReady and senaV4Config._fpsPlotsReady and senaV4Config._fpsTreadmillsReady and senaV4Config._fpsAreasReady
 end)
 senaV4Config._fpsBoostApplying = nil
-if not ok me
+if not ok then
 warn("[FPSBoost] Gagal menerapkan FPS Boost:", result)
 end
 end end
@@ -999,11 +1003,9 @@ end
 end
 
 ---------------------------------------------------------------------
--- JALANKAN (sama seperti toggle hub saat load)
+-- KONTROL (tidak auto-jalan, menunggu tombol UI)
 ---------------------------------------------------------------------
-v4720(Config.UncapFps)
-v4717(Config.StartupBoost)
-v4719(Config.BoostFps)
+-- Tidak ada yang dijalankan otomatis: semua OFF sampai tombol di UI dinyalakan.
 
 genv.FPSBoost = {
 	StartupBoost = v4717,
@@ -1012,9 +1014,10 @@ genv.FPSBoost = {
 }
 
 ---------------------------------------------------------------------
--- UI ELEGAN & HALUS: "Leon4951 | performance"
+-- UI: "Leon4951 | performance"  (1 tombol utama: FPS Boost ON/OFF)
 ---------------------------------------------------------------------
 local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
 
 if genv.__FPSBoostGui then
 	pcall(function() genv.__FPSBoostGui:Destroy() end)
@@ -1033,30 +1036,59 @@ if not okParent or not gui.Parent then
 end
 genv.__FPSBoostGui = gui
 
-local ROW_H, TOP_H, PAD = 34, 32, 8
-local WIDTH = 230
+-- Ukuran & animasi
+local WIDTH, TOP_H, ROW_H = 200, 32, 44
+local FULL_H = TOP_H + ROW_H + 4
+local SMOOTH = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local QUICK  = TweenInfo.new(0.15, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
 
+local function tween(obj, props, info)
+	TweenService:Create(obj, info or SMOOTH, props):Play()
+end
+
+-- Warna
+local WHITE   = Color3.fromRGB(255, 255, 255)
+local ON_COL  = Color3.fromRGB(88, 214, 141)
+local OFF_COL = Color3.fromRGB(62, 62, 72)
+local MUTED   = Color3.fromRGB(160, 160, 172)
+
+-- Panel utama (kaca gelap + outline putih tipis)
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(WIDTH, TOP_H + PAD)
-main.Position = UDim2.new(0, 12, 0.5, -60)
-main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+main.Size = UDim2.fromOffset(WIDTH, FULL_H)
+main.AnchorPoint = Vector2.new(1, 0)
+main.Position = UDim2.new(1, -16, 0, 16)   -- kanan atas layar
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+main.BackgroundTransparency = 0.06
 main.BorderSizePixel = 0
 main.ClipsDescendants = true
 main.Parent = gui
+
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
 
--- Outline Putih Elegan pada Main Frame
-local stroke = Instance.new("UIStroke", main)
-stroke.Color = Color3.fromRGB(255, 255, 255)
-stroke.Transparency = 0.7
-stroke.Thickness = 1.2
-stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+local outline = Instance.new("UIStroke")
+outline.Color = WHITE
+outline.Thickness = 1
+outline.Transparency = 0.45
+outline.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+outline.Parent = main
 
+local bg = Instance.new("UIGradient")
+bg.Rotation = 90
+bg.Color = ColorSequence.new(Color3.fromRGB(30, 30, 38), Color3.fromRGB(14, 14, 18))
+bg.Parent = main
+
+-- Animasi muncul halus
+local scale = Instance.new("UIScale")
+scale.Scale = 0.92
+scale.Parent = main
+tween(scale, { Scale = 1 }, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+
+-- Title bar
 local bar = Instance.new("Frame")
+bar.Name = "Bar"
 bar.Size = UDim2.new(1, 0, 0, TOP_H)
-bar.BackgroundColor3 = Color3.fromRGB(25, 25, 32)
-bar.BorderSizePixel = 0
+bar.BackgroundTransparency = 1
 bar.Parent = main
 
 local title = Instance.new("TextLabel")
@@ -1064,116 +1096,185 @@ title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(12, 0)
 title.Size = UDim2.new(1, -44, 1, 0)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 14 -- Teks Judul Diberbesar
+title.TextSize = 14
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextColor3 = WHITE
 title.Text = "Leon4951 | performance"
 title.Parent = bar
 
+-- Info FPS - ms (hanya tampil saat UI diciutkan "-", tepat di kanan teks performance)
+local TextService = game:GetService("TextService")
+local titleW = math.ceil(TextService:GetTextSize(
+	title.Text, title.TextSize, title.Font, Vector2.new(1000, 100)).X)
+local INFO_X = 12 + titleW + 10          -- jarak 10 px dari kata "performance"
+local INFO_W = 108
+local COLLAPSED_W = INFO_X + INFO_W + 34 -- 34 px = ruang tombol "+"
+
+local info = Instance.new("TextLabel")
+info.BackgroundTransparency = 1
+info.Position = UDim2.fromOffset(INFO_X, 0)
+info.Size = UDim2.fromOffset(INFO_W, TOP_H)
+info.Font = Enum.Font.GothamMedium
+info.TextSize = 13
+info.TextXAlignment = Enum.TextXAlignment.Left
+info.TextColor3 = Color3.fromRGB(88, 214, 141)
+info.TextTransparency = 1
+info.Text = "-- FPS - -- ms"
+info.Parent = bar
+
 local minBtn = Instance.new("TextButton")
+minBtn.AutoButtonColor = false
+minBtn.BackgroundColor3 = WHITE
 minBtn.BackgroundTransparency = 1
-minBtn.Position = UDim2.new(1, -32, 0, 0)
-minBtn.Size = UDim2.fromOffset(32, TOP_H)
+minBtn.Position = UDim2.new(1, -30, 0.5, -11)
+minBtn.Size = UDim2.fromOffset(22, 22)
 minBtn.Font = Enum.Font.GothamBold
-minBtn.TextSize = 18
-minBtn.TextColor3 = Color3.fromRGB(220, 220, 230)
+minBtn.TextSize = 16
+minBtn.TextColor3 = Color3.fromRGB(215, 215, 225)
 minBtn.Text = "-"
 minBtn.Parent = bar
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(1, 0)
 
-local list = Instance.new("Frame")
-list.BackgroundTransparency = 1
-list.Position = UDim2.fromOffset(0, TOP_H + PAD)
-list.Size = UDim2.new(1, 0, 0, 0)
-list.Parent = main
+minBtn.MouseEnter:Connect(function() tween(minBtn, { BackgroundTransparency = 0.88 }, QUICK) end)
+minBtn.MouseLeave:Connect(function() tween(minBtn, { BackgroundTransparency = 1 }, QUICK) end)
 
-local rows = 0
-local expandedHeight
+-- Garis pemisah tipis
+local divider = Instance.new("Frame")
+divider.Position = UDim2.fromOffset(12, TOP_H - 1)
+divider.Size = UDim2.new(1, -24, 0, 1)
+divider.BackgroundColor3 = WHITE
+divider.BackgroundTransparency = 0.88
+divider.BorderSizePixel = 0
+divider.Parent = main
 
-local function addToggle(text, default, callback)
-	rows += 1
-	local y = (rows - 1) * ROW_H
+-- Baris tombol
+local row = Instance.new("Frame")
+row.Position = UDim2.fromOffset(0, TOP_H)
+row.Size = UDim2.new(1, 0, 0, ROW_H)
+row.BackgroundTransparency = 1
+row.Parent = main
 
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Position = UDim2.fromOffset(12, y)
-	label.Size = UDim2.new(1, -70, 0, ROW_H)
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 14 -- Teks Toggle Diberbesar & Bold
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextColor3 = Color3.fromRGB(240, 240, 245)
-	label.Text = text
-	label.Parent = list
+local label = Instance.new("TextLabel")
+label.BackgroundTransparency = 1
+label.Position = UDim2.fromOffset(12, 5)
+label.Size = UDim2.new(1, -70, 0, 18)
+label.Font = Enum.Font.GothamMedium
+label.TextSize = 15
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.TextColor3 = WHITE
+label.Text = "FPS Boost"
+label.Parent = row
 
-	local sw = Instance.new("TextButton")
-	sw.AutoButtonColor = false
-	sw.Text = ""
-	sw.Size = UDim2.fromOffset(42, 22)
-	sw.Position = UDim2.new(1, -54, 0, y + (ROW_H - 22) / 2)
-	sw.Parent = list
-	Instance.new("UICorner", sw).CornerRadius = UDim.new(1, 0)
+local status = Instance.new("TextLabel")
+status.BackgroundTransparency = 1
+status.Position = UDim2.fromOffset(12, 24)
+status.Size = UDim2.new(1, -70, 0, 14)
+status.Font = Enum.Font.Gotham
+status.TextSize = 12
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.TextColor3 = MUTED
+status.Text = "Nonaktif"
+status.Parent = row
 
-	-- Outline Putih Elegan pada Tombol Toggle
-	local swStroke = Instance.new("UIStroke", sw)
-	swStroke.Color = Color3.fromRGB(255, 255, 255)
-	swStroke.Transparency = 0.75
-	swStroke.Thickness = 1
+-- Switch
+local track = Instance.new("Frame")
+track.Size = UDim2.fromOffset(40, 22)
+track.Position = UDim2.new(1, -52, 0.5, -11)
+track.BackgroundColor3 = OFF_COL
+track.BorderSizePixel = 0
+track.Parent = row
+Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 
-	local knob = Instance.new("Frame")
-	knob.Size = UDim2.fromOffset(16, 16)
-	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	knob.BorderSizePixel = 0
-	knob.Parent = sw
-	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+local trackStroke = Instance.new("UIStroke")
+trackStroke.Color = WHITE
+trackStroke.Thickness = 1
+trackStroke.Transparency = 0.75
+trackStroke.Parent = track
 
-	local state = default == true
-	local function render(animate)
-		local targetBg = state and Color3.fromRGB(50, 205, 110) or Color3.fromRGB(55, 55, 65)
-		local targetPos = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3)
-		
-		if animate then
-			TweenService:Create(sw, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetBg}):Play()
-			TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
-		else
-			sw.BackgroundColor3 = targetBg
-			knob.Position = targetPos
-		end
-	end
-	render(false)
+local knob = Instance.new("Frame")
+knob.Size = UDim2.fromOffset(16, 16)
+knob.Position = UDim2.fromOffset(3, 3)
+knob.BackgroundColor3 = WHITE
+knob.BorderSizePixel = 0
+knob.Parent = track
+Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
-	sw.MouseButton1Click:Connect(function()
-		state = not state
-		render(true)
-		task.spawn(callback, state)
-	end)
+-- Area sentuh seluruh baris (nyaman untuk HP)
+local hit = Instance.new("TextButton")
+hit.BackgroundTransparency = 1
+hit.Text = ""
+hit.Size = UDim2.new(1, 0, 1, 0)
+hit.ZIndex = 5
+hit.Parent = row
 
-	list.Size = UDim2.new(1, 0, 0, rows * ROW_H)
-	expandedHeight = TOP_H + PAD + rows * ROW_H + PAD
+local state = false   -- selalu OFF saat pertama kali execute
+
+local function render(animated)
+	local info = animated and SMOOTH or TweenInfo.new(0)
+	tween(track, { BackgroundColor3 = state and ON_COL or OFF_COL }, info)
+	tween(knob,  { Position = state and UDim2.fromOffset(21, 3) or UDim2.fromOffset(3, 3) }, info)
+	tween(status, { TextColor3 = state and ON_COL or MUTED }, info)
+	status.Text = state and "Aktif" or "Nonaktif"
 end
+render(false)
 
--- Digabungkan menjadi 1 tombol utama yang mengontrol ketiganya sekaligus
-local combinedDefault = Config.StartupBoost and Config.BoostFps and Config.UncapFps
-addToggle("FPS Boost", combinedDefault, function(state)
-	v4720(state)
-	v4717(state)
-	v4719(state)
+hit.MouseEnter:Connect(function() tween(trackStroke, { Transparency = 0.45 }, QUICK) end)
+hit.MouseLeave:Connect(function() tween(trackStroke, { Transparency = 0.75 }, QUICK) end)
+
+hit.MouseButton1Click:Connect(function()
+	state = not state
+	render(true)
+	task.spawn(function()
+		v4720(state)
+		v4717(state)
+		v4719(state)
+	end)
 end)
 
+-- Minimize halus
 local collapsed = false
-local function resize()
-	local targetHeight = collapsed and (TOP_H + 2) or expandedHeight
-	TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(WIDTH, targetHeight)}):Play()
-	minBtn.Text = collapsed and "+" or "-"
-end
-resize()
-
 minBtn.MouseButton1Click:Connect(function()
 	collapsed = not collapsed
-	resize()
+	minBtn.Text = collapsed and "+" or "-"
+	tween(main, { Size = UDim2.fromOffset(collapsed and COLLAPSED_W or WIDTH, collapsed and TOP_H or FULL_H) })
+	tween(divider, { BackgroundTransparency = collapsed and 1 or 0.88 })
+	tween(info, { TextTransparency = collapsed and 0 or 1 })
 end)
 
--- Bisa digeser (mouse & layar sentuh) secara mulus
+-- Pengukur FPS & ms (FPS = frame per detik, ms = ping server)
+do
+	local Stats = game:GetService("Stats")
+	if genv.__FPSBoostInfoConn then
+		pcall(function() genv.__FPSBoostInfoConn:Disconnect() end)
+	end
+
+	local frames, acc = 0, 0
+	local conn = RunService.RenderStepped:Connect(function(dt)
+		frames += 1
+		acc += dt
+		if acc < 0.5 then return end
+
+		local fps = math.floor(frames / acc + 0.5)
+		local ms
+		pcall(function()
+			ms = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
+		end)
+
+		info.Text = fps .. " FPS - " .. (ms and tostring(ms) or "--") .. " ms"
+		info.TextColor3 = fps >= 50 and Color3.fromRGB(88, 214, 141)
+			or fps >= 30 and Color3.fromRGB(240, 200, 90)
+			or Color3.fromRGB(235, 100, 100)
+		frames, acc = 0, 0
+	end)
+	genv.__FPSBoostInfoConn = conn
+	gui.Destroying:Connect(function() conn:Disconnect() end)
+end
+
+-- Geser halus (mouse & layar sentuh)
 do
 	local dragging, dragStart, startPos
+	local FOLLOW = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
 	bar.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
@@ -1185,12 +1286,15 @@ do
 			end)
 		end
 	end)
+
 	UserInputService.InputChanged:Connect(function(input)
 		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
 			or input.UserInputType == Enum.UserInputType.Touch) then
 			local d = input.Position - dragStart
-			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
-				startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			tween(main, {
+				Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+					startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			}, FOLLOW)
 		end
 	end)
 end
