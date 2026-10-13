@@ -1093,7 +1093,7 @@ local function addToggle(text, default, callback)
 	label.BackgroundTransparency = 1
 	label.Position = UDim2.fromOffset(10, y)
 	label.Size = UDim2.new(1, -64, 0, ROW_H)
-	label.Font = Enum.Font.Gotham
+	label.Font = Enum.Font.GothamBold
 	label.TextSize = 12
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextColor3 = Color3.fromRGB(220, 220, 228)
@@ -1132,9 +1132,13 @@ local function addToggle(text, default, callback)
 	expandedHeight = TOP_H + PAD + rows * ROW_H + PAD
 end
 
-addToggle("Startup Boost", Config.StartupBoost, v4717)
-addToggle("Boost FPS",     Config.BoostFps,     v4719)
-addToggle("Uncap FPS",     Config.UncapFps,     v4720)
+-- Digabungkan menjadi 1 tombol utama yang mengontrol ketiganya sekaligus
+local combinedDefault = Config.StartupBoost and Config.BoostFps and Config.UncapFps
+addToggle("FPS Boost", combinedDefault, function(state)
+	v4720(state)
+	v4717(state)
+	v4719(state)
+end)
 
 local collapsed = false
 local function resize()
