@@ -26,6 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer       = Players.LocalPlayer
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
+local TweenService      = game:GetService("TweenService")
 
 local genv = getgenv and getgenv() or _G
 local senaV4Config = {}                       -- tabel state (_fps*, StartupBoost)
@@ -952,7 +953,7 @@ senaV4Config._fpsEggsReady = v462() == true
 u456 = senaV4Config._fpsEggsReady and senaV4Config._fpsPetsReady and senaV4Config._fpsWorldReady and senaV4Config._fpsPlotsReady and senaV4Config._fpsTreadmillsReady and senaV4Config._fpsAreasReady
 end)
 senaV4Config._fpsBoostApplying = nil
-if not ok then
+if not ok me
 warn("[FPSBoost] Gagal menerapkan FPS Boost:", result)
 end
 end end
@@ -1011,7 +1012,7 @@ genv.FPSBoost = {
 }
 
 ---------------------------------------------------------------------
--- UI KECIL: "Leon4951 | performance"
+-- UI ELEGAN & HALUS: "Leon4951 | performance"
 ---------------------------------------------------------------------
 local UserInputService = game:GetService("UserInputService")
 
@@ -1032,47 +1033,50 @@ if not okParent or not gui.Parent then
 end
 genv.__FPSBoostGui = gui
 
-local ROW_H, TOP_H, PAD = 26, 28, 6
-local WIDTH = 210
+local ROW_H, TOP_H, PAD = 34, 32, 8
+local WIDTH = 230
 
 local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = UDim2.fromOffset(WIDTH, TOP_H + PAD)
 main.Position = UDim2.new(0, 12, 0.5, -60)
-main.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 main.BorderSizePixel = 0
 main.ClipsDescendants = true
 main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
 
+-- Outline Putih Elegan pada Main Frame
 local stroke = Instance.new("UIStroke", main)
-stroke.Color = Color3.fromRGB(60, 60, 70)
-stroke.Thickness = 1
+stroke.Color = Color3.fromRGB(255, 255, 255)
+stroke.Transparency = 0.7
+stroke.Thickness = 1.2
+stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 local bar = Instance.new("Frame")
 bar.Size = UDim2.new(1, 0, 0, TOP_H)
-bar.BackgroundColor3 = Color3.fromRGB(28, 28, 34)
+bar.BackgroundColor3 = Color3.fromRGB(25, 25, 32)
 bar.BorderSizePixel = 0
 bar.Parent = main
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Position = UDim2.fromOffset(10, 0)
-title.Size = UDim2.new(1, -40, 1, 0)
+title.Position = UDim2.fromOffset(12, 0)
+title.Size = UDim2.new(1, -44, 1, 0)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 12
+title.TextSize = 14 -- Teks Judul Diberbesar
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.TextColor3 = Color3.fromRGB(240, 240, 245)
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Text = "Leon4951 | performance"
 title.Parent = bar
 
 local minBtn = Instance.new("TextButton")
 minBtn.BackgroundTransparency = 1
-minBtn.Position = UDim2.new(1, -28, 0, 0)
-minBtn.Size = UDim2.fromOffset(28, TOP_H)
+minBtn.Position = UDim2.new(1, -32, 0, 0)
+minBtn.Size = UDim2.fromOffset(32, TOP_H)
 minBtn.Font = Enum.Font.GothamBold
-minBtn.TextSize = 16
-minBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+minBtn.TextSize = 18
+minBtn.TextColor3 = Color3.fromRGB(220, 220, 230)
 minBtn.Text = "-"
 minBtn.Parent = bar
 
@@ -1091,40 +1095,54 @@ local function addToggle(text, default, callback)
 
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
-	label.Position = UDim2.fromOffset(10, y)
-	label.Size = UDim2.new(1, -64, 0, ROW_H)
+	label.Position = UDim2.fromOffset(12, y)
+	label.Size = UDim2.new(1, -70, 0, ROW_H)
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 12
+	label.TextSize = 14 -- Teks Toggle Diberbesar & Bold
 	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextColor3 = Color3.fromRGB(220, 220, 228)
+	label.TextColor3 = Color3.fromRGB(240, 240, 245)
 	label.Text = text
 	label.Parent = list
 
 	local sw = Instance.new("TextButton")
 	sw.AutoButtonColor = false
 	sw.Text = ""
-	sw.Size = UDim2.fromOffset(38, 18)
-	sw.Position = UDim2.new(1, -48, 0, y + (ROW_H - 18) / 2)
+	sw.Size = UDim2.fromOffset(42, 22)
+	sw.Position = UDim2.new(1, -54, 0, y + (ROW_H - 22) / 2)
 	sw.Parent = list
 	Instance.new("UICorner", sw).CornerRadius = UDim.new(1, 0)
 
+	-- Outline Putih Elegan pada Tombol Toggle
+	local swStroke = Instance.new("UIStroke", sw)
+	swStroke.Color = Color3.fromRGB(255, 255, 255)
+	swStroke.Transparency = 0.75
+	swStroke.Thickness = 1
+
 	local knob = Instance.new("Frame")
-	knob.Size = UDim2.fromOffset(14, 14)
-	knob.BackgroundColor3 = Color3.new(1, 1, 1)
+	knob.Size = UDim2.fromOffset(16, 16)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	knob.BorderSizePixel = 0
 	knob.Parent = sw
 	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
 	local state = default == true
-	local function render()
-		sw.BackgroundColor3 = state and Color3.fromRGB(60, 190, 110) or Color3.fromRGB(70, 70, 80)
-		knob.Position = state and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2)
+	local function render(animate)
+		local targetBg = state and Color3.fromRGB(50, 205, 110) or Color3.fromRGB(55, 55, 65)
+		local targetPos = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3)
+		
+		if animate then
+			TweenService:Create(sw, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetBg}):Play()
+			TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos}):Play()
+		else
+			sw.BackgroundColor3 = targetBg
+			knob.Position = targetPos
+		end
 	end
-	render()
+	render(false)
 
 	sw.MouseButton1Click:Connect(function()
 		state = not state
-		render()
+		render(true)
 		task.spawn(callback, state)
 	end)
 
@@ -1142,7 +1160,8 @@ end)
 
 local collapsed = false
 local function resize()
-	main.Size = UDim2.fromOffset(WIDTH, collapsed and (TOP_H + 2) or expandedHeight)
+	local targetHeight = collapsed and (TOP_H + 2) or expandedHeight
+	TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(WIDTH, targetHeight)}):Play()
 	minBtn.Text = collapsed and "+" or "-"
 end
 resize()
@@ -1152,7 +1171,7 @@ minBtn.MouseButton1Click:Connect(function()
 	resize()
 end)
 
--- Bisa digeser (mouse & layar sentuh)
+-- Bisa digeser (mouse & layar sentuh) secara mulus
 do
 	local dragging, dragStart, startPos
 	bar.InputBegan:Connect(function(input)
