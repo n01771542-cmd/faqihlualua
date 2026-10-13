@@ -7,6 +7,12 @@
     v391 = Boost FPS, v4720 = Uncap FPS). Yang dibuang: UI hub, auto steal,
     anti guard, anti trap, fly, visual spoof, dan semua logic exploit lain.
 
+    MODIFIKASI dari kode asli (atas permintaan):
+      - Lebih cepat: jeda awal Startup Boost 1.5s -> 1 frame, jeda ke-2 4s -> 0.5s,
+        jatah kerja per frame dinaikkan, WaitForChild 10s -> 2s.
+      - Tambahan: hapus pagar pen pemain lain (lihat FENCE_WORDS).
+      - UI menampilkan "Memproses..." lalu "Aktif (x.x dtk)".
+
     Saat pertama kali di-execute semuanya OFF. Nyalakan lewat tombol
     "FPS Boost" di UI (kanan atas layar) -> Startup Boost + Boost FPS + Uncap FPS.
 ]]
@@ -49,6 +55,98 @@ if type(setfpscap_) == "function" then
 return pcall(setfpscap_, v37)
 end
 return false
+end
+
+---------------------------------------------------------------------
+-- KOMPATIBILITAS MODUL GAME (asli dari bagian atas script Sena)
+-- Game memakai nama method "ResolveLocalSlot" dll. Kode Boost FPS asli
+-- memanggil GetMySlot / GetPlotsFolder / IsWorldPositionWithinLocalPlotBounds,
+-- jadi alias ini WAJIB dipasang dulu. Tanpa ini penghapusan plot, treadmill
+-- dan pen pemain lain gagal (error "attempt to call a nil value").
+---------------------------------------------------------------------
+pcall(function()
+local PlotState = require(game:GetService("ReplicatedStorage").Client.PlotState)
+PlotState.GetMySlot = PlotState.ResolveLocalSlot PlotState.GetPlotsFolder = PlotState.ResolveFolder PlotState.IsWorldPositionWithinLocalPlotBounds = PlotState.ContainsLocalPoint PlotState.GetPlotData = PlotState.ResolvePlot
+end)
+
+-- Identity thread 8 (asli): dipakai hub sebelum menjalankan callback toggle
+local function applyIdentity()
+	local setter = genv.setthreadidentity or genv.set_thread_identity or genv.setidentity
+		or genv.setthreadcontext or genv.set_thread_context
+	if type(setter) == "function" then
+		pcall(setter, 8)
+	end
+end
+applyIdentity()
+
+---------------------------------------------------------------------
+-- TAMBAHAN: hapus PAGAR PEN pemain lain (milik plot kita sendiri tidak disentuh)
+-- Dikenali dari NAMA part / parent / kakeknya. Tambah kata di FENCE_WORDS
+-- kalau nama pagar di game berbeda (huruf besar/kecil tidak berpengaruh).
+---------------------------------------------------------------------
+local FENCE_ENABLED = true
+local FENCE_WORDS   = { "fence", "pagar", "railing" }
+local FENCE_DEPTH   = 3
+
+local plotStateRef
+local function getPlotState()
+	if plotStateRef == nil then
+		local ok, mod = pcall(function()
+			return require(ReplicatedStorage.Client.PlotState)
+		end)
+		plotStateRef = ok and mod or false
+	end
+	return plotStateRef or nil
+end
+
+local function nameIsFence(n)
+	local l = string.lower(n)
+	for _, w in ipairs(FENCE_WORDS) do
+		if string.find(l, w, 1, true) then
+			return true
+		end
+	end
+	-- "pen" sebagai kata utuh / camelCase (Pen, Pen_1, EggPen, PenFence), bukan "Open"
+	return string.find(n, "%f[%a][Pp][Ee][Nn]%f[%A]") ~= nil
+		or string.find(n, "%f[%a]Pen%u") ~= nil
+		or string.find(n, "%lPen%f[%A%u]") ~= nil
+end
+
+local function isOtherFence(part)
+	if not FENCE_ENABLED or not part:IsA("BasePart") then
+		return false
+	end
+	local hit, cur = false, part
+	for _ = 1, FENCE_DEPTH do
+		if not cur or cur == Workspace then
+			break
+		end
+		if nameIsFence(cur.Name) then
+			hit = true
+			break
+		end
+		cur = cur.Parent
+	end
+	if not hit then
+		return false
+	end
+	-- Aman: hanya hapus kalau pasti BUKAN di dalam plot kita
+	local PlotState = getPlotState()
+	if not PlotState then
+		return false
+	end
+	local okSlot, slot = pcall(PlotState.ResolveLocalSlot or PlotState.GetMySlot)
+	if not okSlot or slot == nil then
+		return false
+	end
+	local okPos, pos = pcall(function()
+		return part.Position
+	end)
+	if not okPos then
+		return false
+	end
+	local okIn, inside = pcall(PlotState.ContainsLocalPoint or PlotState.IsWorldPositionWithinLocalPlotBounds, pos)
+	return okIn and inside == false
 end
 
 ---------------------------------------------------------------------
@@ -322,7 +420,7 @@ t15.decals[descendant] = descendant.Texture
 end
 descendant.Texture = ""
 end)
-if os.clock() - now > 0.004 then
+if os.clock() - now > 0.012 then
 task.wait()
 now = os.clock()
 end
@@ -339,7 +437,7 @@ else
 v416(descendant)
 end
 end
-if os.clock() - now > 0.004 then
+if os.clock() - now > 0.012 then
 task.wait()
 now = os.clock()
 end
@@ -548,7 +646,7 @@ if ok then
 if v479 then
 local u482 = false
 local ok2, result2 = pcall(function()
-local ClientRenderedAssets = workspace:FindFirstChild("ClientRenderedAssets") or workspace:WaitForChild("ClientRenderedAssets", 10)
+local ClientRenderedAssets = workspace:FindFirstChild("ClientRenderedAssets") or workspace:WaitForChild("ClientRenderedAssets", 2)
 if not ClientRenderedAssets then
 return
 end
@@ -691,7 +789,7 @@ for _, child in ipairs(v515:GetChildren()) do
 table.insert(t22, child)
 end
 n11 += 1
-if n11 >= 250 and #t22 > 0 then
+if n11 >= 1500 and #t22 > 0 then
 n11 = 0
 RunService.Heartbeat:Wait()
 end
@@ -779,6 +877,12 @@ local function v538(p92)
 if not p92:IsA("BasePart") then
 return
 end
+if isOtherFence(p92) then
+pcall(function()
+p92:Destroy()
+end)
+return
+end
 if v533(p92) then
 return
 end
@@ -802,7 +906,7 @@ if v544 and descendant.Parent == nil then
 fpsAreaDeleted += 1
 end
 n12 += 1
-if n12 >= 250 then
+if n12 >= 800 then
 n12 = 0
 RunService.Heartbeat:Wait()
 end
@@ -827,7 +931,7 @@ local function v550(p93)
 local v551 = PlotState2.GetMySlot()
 return v551 ~= nil and p93.Name == tostring(v551)
 end
-local Plots = PlotState2.GetPlotsFolder() or workspace:WaitForChild("Plots", 10)
+local Plots = PlotState2.GetPlotsFolder() or workspace:WaitForChild("Plots", 2)
 if not Plots then
 warn("[FPSBoost] workspace.Plots gak ketemu sama sekali.")
 return
@@ -869,15 +973,15 @@ local ok, result = pcall(function()
 local ReplicatedStorage2 = game:GetService("ReplicatedStorage")
 local PlotState2 = require(ReplicatedStorage2.Client.PlotState)
 local v563
-local Modules = ReplicatedStorage2.Client:FindFirstChild("Modules") or ReplicatedStorage2.Client:WaitForChild("Modules", 10)
-local RuntimeInstanceRegistry = Modules and (Modules:FindFirstChild("RuntimeInstanceRegistry") or Modules:WaitForChild("RuntimeInstanceRegistry", 10))
+local Modules = ReplicatedStorage2.Client:FindFirstChild("Modules") or ReplicatedStorage2.Client:WaitForChild("Modules", 2)
+local RuntimeInstanceRegistry = Modules and (Modules:FindFirstChild("RuntimeInstanceRegistry") or Modules:WaitForChild("RuntimeInstanceRegistry", 2))
 if RuntimeInstanceRegistry then
 local ok, result = pcall(require, RuntimeInstanceRegistry)
 if ok then
 v563 = result
 end
 end
-local __ClientTreadmillRenders = workspace:FindFirstChild("__ClientTreadmillRenders") or workspace:WaitForChild("__ClientTreadmillRenders", 10)
+local __ClientTreadmillRenders = workspace:FindFirstChild("__ClientTreadmillRenders") or workspace:WaitForChild("__ClientTreadmillRenders", 2)
 if not __ClientTreadmillRenders then
 return
 end
@@ -978,15 +1082,17 @@ return
 end
 if senaV4Config.StartupBoost and not u4716 then
 u4716 = true
+senaV4Config._startupDone = false
 task.spawn(function()
-task.wait(1.5)
+task.wait()
 if v16() and senaV4Config.StartupBoost then
 v390()
 end
-task.wait(4)
+task.wait(0.5)
 if v16() and senaV4Config.StartupBoost then
 v390()
 end
+senaV4Config._startupDone = true
 end)
 end
 end
@@ -1224,11 +1330,48 @@ hit.MouseLeave:Connect(function() tween(trackStroke, { Transparency = 0.75 }, QU
 hit.MouseButton1Click:Connect(function()
 	state = not state
 	render(true)
-	task.spawn(function()
-		v4720(state)
-		v4717(state)
-		v4719(state)
-	end)
+
+	if state then
+		status.Text = "Memproses..."
+		local t0 = os.clock()
+		task.spawn(function()
+			applyIdentity()
+			v4720(true)
+			v4717(true)
+			v4719(true)
+
+			local function allReady()
+				return senaV4Config._fpsPlotsReady and senaV4Config._fpsTreadmillsReady
+					and senaV4Config._fpsAreasReady and senaV4Config._fpsWorldReady
+					and senaV4Config._fpsPetsReady and senaV4Config._fpsEggsReady
+			end
+
+			-- tunggu selesai (maks 20 dtk). Kalau ada bagian belum siap (mis. slot plot
+			-- belum ter-resolve), Boost FPS dicoba lagi otomatis maksimal 4x.
+			local retries = 0
+			while state and os.clock() - t0 < 20 do
+				task.wait(0.1)
+				if senaV4Config._startupDone == true and not senaV4Config._fpsBoostApplying then
+					if allReady() or retries >= 4 then
+						break
+					end
+					retries += 1
+					task.wait(0.6)
+					v4719(true)
+				end
+			end
+			if state then
+				status.Text = string.format("Aktif (%.1f dtk)", os.clock() - t0)
+			end
+		end)
+	else
+		task.spawn(function()
+			applyIdentity()
+			v4720(false)
+			v4717(false)
+			v4719(false)
+		end)
+	end
 end)
 
 -- Minimize halus
