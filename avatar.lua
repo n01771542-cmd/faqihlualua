@@ -32,6 +32,7 @@ local UserInputService = game:GetService("UserInputService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -579,6 +580,51 @@ local function pushHistory(list, desc, text)
 	end
 end
 
+-- komunikasi ke server (AvatarStudioServer)
+local REMOTE_NAME = "AvatarStudioApply"
+local remoteRef = nil
+local warnedNoServer = false
+
+local function getRemote()
+	if remoteRef and remoteRef.Parent then
+		return remoteRef
+	end
+	remoteRef = ReplicatedStorage:WaitForChild(REMOTE_NAME, 3)
+	return remoteRef
+end
+
+local SERIAL_PROPS = {
+	"Shirt", "Pants", "GraphicTShirt", "Face", "Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg",
+	"ClimbAnimation", "FallAnimation", "IdleAnimation", "JumpAnimation", "RunAnimation", "SwimAnimation",
+	"WalkAnimation", "MoodAnimation",
+	"HeadColor", "TorsoColor", "LeftArmColor", "RightArmColor", "LeftLegColor", "RightLegColor",
+	"HeightScale", "WidthScale", "DepthScale", "HeadScale", "ProportionScale", "BodyTypeScale",
+}
+
+local function serializeDesc(desc)
+	local t = { props = {}, accs = {} }
+	for _, k in ipairs(SERIAL_PROPS) do
+		local v = getProp(desc, k)
+		if v ~= nil then
+			t.props[k] = v
+		end
+	end
+	local ok, list = pcall(function()
+		return desc:GetAccessories(true)
+	end)
+	if ok then
+		for _, a in ipairs(list) do
+			table.insert(t.accs, {
+				AssetId = a.AssetId,
+				AccessoryType = a.AccessoryType.Name,
+				IsLayered = a.IsLayered,
+				Order = a.Order or 1,
+			})
+		end
+	end
+	return t
+end
+
 function Avatar.apply(desc, text, skipHistory)
 	if busy then
 		toast("Tunggu sebentar, avatar masih diproses...", "warn")
@@ -590,9 +636,27 @@ function Avatar.apply(desc, text, skipHistory)
 		Avatar.refresh()
 	end
 	local before = descCache and descCache:Clone()
-	local ok, err = pcall(function()
-		hum:ApplyDescription(desc)
-	end)
+	local ok, err
+	local remote = getRemote()
+	if remote then
+		-- jalur utama: server yang memasang avatar (pasti terlihat)
+		local okInvoke, res = pcall(function()
+			return remote:InvokeServer(serializeDesc(desc))
+		end)
+		ok = okInvoke and res == true
+		err = okInvoke and res or res
+		if ok then
+			task.wait(0.5) -- tunggu replikasi dari server
+		end
+	else
+		if not warnedNoServer then
+			warnedNoServer = true
+			toast("AvatarStudioServer belum dipasang, memakai mode client (mungkin tidak berefek)", "warn")
+		end
+		ok, err = pcall(function()
+			hum:ApplyDescription(desc)
+		end)
+	end
 	busy = false
 	if not ok then
 		toast("Gagal menerapkan: " .. tostring(err), "danger")
