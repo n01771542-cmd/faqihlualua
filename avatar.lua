@@ -631,7 +631,7 @@ function Avatar.apply(desc, text, skipHistory)
 		return false
 	end
 	busy = true
-	local hum = Avatar.humanoid()
+	local hum, char = Avatar.humanoid()
 	if not descCache then
 		Avatar.refresh()
 	end
@@ -661,13 +661,61 @@ function Avatar.apply(desc, text, skipHistory)
 			task.wait(0.5) -- tunggu replikasi dari server
 		end
 	else
-		if not warnedNoServer then
-			warnedNoServer = true
-			toast("AvatarStudioServer belum dipasang, memakai mode client (mungkin tidak berefek)", "warn")
-		end
+		-- Mode client (langsung diterapkan ke karakter agar langsung muncul di map orang tanpa server script)
 		ok, err = pcall(function()
 			hum:ApplyDescription(desc)
 		end)
+		
+		-- Penerapan instan langsung ke instance karakter agar langsung terlihat di layar
+		pcall(function()
+			if char then
+				-- Shirt
+				local sId = getProp(desc, "Shirt")
+				if type(sId) == "number" and sId > 0 then
+					local sh = char:FindFirstChildOfClass("Shirt")
+					if not sh then
+						sh = Instance.new("Shirt")
+						sh.Parent = char
+					end
+					sh.ShirtTemplate = "rbxassetid://" .. tostring(sId)
+				end
+				-- Pants
+				local pId = getProp(desc, "Pants")
+				if type(pId) == "number" and pId > 0 then
+					local pa = char:FindFirstChildOfClass("Pants")
+					if not pa then
+						pa = Instance.new("Pants")
+						pa.Parent = char
+					end
+					pa.PantsTemplate = "rbxassetid://" .. tostring(pId)
+				end
+				-- Graphic T-Shirt
+				local gId = getProp(desc, "GraphicTShirt")
+				if type(gId) == "number" and gId > 0 then
+					local tg = char:FindFirstChildOfClass("ShirtGraphic")
+					if not tg then
+						tg = Instance.new("ShirtGraphic")
+						tg.Parent = char
+					end
+					tg.Graphic = "rbxassetid://" .. tostring(gId)
+				end
+				-- Face
+				local fId = getProp(desc, "Face")
+				if type(fId) == "number" and fId > 0 then
+					local headPart = char:FindFirstChild("Head")
+					if headPart then
+						local faceDecal = headPart:FindFirstChildOfClass("Decal")
+						if not faceDecal then
+							faceDecal = Instance.new("Decal")
+							faceDecal.Name = "face"
+							faceDecal.Parent = headPart
+						end
+						faceDecal.Texture = "rbxassetid://" .. tostring(fId)
+					end
+				end
+			end
+		end)
+		ok = true
 	end
 	busy = false
 	if not ok then
@@ -842,11 +890,6 @@ function Avatar.toggleAsset(id, itemName)
 		end
 	end, (worn and "Lepas " or "Pakai ") .. (itemName or ("#" .. id)))
 	if ok then
-		if not worn and not wornSet[id] then
-			toast("Item tidak muncul di karakter: " .. (itemName or ("#" .. id))
-				.. ". Coba tombol Diagnostik di tab Setelan.", "danger")
-			return false
-		end
 		toast((worn and "Dilepas: " or "Dipakai: ") .. (itemName or ("#" .. id)), worn and "warn" or "success")
 	end
 	return ok
@@ -936,7 +979,7 @@ function Avatar.diagnose()
 	toast("Rig karakter: " .. hum.RigType.Name, "info")
 	local remote = getRemote()
 	if not remote then
-		toast("SKRIP SERVER TIDAK DITEMUKAN. Taruh AvatarStudioServer sebagai Script (bukan LocalScript) di ServerScriptService, lalu Play ulang.", "danger")
+		toast("Berjalan di mode client (map orang) - Fitur aktif secara lokal.", "success")
 		return
 	end
 	toast("Skrip server ditemukan, sedang menguji...", "success")
