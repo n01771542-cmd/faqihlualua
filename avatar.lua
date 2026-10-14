@@ -333,7 +333,7 @@ local function toast(text, kind)
 	lbl.TextWrapped = false
 	New("UIPadding", { PaddingRight = UDim.new(0, 18), Parent = root })
 	tween(root, { GroupTransparency = 0 }, 0.25)
-	task.delay(2.8, function()
+	task.delay((kind == "danger" or kind == "warn") and 6.5 or 2.8, function()
 		if root.Parent then
 			tween(root, { GroupTransparency = 1 }, 0.35)
 			task.wait(0.4)
@@ -643,8 +643,20 @@ function Avatar.apply(desc, text, skipHistory)
 		local okInvoke, res = pcall(function()
 			return remote:InvokeServer(serializeDesc(desc))
 		end)
-		ok = okInvoke and res == true
-		err = okInvoke and res or res
+		if not okInvoke then
+			ok = false
+			err = "Server tidak merespons: " .. tostring(res)
+		elseif type(res) == "table" then
+			ok = res.ok == true
+			err = res.err
+			if ok and res.missing and #res.missing > 0 then
+				toast("Server gagal memuat " .. #res.missing .. " item (ID: " .. table.concat(res.missing, ", ")
+					.. "). Item ini mungkin tidak boleh dipakai di game ini.", "warn")
+			end
+		else
+			ok = false
+			err = tostring(res)
+		end
 		if ok then
 			task.wait(0.5) -- tunggu replikasi dari server
 		end
@@ -830,6 +842,11 @@ function Avatar.toggleAsset(id, itemName)
 		end
 	end, (worn and "Lepas " or "Pakai ") .. (itemName or ("#" .. id)))
 	if ok then
+		if not worn and not wornSet[id] then
+			toast("Item tidak muncul di karakter: " .. (itemName or ("#" .. id))
+				.. ". Coba tombol Diagnostik di tab Setelan.", "danger")
+			return false
+		end
 		toast((worn and "Dilepas: " or "Dipakai: ") .. (itemName or ("#" .. id)), worn and "warn" or "success")
 	end
 	return ok
@@ -912,6 +929,27 @@ end
 
 function Avatar.applySnapshot(desc, text)
 	return Avatar.apply(desc:Clone(), text)
+end
+
+function Avatar.diagnose()
+	local hum = Avatar.humanoid()
+	toast("Rig karakter: " .. hum.RigType.Name, "info")
+	local remote = getRemote()
+	if not remote then
+		toast("SKRIP SERVER TIDAK DITEMUKAN. Taruh AvatarStudioServer sebagai Script (bukan LocalScript) di ServerScriptService, lalu Play ulang.", "danger")
+		return
+	end
+	toast("Skrip server ditemukan, sedang menguji...", "success")
+	local d = descCache or Avatar.refresh()
+	local ok, res = pcall(function()
+		return remote:InvokeServer(serializeDesc(d))
+	end)
+	if ok and type(res) == "table" and res.ok then
+		toast("Server bisa memasang avatar. Kalau item tertentu tak muncul, itu masalah izin item.", "success")
+	else
+		local msg = ok and (type(res) == "table" and res.err or tostring(res)) or tostring(res)
+		toast("Uji gagal: " .. tostring(msg), "danger")
+	end
 end
 
 function Avatar.init()
@@ -2929,6 +2967,11 @@ UI.builders.settings = function(page)
 	keys.TextWrapped = true
 	keys.TextYAlignment = Enum.TextYAlignment.Top
 
+	button(scroll, {
+		text = "🩺 Diagnostik avatar", size = UDim2.new(1, 0, 0, 36), style = "primary", order = 10, onClick = function()
+			task.spawn(Avatar.diagnose)
+		end,
+	})
 	button(scroll, {
 		text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), style = "soft", order = 11, onClick = function()
 			UI.setOpen(false)
