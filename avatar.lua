@@ -1,24 +1,18 @@
 --[[
 ================================================================================
-  AVATAR STUDIO  -  script.lua
+  AVATAR STUDIO  -  script.lua (CLIENT-SIDE DIRECT INJECTOR FIX)
   Kostum avatar lengkap (VISUAL ONLY / client-side)
-
-  Taruh sebagai LocalScript di:  StarterPlayer > StarterPlayerScripts
 
   FITUR
   - Katalog Roblox LIVE (AvatarEditorService): aksesori, pakaian layered,
     pakaian klasik, bagian tubuh, animasi, bundle/set. Semua dimuat otomatis.
-  - Klik item = pakai, klik lagi = lepas. Tidak perlu mengetik apa pun.
+  - Klik item = pakai, klik lagi = lepas. Langsung muncul di karakter secara instan!
   - Cari kata kunci, urutkan, filter gratis, muat otomatis saat scroll.
   - Favorit, riwayat terakhir dipakai, Undo / Redo.
   - Tab Avatar: coba avatar teman, pemain server, dan preset (tanpa ketik nama).
   - Outfit tersimpan (sesi ini), ukuran tubuh (slider), warna kulit.
   - Preview 3D yang bisa diputar, 6 tema warna, UI skala otomatis (HP/PC).
   - Tombol buka/tutup:  K   |   Undo: Ctrl+Z   |   Redo: Ctrl+Y
-
-  CATATAN
-  - Semua perubahan hanya terlihat di layarmu (client-side).
-  - Katalog butuh game yang sudah dipublish atau Play Solo di Studio.
 ================================================================================
 ]]
 
@@ -33,6 +27,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local InsertService = game:GetService("InsertService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -343,7 +338,7 @@ local function toast(text, kind)
 end
 
 ----------------------------------------------------------------------------
--- [7] AVATAR SERVICE  (semua perubahan lewat HumanoidDescription)
+-- [7] AVATAR SERVICE  (semua perubahan lewat HumanoidDescription & Direct Inject)
 ----------------------------------------------------------------------------
 local Avatar = {}
 
@@ -501,6 +496,77 @@ function Avatar.typeLabel(entry)
 		return entry.Acc .. (entry.Layered and " (layered)" or "")
 	end
 	return entry.Prop
+end
+
+----------------------------------------------------------------------------
+-- DIRECT INJECTOR HELPER (Mengunduh Aksesori Langsung di Map Orang)
+----------------------------------------------------------------------------
+local function injectAssetToCharacter(id, tid)
+	local hum, char = Avatar.humanoid()
+	if not char or not hum then return end
+
+	-- 1. Pakaian Klasik & Wajah (Shirt, Pants, T-Shirt, Face)
+	if tid == 11 then -- Shirt
+		local sh = char:FindFirstChildOfClass("Shirt") or Instance.new("Shirt", char)
+		sh.ShirtTemplate = "rbxassetid://" .. tostring(id)
+	elseif tid == 12 then -- Pants
+		local pa = char:FindFirstChildOfClass("Pants") or Instance.new("Pants", char)
+		pa.PantsTemplate = "rbxassetid://" .. tostring(id)
+	elseif tid == 2 then -- Graphic T-Shirt
+		local tg = char:FindFirstChildOfClass("ShirtGraphic") or Instance.new("ShirtGraphic", char)
+		tg.Graphic = "rbxassetid://" .. tostring(id)
+	elseif tid == 18 then -- Face
+		local head = char:FindFirstChild("Head")
+		if head then
+			local face = head:FindFirstChildOfClass("Decal") or Instance.new("Decal", head)
+			face.Name = "face"
+			face.Texture = "rbxassetid://" .. tostring(id)
+		end
+	end
+
+	-- 2. Aksesori Mesh (Hat, Hair, Back, Face Accessory, dll.)
+	if ACC[tid] then
+		task.spawn(function()
+			local ok, objects = pcall(function()
+				return game:GetObjects("rbxassetid://" .. tostring(id))
+			end)
+			if not ok or not objects or #objects == 0 then
+				ok, objects = pcall(function()
+					return { InsertService:LoadAsset(id) }
+				end)
+			end
+			if ok and objects then
+				for _, obj in ipairs(objects) do
+					local item = obj
+					if obj:IsA("Model") then
+						item = obj:FindFirstChildOfClass("Accessory") or obj:FindFirstChildOfClass("Folder") or obj
+					end
+					if item:IsA("Accessory") then
+						item.Name = "AvatarStudio_" .. tostring(id)
+						hum:AddAccessory(item:Clone())
+					elseif item:IsA("Model") or item:IsA("Folder") then
+						for _, child in ipairs(item:GetChildren()) do
+							if child:IsA("Accessory") then
+								child.Name = "AvatarStudio_" .. tostring(id)
+								hum:AddAccessory(child:Clone())
+							end
+						end
+					end
+				end
+			end
+		end)
+	end
+end
+
+local function removeInjectedAssetFromCharacter(id)
+	local _, char = Avatar.humanoid()
+	if not char then return end
+	local targetName = "AvatarStudio_" .. tostring(id)
+	for _, child in ipairs(char:GetChildren()) do
+		if child:IsA("Accessory") and (child.Name == targetName or child:GetAttribute("AssetId") == id) then
+			child:Destroy()
+		end
+	end
 end
 
 ----------------------------------------------------------------------------
@@ -666,53 +732,25 @@ function Avatar.apply(desc, text, skipHistory)
 			hum:ApplyDescription(desc)
 		end)
 		
-		-- Penerapan instan langsung ke instance karakter agar langsung terlihat di layar
+		-- Direct Injector Fallback
 		pcall(function()
 			if char then
-				-- Shirt
+				-- Synchronize Accessories Directly
+				local okAcc, accList = pcall(function() return desc:GetAccessories(true) end)
+				if okAcc and accList then
+					for _, accData in ipairs(accList) do
+						injectAssetToCharacter(accData.AssetId, Avatar.assetTypeId(accData.AssetId) or 8)
+					end
+				end
+				-- Synchronize Classic Clothing
 				local sId = getProp(desc, "Shirt")
-				if type(sId) == "number" and sId > 0 then
-					local sh = char:FindFirstChildOfClass("Shirt")
-					if not sh then
-						sh = Instance.new("Shirt")
-						sh.Parent = char
-					end
-					sh.ShirtTemplate = "rbxassetid://" .. tostring(sId)
-				end
-				-- Pants
+				if type(sId) == "number" and sId > 0 then injectAssetToCharacter(sId, 11) end
 				local pId = getProp(desc, "Pants")
-				if type(pId) == "number" and pId > 0 then
-					local pa = char:FindFirstChildOfClass("Pants")
-					if not pa then
-						pa = Instance.new("Pants")
-						pa.Parent = char
-					end
-					pa.PantsTemplate = "rbxassetid://" .. tostring(pId)
-				end
-				-- Graphic T-Shirt
+				if type(pId) == "number" and pId > 0 then injectAssetToCharacter(pId, 12) end
 				local gId = getProp(desc, "GraphicTShirt")
-				if type(gId) == "number" and gId > 0 then
-					local tg = char:FindFirstChildOfClass("ShirtGraphic")
-					if not tg then
-						tg = Instance.new("ShirtGraphic")
-						tg.Parent = char
-					end
-					tg.Graphic = "rbxassetid://" .. tostring(gId)
-				end
-				-- Face
+				if type(gId) == "number" and gId > 0 then injectAssetToCharacter(gId, 2) end
 				local fId = getProp(desc, "Face")
-				if type(fId) == "number" and fId > 0 then
-					local headPart = char:FindFirstChild("Head")
-					if headPart then
-						local faceDecal = headPart:FindFirstChildOfClass("Decal")
-						if not faceDecal then
-							faceDecal = Instance.new("Decal")
-							faceDecal.Name = "face"
-							faceDecal.Parent = headPart
-						end
-						faceDecal.Texture = "rbxassetid://" .. tostring(fId)
-					end
-				end
+				if type(fId) == "number" and fId > 0 then injectAssetToCharacter(fId, 18) end
 			end
 		end)
 		ok = true
@@ -801,6 +839,7 @@ local function removeAssetFromDesc(desc, id)
 			setProp(desc, prop, 0)
 		end
 	end
+	removeInjectedAssetFromCharacter(id)
 end
 
 -- tambahkan item ke desc. return true bila tipe didukung
@@ -829,11 +868,13 @@ local function addAssetToDesc(desc, id, tid)
 		end
 		table.insert(out, { AssetId = id, AccessoryType = enumVal, IsLayered = layered, Order = order })
 		desc:SetAccessories(out, true)
+		injectAssetToCharacter(id, tid)
 		return true
 	end
 	local prop = CLASSIC[tid]
 	if prop then
 		setProp(desc, prop, id)
+		injectAssetToCharacter(id, tid)
 		return true
 	end
 	return false
@@ -963,6 +1004,14 @@ end
 function Avatar.removeAllAccessories()
 	return Avatar.modify(function(desc)
 		desc:SetAccessories({}, true)
+		local _, char = Avatar.humanoid()
+		if char then
+			for _, child in ipairs(char:GetChildren()) do
+				if child:IsA("Accessory") then
+					child:Destroy()
+				end
+			end
+		end
 	end, "Lepas semua aksesori")
 end
 
@@ -979,7 +1028,7 @@ function Avatar.diagnose()
 	toast("Rig karakter: " .. hum.RigType.Name, "info")
 	local remote = getRemote()
 	if not remote then
-		toast("Berjalan di mode client (map orang) - Fitur aktif secara lokal.", "success")
+		toast("Berjalan di mode Direct Injector (map orang) - Fitur aktif secara lokal.", "success")
 		return
 	end
 	toast("Skrip server ditemukan, sedang menguji...", "success")
