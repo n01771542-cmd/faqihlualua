@@ -8,10 +8,19 @@
     anti guard, anti trap, fly, visual spoof, dan semua logic exploit lain.
 
     MODIFIKASI dari kode asli (atas permintaan):
-      - Lebih cepat: jeda awal Startup Boost 1.5s -> 1 frame, jeda ke-2 4s -> 0.5s,
-        jatah kerja per frame dinaikkan, WaitForChild 10s -> 2s.
+      - Waktu Optimizing diatur ~5 detik (OPT_SECONDS) dengan pacing per frame,
+        jeda awal Startup Boost 1.5s -> 1 frame, WaitForChild 10s -> 2s.
       - Tambahan: hapus pagar pen pemain lain (lihat FENCE_WORDS).
       - UI menampilkan "Memproses..." lalu "Aktif (x.x dtk)".
+
+    KEAMANAN KARAKTER: sapuan tidak lagi menyentuh karakter pemain mana pun, Material
+    part tabrakan tidak diubah (fisika/friction tetap), part tabrakan di Build tidak
+    dihapus, dan throttle fisika dimatikan. Saklarnya ada di bagian "KEAMANAN KARAKTER".
+
+    Otomatis NON-AKTIF setelah selesai: begitu Optimizing rampung, semua listener
+    dilepas (releaseHooks) dan tombol kembali OFF, supaya tidak bertabrakan dengan
+    script lain. Hasil optimasi tetap bertahan. Kunci genv memakai awalan __FPSBoost
+    (tidak lagi memakai nama __SenaV4*).
 
     Saat pertama kali di-execute semuanya OFF. Nyalakan lewat tombol
     "FPS Boost" di UI (kanan atas layar) -> Startup Boost + Boost FPS + Uncap FPS.
@@ -48,7 +57,7 @@ end
 ---------------------------------------------------------------------
 if not (rawget(_G, "setfpscap") or rawget(_G, "set_fps_cap")) and type(setfpscap) == "function" then
 end
-genv.__SenaV4SetCapFps = function(p1)
+genv.__FPSBoostSetCapFps = function(p1)
 local v37 = math.clamp(math.floor(tonumber(p1) or 240), 1, 999)
 local setfpscap_ = rawget(_G, "setfpscap") or rawget(_G, "set_fps_cap") or type(setfpscap) == "function" and setfpscap
 if type(setfpscap_) == "function" then
@@ -66,18 +75,79 @@ end
 ---------------------------------------------------------------------
 pcall(function()
 local PlotState = require(game:GetService("ReplicatedStorage").Client.PlotState)
-PlotState.GetMySlot = PlotState.ResolveLocalSlot PlotState.GetPlotsFolder = PlotState.ResolveFolder PlotState.IsWorldPositionWithinLocalPlotBounds = PlotState.ContainsLocalPoint PlotState.GetPlotData = PlotState.ResolvePlot
+PlotState.GetMySlot = PlotState.GetMySlot or PlotState.ResolveLocalSlot PlotState.GetPlotsFolder = PlotState.GetPlotsFolder or PlotState.ResolveFolder PlotState.IsWorldPositionWithinLocalPlotBounds = PlotState.IsWorldPositionWithinLocalPlotBounds or PlotState.ContainsLocalPoint PlotState.GetPlotData = PlotState.GetPlotData or PlotState.ResolvePlot
 end)
 
--- Identity thread 8 (asli): dipakai hub sebelum menjalankan callback toggle
-local function applyIdentity()
-	local setter = genv.setthreadidentity or genv.set_thread_identity or genv.setidentity
-		or genv.setthreadcontext or genv.set_thread_context
-	if type(setter) == "function" then
-		pcall(setter, 8)
-	end
+-- Identity thread 8 (asli, dari bagian atas script hub + v4763/v4730)
+genv.__FPSBoostIdentityGetter = genv.getthreadidentity or genv.get_thread_identity or genv.getidentity or genv.getthreadcontext or genv.get_thread_context
+genv.__FPSBoostIdentitySetter = genv.setthreadidentity or genv.set_thread_identity or genv.setidentity or genv.setthreadcontext or genv.set_thread_context
+do
+local __FPSBoostIdentitySetter = genv.__FPSBoostIdentitySetter
+if type(__FPSBoostIdentitySetter) == "function" then
+pcall(__FPSBoostIdentitySetter, 8)
+genv.__FPSBoostIdentityValue = 8
 end
+end
+local function v4763()
+local __FPSBoostIdentitySetter = genv.__FPSBoostIdentitySetter or type(setthreadidentity) == "function" and setthreadidentity or type(set_thread_identity) == "function" and set_thread_identity or type(setidentity) == "function" and setidentity or type(syn) == "table" and type(syn.set_thread_identity) == "function" and syn.set_thread_identity
+local __FPSBoostIdentityValue = genv.__FPSBoostIdentityValue or 8
+local function v4766()
+if type(__FPSBoostIdentitySetter) == "function" then
+pcall(__FPSBoostIdentitySetter, __FPSBoostIdentityValue)
+end
+end
+return v4766
+end
+local applyIdentity = v4763()   -- = v4730 di hub asli (dipanggil sebelum setiap callback toggle)
 applyIdentity()
+
+---------------------------------------------------------------------
+-- KEAMANAN KARAKTER (ditambahkan karena karakter jadi ngebug saat FPS Boost aktif)
+--
+-- Hasil investigasi file Sena: blok performanya tidak menyebut Character/Humanoid,
+-- tapi sapuannya ke seluruh workspace ikut mengenai karakter semua pemain:
+--   * warna abu + Material baru + tekstur/wajah dikosongkan + RenderFidelity rendah
+--     -> karakter jadi abu-abu / tanpa wajah / aksesori & tool rusak
+--   * Material berubah -> friction/fisika bawaan material ikut berubah
+--     -> lantai & treadmill terasa licin / karakter tidak terbawa sabuk dengan benar
+--   * part tabrakan di Build dihapus di client -> karakter jatuh / tembus / ditarik balik server
+--   * PhysicsEnvironmentalThrottle = Always -> fisika objek di sekitar jadi patah-patah
+-- Semua itu dimatikan lewat 4 saklar di bawah (ubah ke false untuk perilaku asli Sena).
+---------------------------------------------------------------------
+local SAFE_CHARACTER   = true    -- karakter SEMUA pemain tidak disentuh sapuan apa pun
+local KEEP_COLLISION   = true    -- part tabrakan (CanCollide): Material tidak diubah & tidak dihapus di Build
+local KEEP_OWN_ASSETS  = true    -- aset milik kita di ClientRenderedAssets tidak dilepas
+local PHYSICS_THROTTLE = false   -- PhysicsEnvironmentalThrottle=Always (bawaan Sena) tidak dipakai
+
+-- true kalau instance berada di dalam karakter pemain mana pun
+local function isCharacterInstance(inst)
+	local cur = inst
+	while cur and cur.Parent ~= Workspace do
+		cur = cur.Parent
+	end
+	return cur ~= nil and Players:GetPlayerFromCharacter(cur) ~= nil
+end
+
+-- true kalau aset ini milik kita (nama memuat UserId, atau atribut pemilik = kita)
+local function isOwnAsset(inst)
+	if not KEEP_OWN_ASSETS then
+		return false
+	end
+	local uid = tostring(LocalPlayer.UserId)
+	local ok, res = pcall(function()
+		if string.find(inst.Name, uid, 1, true) then
+			return true
+		end
+		for _, a in ipairs({ "OwnerUserId", "OwnerId", "UserId", "Owner" }) do
+			local v = inst:GetAttribute(a)
+			if v ~= nil and (tostring(v) == uid or v == LocalPlayer.Name) then
+				return true
+			end
+		end
+		return false
+	end)
+	return ok and res == true
+end
 
 ---------------------------------------------------------------------
 -- TAMBAHAN: hapus PAGAR PEN pemain lain (milik plot kita sendiri tidak disentuh)
@@ -113,7 +183,7 @@ local function nameIsFence(n)
 end
 
 local function isOtherFence(part)
-	if not FENCE_ENABLED or not part:IsA("BasePart") then
+	if not FENCE_ENABLED or not part:IsA("BasePart") or isCharacterInstance(part) then
 		return false
 	end
 	local hit, cur = false, part
@@ -150,15 +220,42 @@ local function isOtherFence(part)
 end
 
 ---------------------------------------------------------------------
+-- PACING: Optimizing sengaja diperlambat jadi ~OPT_SECONDS detik supaya ringan
+-- (kerja dibagi rata per frame, bukan ditumpuk di awal). Ubah angkanya sesuai selera.
+---------------------------------------------------------------------
+local OPT_SECONDS = 5
+local PACE_P1     = OPT_SECONDS * 0.48   -- Startup Boost: sapuan pertama
+local PACE_GAP    = OPT_SECONDS * 0.04   -- jeda antar sapuan
+local PACE_P2     = OPT_SECONDS * 0.44   -- Startup Boost: sapuan kedua
+local PACE_AREAS  = OPT_SECONDS * 0.30   -- Boost FPS: detail map (Build)
+local PACE_WORLD  = OPT_SECONDS * 0.66   -- Boost FPS: ratakan material workspace
+local pacePassSeconds = PACE_P1
+
+-- Mengembalikan fungsi "tick": panggil sekali per item; dia menunggu frame berikutnya
+-- kalau progres sudah mendahului jadwal, sehingga seluruh pekerjaan selesai ~duration detik.
+local function newPacer(total, duration)
+	if not total or total < 1 then
+		return function() end
+	end
+	local t0, n = os.clock(), 0
+	return function()
+		n += 1
+		while n / total > (os.clock() - t0) / duration do
+			task.wait()
+		end
+	end
+end
+
+---------------------------------------------------------------------
 -- STARTUP BOOST + BOOST FPS (asli): t15 / v390 / v391
 ---------------------------------------------------------------------
-if type(genv.__SenaV4DecomBoostCleanup) == "function" then
-pcall(genv.__SenaV4DecomBoostCleanup) end
+if type(genv.__FPSBoostCleanup) == "function" then
+pcall(genv.__FPSBoostCleanup) end
 local t15, v390, v391
 do
 local t16 = {}
 local u393 = false
-genv.__SenaV4DecomBoostCleanup = function()
+genv.__FPSBoostCleanup = function()
 for _, v in ipairs(t16) do
 pcall(function()
 v:Disconnect()
@@ -174,7 +271,9 @@ return
 end
 for _, child in ipairs(ClientRenderedAssets:GetChildren()) do
 pcall(function()
+if not isOwnAsset(child) then
 child.Parent = nil
+end
 end)
 end
 end
@@ -217,6 +316,9 @@ end
 end
 end
 local function v412(p83)
+if SAFE_CHARACTER and isCharacterInstance(p83) then
+return true
+end
 if not p83:FindFirstAncestor("SenaVisualBack") then
 if not p83:FindFirstAncestor("SenaVisualRemote") then
 local Tool = p83:FindFirstAncestorWhichIsA("Tool")
@@ -278,7 +380,9 @@ if child.Name == "ClientRenderedAssets" then
 v396()
 table.insert(t16, child.ChildAdded:Connect(function(child2)
 pcall(function()
+if not isOwnAsset(child2) then
 child2.Parent = nil
+end
 end)
 end))
 elseif child.Name == "PlacedEggRenders" then
@@ -309,7 +413,9 @@ local ClientRenderedAssets = workspace:FindFirstChild("ClientRenderedAssets")
 if ClientRenderedAssets then
 table.insert(t16, ClientRenderedAssets.ChildAdded:Connect(function(child)
 pcall(function()
+if not isOwnAsset(child) then
 child.Parent = nil
+end
 end)
 end))
 end
@@ -377,12 +483,14 @@ end)
 if t19.quality == Enum.QualityLevel.Level01 then
 t19.quality = Enum.QualityLevel.Automatic
 end
-t15.snapshot = genv.__SenaV4DecomSnapshot or t19
-genv.__SenaV4DecomSnapshot = t15.snapshot
+t15.snapshot = genv.__FPSBoostSnapshot or t19
+genv.__FPSBoostSnapshot = t15.snapshot
 end
 pcall(function()
 settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+if PHYSICS_THROTTLE then
 settings().Physics.PhysicsEnvironmentalThrottle = Enum.EnviromentalPhysicsThrottle.Always
+end
 Lighting.Technology = Enum.Technology.Compatibility
 Lighting.GlobalShadows = false
 Lighting.FogEnd = 9e9
@@ -390,12 +498,13 @@ Lighting.Brightness = 2
 Lighting.Ambient = Color3.new(1, 1, 1)
 Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
 end)
-local now = os.clock()
-for _, v in ipairs({
-workspace,
-Lighting
-}) do
-for _, descendant in ipairs(v:GetDescendants()) do
+local lists = {
+workspace:GetDescendants(),
+Lighting:GetDescendants()
+}
+local paceTick = newPacer(#lists[1] + #lists[2], pacePassSeconds)
+for _, list in ipairs(lists) do
+for _, descendant in ipairs(list) do
 if not v412(descendant) then
 if descendant:IsA("BasePart") then
 pcall(function()
@@ -406,7 +515,9 @@ descendant.CastShadow,
 descendant:IsA("MeshPart") and descendant.RenderFidelity or nil
 }
 end
+if not (KEEP_COLLISION and descendant.CanCollide) then
 descendant.Material = Enum.Material.SmoothPlastic
+end
 descendant.CastShadow = false
 if descendant:IsA("MeshPart") then
 descendant.RenderFidelity = Enum.RenderFidelity.Performance
@@ -420,10 +531,7 @@ t15.decals[descendant] = descendant.Texture
 end
 descendant.Texture = ""
 end)
-if os.clock() - now > 0.012 then
-task.wait()
-now = os.clock()
-end
+paceTick()
 continue
 end
 if descendant:IsA("Texture") then
@@ -437,10 +545,7 @@ else
 v416(descendant)
 end
 end
-if os.clock() - now > 0.012 then
-task.wait()
-now = os.clock()
-end
+paceTick()
 end
 end
 end
@@ -562,7 +667,7 @@ t15.decals = {}
 t15.effects = {}
 t15.snapshot = nil
 end
-genv.__SenaV4DecomBoostUndo = t15
+genv.__FPSBoostUndo = t15
 local u456 = false
 local function v457(p84)
 if not p84 or not p84:IsA("Model") then
@@ -600,9 +705,9 @@ local children = v466:GetChildren()
 for _, child in ipairs(children) do
 v457(child)
 end
-v466.ChildAdded:Connect(function(child)
+table.insert(t16, v466.ChildAdded:Connect(function(child)
 task.defer(v457, child)
-end)
+end))
 u463 = true
 end)
 if not ok then
@@ -616,7 +721,9 @@ if not p85 then
 return
 end
 pcall(function()
+if not isOwnAsset(p85) then
 p85.Parent = nil
+end
 end)
 end
 local function v471()
@@ -654,9 +761,9 @@ local children = ClientRenderedAssets:GetChildren()
 for _, child in ipairs(children) do
 v470(child)
 end
-ClientRenderedAssets.ChildAdded:Connect(function(child)
+table.insert(t16, ClientRenderedAssets.ChildAdded:Connect(function(child)
 task.defer(v470, child)
-end)
+end))
 u482 = true
 end)
 if not ok2 then
@@ -670,8 +777,8 @@ warn("[FPSBoost] Gagal set HideOtherPets bawaan game:", result or "setting belum
 return false
 end
 local function v489()
-if type(genv.__SenaV4SetCapFps) == "function" then
-pcall(genv.__SenaV4SetCapFps, 240)
+if type(genv.__FPSBoostSetCapFps) == "function" then
+pcall(genv.__FPSBoostSetCapFps, 240)
 end
 pcall(function()
 settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
@@ -729,7 +836,9 @@ local function v498(p87)
 if not p87 or not p87:IsA("BasePart") then
 return
 end
+if not (KEEP_COLLISION and p87.CanCollide) then
 p87.Material = Enum.Material.SmoothPlastic
+end
 p87.Color = color3
 p87.CastShadow = false
 end
@@ -771,9 +880,13 @@ workspace,
 game:GetService("Lighting")
 }
 for _, v in ipairs(t21) do
-table.insert(t20, v.DescendantAdded:Connect(function(descendant)
+do
+local conn20 = v.DescendantAdded:Connect(function(descendant)
 task.defer(v505, descendant)
-end))
+end)
+table.insert(t20, conn20)
+table.insert(t16, conn20)
+end
 end
 local t22 = {}
 for _, v in ipairs(t21) do
@@ -782,6 +895,7 @@ table.insert(t22, child)
 end
 end
 local n11 = 0
+local paceTick = newPacer(#workspace:GetDescendants() + #game:GetService("Lighting"):GetDescendants(), PACE_WORLD)
 while #t22 > 0 do
 local v515 = table.remove(t22)
 v505(v515)
@@ -789,10 +903,7 @@ for _, child in ipairs(v515:GetChildren()) do
 table.insert(t22, child)
 end
 n11 += 1
-if n11 >= 1500 and #t22 > 0 then
-n11 = 0
-RunService.Heartbeat:Wait()
-end
+paceTick()
 end
 u501 = true
 end)
@@ -888,6 +999,8 @@ return
 end
 if v530(p92) then
 v498(p92)
+elseif KEEP_COLLISION and p92.CanCollide then
+v498(p92)
 else
 pcall(function()
 p92:Destroy()
@@ -897,19 +1010,19 @@ end
 local connection = Build.DescendantAdded:Connect(function(descendant)
 task.defer(v538, descendant)
 end)
+table.insert(t16, connection)
 local n12 = 0
 local fpsAreaDeleted = 0
-for _, descendant in ipairs(Build:GetDescendants()) do
+local buildList = Build:GetDescendants()
+local paceTick = newPacer(#buildList, PACE_AREAS)
+for _, descendant in ipairs(buildList) do
 local v544 = descendant.Parent ~= nil
 v538(descendant)
 if v544 and descendant.Parent == nil then
 fpsAreaDeleted += 1
 end
 n12 += 1
-if n12 >= 800 then
-n12 = 0
-RunService.Heartbeat:Wait()
-end
+paceTick()
 end
 senaV4Config._fpsAreaListener = connection
 senaV4Config._fpsAreaDeleted = fpsAreaDeleted
@@ -945,7 +1058,7 @@ end) then
 n13 += 1
 end
 end
-Plots.ChildAdded:Connect(function(child)
+table.insert(t16, Plots.ChildAdded:Connect(function(child)
 task.defer(function()
 if child.Parent then
 if not v550(child) then
@@ -955,7 +1068,7 @@ end)
 end
 end
 end)
-end)
+end))
 u546 = true
 end)
 if ok then
@@ -1028,7 +1141,7 @@ end) then
 n14 += 1
 end
 end
-__ClientTreadmillRenders.ChildAdded:Connect(function(child)
+table.insert(t16, __ClientTreadmillRenders.ChildAdded:Connect(function(child)
 task.defer(function()
 if child.Parent and child:IsA("Model") and not v575(child) then
 pcall(function()
@@ -1036,7 +1149,7 @@ child:Destroy()
 end)
 end
 end)
-end)
+end))
 u558 = true
 end)
 if ok then
@@ -1086,10 +1199,12 @@ senaV4Config._startupDone = false
 task.spawn(function()
 task.wait()
 if v16() and senaV4Config.StartupBoost then
+pacePassSeconds = PACE_P1
 v390()
 end
-task.wait(0.5)
+task.wait(PACE_GAP)
 if v16() and senaV4Config.StartupBoost then
+pacePassSeconds = PACE_P2
 v390()
 end
 senaV4Config._startupDone = true
@@ -1102,9 +1217,9 @@ task.spawn(v391)
 end
 end
 local function v4720(p1045)
-local __SenaV4SetCapFps = genv.__SenaV4SetCapFps
-if type(__SenaV4SetCapFps) == "function" then
-__SenaV4SetCapFps(p1045 == true and 240 or 60)
+local __FPSBoostSetCapFps = genv.__FPSBoostSetCapFps
+if type(__FPSBoostSetCapFps) == "function" then
+__FPSBoostSetCapFps(p1045 == true and 240 or 60)
 end
 end
 
@@ -1113,10 +1228,32 @@ end
 ---------------------------------------------------------------------
 -- Tidak ada yang dijalankan otomatis: semua OFF sampai tombol di UI dinyalakan.
 
+-- Setelah Optimizing selesai: lepas SEMUA hook (DescendantAdded / ChildAdded) supaya
+-- tidak ikut meratakan / mematikan efek objek milik script lain.
+-- Hasil optimasi (grafis rendah, plot/treadmill/detail yang sudah dihapus) tetap bertahan.
+local function releaseHooks()
+	pcall(function()
+		local cleanup = genv.__FPSBoostCleanup
+		if type(cleanup) == "function" then
+			cleanup()
+		end
+	end)
+	senaV4Config.StartupBoost = false   -- Startup Boost dianggap sudah selesai
+	u4716 = false                       -- boleh dijalankan lagi nanti kalau tombol ditekan lagi
+end
+
 genv.FPSBoost = {
 	StartupBoost = v4717,
 	BoostFps     = v4719,
 	UncapFps     = v4720,
+	Release      = releaseHooks,
+	-- Kembalikan grafis & cap FPS (efek yang sudah dihapus baru kembali setelah rejoin):
+	--   getgenv().FPSBoost.Restore()
+	Restore      = function()
+		applyIdentity()
+		v4717(false)
+		v4720(false)
+	end,
 }
 
 ---------------------------------------------------------------------
@@ -1316,10 +1453,10 @@ hit.Parent = row
 local state = false   -- selalu OFF saat pertama kali execute
 
 local function render(animated)
-	local info = animated and SMOOTH or TweenInfo.new(0)
-	tween(track, { BackgroundColor3 = state and ON_COL or OFF_COL }, info)
-	tween(knob,  { Position = state and UDim2.fromOffset(21, 3) or UDim2.fromOffset(3, 3) }, info)
-	tween(status, { TextColor3 = state and ON_COL or MUTED }, info)
+	local ti = animated and SMOOTH or TweenInfo.new(0)
+	tween(track, { BackgroundColor3 = state and ON_COL or OFF_COL }, ti)
+	tween(knob,  { Position = state and UDim2.fromOffset(21, 3) or UDim2.fromOffset(3, 3) }, ti)
+	tween(status, { TextColor3 = state and ON_COL or MUTED }, ti)
 	status.Text = state and "Aktif" or "Nonaktif"
 end
 render(false)
@@ -1361,7 +1498,12 @@ hit.MouseButton1Click:Connect(function()
 				end
 			end
 			if state then
-				status.Text = string.format("Aktif (%.1f dtk)", os.clock() - t0)
+				-- SELESAI: lepas semua hook (hasil optimasi tetap), tombol kembali OFF
+				releaseHooks()
+				state = false
+				render(true)
+				status.Text = string.format("Selesai (%.1f dtk)", os.clock() - t0)
+				tween(status, { TextColor3 = ON_COL })
 			end
 		end)
 	else
