@@ -78,6 +78,17 @@ local ANIM_SLOT = {
 	[54] = { "swim", { "Swim" } },
 }
 
+local NAME2TID = {
+	Hat = 8, HairAccessory = 41, FaceAccessory = 42, NeckAccessory = 43, ShoulderAccessory = 44,
+	FrontAccessory = 45, BackAccessory = 46, WaistAccessory = 47, TShirtAccessory = 64, ShirtAccessory = 65,
+	PantsAccessory = 66, JacketAccessory = 67, SweaterAccessory = 68, ShortsAccessory = 69,
+	LeftShoeAccessory = 70, RightShoeAccessory = 71, DressSkirtAccessory = 72, EyebrowAccessory = 76,
+	EyelashAccessory = 77, Shirt = 11, Pants = 12, TShirt = 2, Face = 18, Head = 17, Torso = 27,
+	RightArm = 28, LeftArm = 29, LeftLeg = 30, RightLeg = 31, ClimbAnimation = 48, FallAnimation = 50,
+	IdleAnimation = 51, JumpAnimation = 52, RunAnimation = 53, SwimAnimation = 54, WalkAnimation = 55,
+	MoodAnimation = 78,
+}
+
 local SERIAL_PROPS = {
 	"Shirt", "Pants", "GraphicTShirt", "Face", "Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg",
 	"ClimbAnimation", "FallAnimation", "IdleAnimation", "JumpAnimation", "RunAnimation", "SwimAnimation",
@@ -527,8 +538,10 @@ end
 
 function E.inject(id, tid)
 	local hum, char = E.humanoid()
+	E.lastInjectErr = nil
 	local objs = loadAsset(id)
 	if not objs then
+		E.lastInjectErr = "aset tidak bisa dimuat (GetObjects/LoadAsset ditolak atau aset dihapus)"
 		return false
 	end
 	local tag = "AS_" .. tostring(id)
@@ -536,13 +549,20 @@ function E.inject(id, tid)
 	if ACC[tid] then
 		local acc = findIn(objs, "Accessory")
 		if not acc then
+			E.lastInjectErr = "aset bukan Accessory"
 			return false
 		end
 		local c = acc:Clone()
 		c.Name = tag
 		c:SetAttribute("AS", id)
-		hum:AddAccessory(c)
-		return true
+		local okA, errA = pcall(function()
+			hum:AddAccessory(c)
+		end)
+		if not okA then
+			E.lastInjectErr = "AddAccessory gagal: " .. tostring(errA)
+			return false
+		end
+		return c.Parent == char
 	elseif tid == 11 or tid == 12 or tid == 2 then
 		local class = (tid == 11 and "Shirt") or (tid == 12 and "Pants") or "ShirtGraphic"
 		local inst = findIn(objs, class)
@@ -748,7 +768,7 @@ function E._commit(newLook, text, skipHist, force)
 			end
 			for _, id in ipairs(bad) do
 				removeFromDesc(newLook, id)
-				toast("Tidak bisa memasang \"" .. E.name(id) .. "\" di map ini (aset diblokir / rig tidak cocok).", "warn")
+				toast("Tidak bisa memasang \"" .. E.name(id) .. "\": " .. tostring(E.lastInjectErr or "rig tidak cocok / diblokir"), "warn")
 			end
 			E.lastMethod = "injector"
 			if not skipHist and E.look then
@@ -921,7 +941,67 @@ function E.equipBundle(bundleId, bundleName)
 	return done
 end
 
+function E.applyUserVisual(userId, displayName, keepLook)
+	local hum, char = E.humanoid()
+	local okM, model = pcall(function()
+		return Players:GetCharacterAppearanceAsync(userId)
+	end)
+	if not okM or not model then
+		return false
+	end
+	E.cleanInjected(char)
+	for _, ch in ipairs(char:GetChildren()) do
+		if ch:IsA("Accessory") or ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+			ch:Destroy()
+		end
+	end
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			local c = ch:Clone()
+			c:SetAttribute("ASU", true)
+			pcall(function()
+				hum:AddAccessory(c)
+			end)
+		elseif ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+			local c = ch:Clone()
+			c:SetAttribute("ASU", true)
+			c.Parent = char
+		end
+	end
+	local mh, head = model:FindFirstChild("Head"), char:FindFirstChild("Head")
+	if mh and head then
+		local mf, f = mh:FindFirstChildOfClass("Decal"), head:FindFirstChildOfClass("Decal")
+		if mf and f then
+			f.Texture = mf.Texture
+		end
+	end
+	model:Destroy()
+	if not keepLook then
+		E.failed = {}
+		local okD, desc = pcall(function()
+			return Players:GetHumanoidDescriptionFromUserId(userId)
+		end)
+		if okD and desc then
+			if E.look then
+				table.insert(E.history, E.look)
+				E.redo = {}
+			end
+			E.look = desc
+		end
+		E.userVisual = userId
+		fire()
+	end
+	return true
+end
+
 function E.applyUser(userId, displayName)
+	if not E.remote then
+		if E.applyUserVisual(userId, displayName) then
+			E.lastMethod = "visual-klien"
+			toast("Avatar dipakai: " .. tostring(displayName or userId) .. "  (visual-klien)", "ok")
+			return true
+		end
+	end
 	local ok, desc = pcall(function()
 		return Players:GetHumanoidDescriptionFromUserId(userId)
 	end)
@@ -964,6 +1044,7 @@ function E.doRedo()
 end
 
 function E.reset()
+	E.userVisual = nil
 	E.failed = {}
 	E.resetScales()
 	E.resetSkin()
@@ -1061,7 +1142,10 @@ function E.init()
 	player.CharacterAdded:Connect(function(newChar)
 		newChar:WaitForChild("Humanoid")
 		task.wait(1)
-		if E.look then
+		if E.userVisual and not E.remote then
+			E.applyUserVisual(E.userVisual, nil, true)
+			E.guard()
+		elseif E.look then
 			E.commit(E.look:Clone(), "respawn", true, true)
 		end
 	end)
@@ -1184,7 +1268,8 @@ local function newQuery(cat, keyword, sortIdx, freeOnly)
 		params.MaxPrice = 0
 	end
 	params.Limit = PAGE_SIZE
-	return setmetatable({ params = params, finished = false, pages = nil, total = 0 }, Query)
+	local tid = (cat.kind == "asset" and cat.list and #cat.list == 1) and NAME2TID[cat.list[1]] or nil
+	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid }, Query)
 end
 
 function Query:nextPage()
@@ -1227,6 +1312,9 @@ function Query:nextPage()
 		})
 		if not isBundle then
 			E.names[it.Id] = E.names[it.Id] or nm
+			if self.tid then
+				E.types[it.Id] = self.tid
+			end
 		end
 	end
 	return items
