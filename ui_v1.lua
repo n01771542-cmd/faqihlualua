@@ -1,4437 +1,1132 @@
---==============================================================================
--- UI_RECONSTRUCTED_TEST.lua
--- Standalone UI-only demo reconstruction.
--- Run as a LocalScript in Roblox Studio (Play mode).
--- All feature callbacks are mocked; no game automation is performed.
---==============================================================================
+--[[
+    Leon4951hub — UI STANDALONE (library + shell)
+    Latar hitam, outline biru tipis, sidebar tab, kolom Search, footer FPS / ms.
 
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
+    Bisa langsung di-execute sendiri. Tab "Performance" otomatis terhubung ke
+    FPS Boost kalau script.lua (FPS Boost) sudah dijalankan lebih dulu.
+
+    API (kalau mau menambah tab sendiri):
+        local hub = getgenv().LeonHub                 -- window yang sudah jadi
+        local tab = hub:AddTab({ Name = "Nama Tab" })
+        tab:AddSection("Judul Section")
+        tab:AddParagraph({ Title = "..", Content = ".." })      -- :Set(title, content)
+        tab:AddToggle({ Title = "..", Content = "..", Default = false, Callback = function(v) end })
+        tab:AddButton({ Title = "..", Content = "..", ButtonText = "Run", Callback = function() end })
+        tab:AddSlider({ Title = "..", Min = 0, Max = 100, Step = 1, Default = 50, Callback = function(v) end })
+        tab:AddDropdown({ Title = "..", Options = {"A","B"}, Default = "A", Multi = false, Callback = function(v) end })
+        tab:AddInput({ Title = "..", Placeholder = "..", Default = "", Callback = function(text) end })
+        hub:Notify("pesan", 2.5)
+        hub:Destroy()
+    Library mentah: getgenv().LeonHubLib.Window({ Title = "Nama", Width = 560, Height = 360 })
+
+    Catatan: ini library UI buatan sendiri. UI asli Sena tidak ada di dalam file-nya
+    (dimuat dari luar lewat loadstring), jadi tidak ada kode UI yang bisa disalin.
+]]
+
+local genv = (getgenv and getgenv()) or _G
+
+local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local RunService       = game:GetService("RunService")
+local Stats            = game:GetService("Stats")
+local LocalPlayer      = Players.LocalPlayer
 
-local player = Players.LocalPlayer
-if not player then
-    warn("[Sena UI Demo] Run this as a LocalScript.")
-    return
+-- bersihkan eksekusi sebelumnya
+if genv.__LeonHubGui then
+	pcall(function() genv.__LeonHubGui:Destroy() end)
+end
+if genv.__LeonHubConns then
+	for _, c in ipairs(genv.__LeonHubConns) do
+		pcall(function() c:Disconnect() end)
+	end
+end
+local conns = {}
+genv.__LeonHubConns = conns
+local function track(c)
+	conns[#conns + 1] = c
+	return c
 end
 
-local playerGui = player:WaitForChild("PlayerGui")
-local GUI_NAME = "SenaUIReconstructTest"
-local previous = playerGui:FindFirstChild(GUI_NAME)
-if previous then previous:Destroy() end
-
+---------------------------------------------------------------------
+-- TEMA: hitam + outline biru
+---------------------------------------------------------------------
 local Theme = {
-    background = Color3.fromRGB(10, 12, 16),
-    surface = Color3.fromRGB(22, 22, 27),
-    surfaceHi = Color3.fromRGB(32, 34, 42),
-    cardBg = Color3.fromRGB(18, 18, 24),
-    accent = Color3.fromRGB(26, 147, 250),
-    accentLight = Color3.fromRGB(80, 190, 255),
-    stroke = Color3.fromRGB(48, 50, 60),
-    text = Color3.fromRGB(235, 236, 245),
-    muted = Color3.fromRGB(156, 160, 174),
-    btnBg = Color3.fromRGB(30, 30, 38),
-    on = Color3.fromRGB(26, 147, 250),
-    off = Color3.fromRGB(55, 57, 66),
-    white = Color3.fromRGB(255, 255, 255),
+	bg        = Color3.fromRGB(0, 0, 0),
+	panel     = Color3.fromRGB(10, 10, 14),
+	card      = Color3.fromRGB(17, 17, 23),
+	cardHover = Color3.fromRGB(24, 24, 32),
+	accent    = Color3.fromRGB(0, 140, 255),
+	accentDim = Color3.fromRGB(0, 82, 160),
+	text      = Color3.fromRGB(242, 244, 250),
+	sub       = Color3.fromRGB(150, 156, 172),
+	off       = Color3.fromRGB(44, 46, 58),
+	ok        = Color3.fromRGB(74, 222, 128),
+	warn      = Color3.fromRGB(245, 196, 81),
+	bad       = Color3.fromRGB(248, 113, 113),
 }
 
-local function make(className, props, parent)
-    local obj = Instance.new(className)
-    for key, value in pairs(props or {}) do obj[key] = value end
-    obj.Parent = parent
-    return obj
+---------------------------------------------------------------------
+-- HELPER
+---------------------------------------------------------------------
+local function create(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props or {}) do
+		o[k] = v
+	end
+	if parent then
+		o.Parent = parent
+	end
+	return o
 end
 
-local function corner(parent, radius)
-    make("UICorner", {CornerRadius = UDim.new(0, radius or 7)}, parent)
+local function round(o, r)
+	return create("UICorner", { CornerRadius = UDim.new(0, r) }, o)
 end
 
-local function stroke(parent, color, thickness, transparency)
-    return make("UIStroke", {
-        Color = color or Theme.stroke,
-        Thickness = thickness or 1,
-        Transparency = transparency or 0,
-    }, parent)
+local function outline(o, color, thickness, transparency)
+	return create("UIStroke", {
+		Color = color,
+		Thickness = thickness or 1,
+		Transparency = transparency or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, o)
 end
 
-local function padding(parent, top, bottom, left, right)
-    make("UIPadding", {
-        PaddingTop = UDim.new(0, top or 0),
-        PaddingBottom = UDim.new(0, bottom or 0),
-        PaddingLeft = UDim.new(0, left or 0),
-        PaddingRight = UDim.new(0, right or 0),
-    }, parent)
+local function tween(o, props, t)
+	TweenService:Create(o, TweenInfo.new(t or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
 
-local screen = make("ScreenGui", {
-    Name = GUI_NAME, ResetOnSpawn = false,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100,
-}, playerGui)
-
-local main = make("Frame", {
-    Name = "MainWindow", Size = UDim2.fromOffset(600, 430),
-    Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
-    BackgroundColor3 = Theme.background, BorderSizePixel = 0, Active = true,
-}, screen)
-corner(main, 15)
-stroke(main, Color3.fromRGB(77, 132, 190), 1.2)
-local scale = make("UIScale", {Scale = 1}, main)
-
--- Layered background treatment: subtle gradient, soft top glow, and inset frame.
-local mainGradient = make("UIGradient", {
-    Rotation = 90,
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(17, 20, 28)),
-        ColorSequenceKeypoint.new(0.48, Color3.fromRGB(10, 12, 16)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 9, 13)),
-    }),
-}, main)
-local inset = make("Frame", {
-    Name = "InsetBorder", Size = UDim2.new(1, -8, 1, -8),
-    Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1,
-    BorderSizePixel = 0, ZIndex = 0,
-}, main)
-corner(inset, 12)
-stroke(inset, Color3.fromRGB(55, 67, 86), 1, 0.72)
-local topGlow = make("Frame", {
-    Name = "TopGlow", Size = UDim2.new(0.48, 0, 0, 2),
-    Position = UDim2.new(0.26, 0, 0, 0), BackgroundColor3 = Theme.accentLight,
-    BorderSizePixel = 0, ZIndex = 5,
-}, main)
-corner(topGlow, 2)
-make("UIGradient", {
-    Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1),
-        NumberSequenceKeypoint.new(0.5, 0),
-        NumberSequenceKeypoint.new(1, 1),
-    }),
-}, topGlow)
-
-local header = make("Frame", {
-    Name = "Header", Size = UDim2.new(1, 0, 0, 48),
-    BackgroundTransparency = 1, Active = true,
-}, main)
-
-local logo = make("TextLabel", {
-    Name = "Logo", Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(12, 8),
-    BackgroundColor3 = Theme.surfaceHi, Text = "S", Font = Enum.Font.GothamBlack,
-    TextSize = 18, TextColor3 = Theme.accentLight,
-}, header)
-corner(logo, 8)
-stroke(logo, Theme.stroke, 1)
-
-make("TextLabel", {
-    Name = "Title", Size = UDim2.fromOffset(200, 32), Position = UDim2.fromOffset(52, 8),
-    BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 16,
-    TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Theme.text, Text = "Sena BETA |",
-}, header)
-
-make("TextLabel", {
-    Name = "Subtitle", Size = UDim2.fromOffset(140, 32), Position = UDim2.fromOffset(255, 8),
-    BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 11,
-    TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Theme.muted,
-    Text = "Steal An Egg · UI Demo",
-}, header)
-
-local statusBadge = make("Frame", {
-    Name = "StatusBadge", Size = UDim2.fromOffset(72, 22),
-    Position = UDim2.new(1, -126, 0, 13), BackgroundColor3 = Color3.fromRGB(15, 42, 36),
-    BorderSizePixel = 0,
-}, header)
-corner(statusBadge, 11)
-stroke(statusBadge, Color3.fromRGB(35, 112, 87), 1, 0.25)
-local statusDot = make("Frame", {
-    Name = "StatusDot", Size = UDim2.fromOffset(6, 6),
-    Position = UDim2.fromOffset(9, 8), BackgroundColor3 = Color3.fromRGB(80, 230, 155),
-    BorderSizePixel = 0,
-}, statusBadge)
-corner(statusDot, 3)
-make("TextLabel", {
-    Name = "StatusText", Size = UDim2.new(1, -22, 1, 0), Position = UDim2.fromOffset(19, 0),
-    BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 9,
-    TextColor3 = Color3.fromRGB(135, 240, 190), Text = "DEMO MODE",
-}, statusBadge)
-
-local closeButton = make("TextButton", {
-    Name = "CloseBtn", Size = UDim2.fromOffset(30, 30),
-    Position = UDim2.new(1, -42, 0, 9), BackgroundColor3 = Theme.btnBg,
-    Text = "✕", Font = Enum.Font.GothamBold, TextSize = 13,
-    TextColor3 = Theme.text, AutoButtonColor = true,
-}, header)
-corner(closeButton, 6)
-stroke(closeButton, Theme.stroke, 1)
-
-make("Frame", {
-    Name = "HeaderLine", Size = UDim2.new(1, -24, 0, 1),
-    Position = UDim2.new(0, 12, 0, 47), BackgroundColor3 = Theme.stroke,
-    BorderSizePixel = 0,
-}, main)
-
-local body = make("Frame", {
-    Name = "Body", Size = UDim2.new(1, -24, 1, -56),
-    Position = UDim2.fromOffset(12, 52), BackgroundTransparency = 1,
-}, main)
-
-local sidebar = make("ScrollingFrame", {
-    Name = "Sidebar", Size = UDim2.new(0, 122, 1, 0),
-    BackgroundColor3 = Theme.surface, BorderSizePixel = 0,
-    ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.accent,
-    AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
-}, body)
-corner(sidebar, 8)
-stroke(sidebar, Color3.fromRGB(42, 47, 59), 1, 0.25)
-make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(25, 27, 35), Color3.fromRGB(16, 17, 22))}, sidebar)
-padding(sidebar, 6, 6, 6, 6)
-make("UIListLayout", {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder}, sidebar)
-
-local content = make("Frame", {
-    Name = "Content", Position = UDim2.new(0, 130, 0, 0),
-    Size = UDim2.new(1, -130, 1, 0), BackgroundTransparency = 1,
-}, body)
-
-local contentTitle = make("TextLabel", {
-    Name = "ContentTitle", Size = UDim2.new(1, 0, 0, 24),
-    BackgroundTransparency = 1, ZIndex = 2, Font = Enum.Font.GothamBold, TextSize = 14,
-    TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Theme.text, Text = "",
-}, content)
-
-local contentBackplate = make("Frame", {
-    Name = "ContentBackplate", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(),
-    BackgroundColor3 = Color3.fromRGB(12, 13, 18), BorderSizePixel = 0, ZIndex = 0,
-}, content)
-corner(contentBackplate, 8)
-stroke(contentBackplate, Color3.fromRGB(35, 39, 49), 1, 0.35)
-make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(15, 17, 23), Color3.fromRGB(10, 11, 15))}, contentBackplate)
-
-local contentScroll = make("ScrollingFrame", {
-    Name = "ContentScroll", Position = UDim2.fromOffset(8, 32),
-    Size = UDim2.new(1, -8, 1, -36), BackgroundTransparency = 1,
-    BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.accent,
-    AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
-}, content)
-padding(contentScroll, 2, 4, 0, 4)
-make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, contentScroll)
-
-local tabs, tabButtons = {}, {}
-local activeTab
-
-local function registerComponent(tabId, object)
-    object.LayoutOrder = #tabs[tabId].components + 1
-    object.Parent = nil
-    table.insert(tabs[tabId].components, object)
-    return object
+local function guiParent()
+	local ok, p = pcall(function()
+		return (gethui and gethui()) or game:GetService("CoreGui")
+	end)
+	if ok and p then
+		return p
+	end
+	return LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local function clearContent()
-    for _, tab in pairs(tabs) do
-        for _, component in ipairs(tab.components) do
-            if component.Parent == contentScroll then component.Parent = nil end
-        end
-    end
+local function isPress(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
 end
 
-local function switchTab(tabId)
-    if activeTab == tabId then return end
-    local tab = tabs[tabId]
-    if not tab then return end
-    activeTab = tabId
-    clearContent()
-    contentTitle.Text = string.upper(tab.name)
-    for _, component in ipairs(tab.components) do component.Parent = contentScroll end
-    for id, data in pairs(tabButtons) do
-        local selected = id == tabId
-        data.frame.BackgroundColor3 = selected and Theme.surfaceHi or Theme.surface
-        data.label.TextColor3 = selected and Theme.text or Theme.muted
-        data.indicator.Visible = selected
-        data.stroke.Enabled = selected
-    end
-    contentScroll.CanvasPosition = Vector2.zero
+local function isMove(input)
+	return input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch
 end
 
-local function createTab(name, order)
-    local id = name:lower():gsub("%s+", "_")
-    local button = make("TextButton", {
-        Name = "Tab_" .. id, Size = UDim2.new(1, 0, 0, 29),
-        BackgroundColor3 = Theme.surface, Text = "", LayoutOrder = order, AutoButtonColor = false,
-    }, sidebar)
-    corner(button, 6)
-    local outline = stroke(button, Theme.accent, 1)
-    outline.Enabled = false
-    local indicator = make("Frame", {
-        Size = UDim2.fromOffset(3, 17), Position = UDim2.fromOffset(4, 6),
-        BackgroundColor3 = Theme.accent, BorderSizePixel = 0, Visible = false,
-    }, button)
-    corner(indicator, 2)
-    local iconMap = {
-        admin_abuse = "✦", main = "⌂", auto = "⟳", pets = "◇", events = "✧",
-        misc = "⚙", steal_players = "⇄", live_chat = "☷", donate = "♡",
-        private_server = "▣", visual = "◈",
-    }
-    local icon = make("TextLabel", {
-        Name = "TabIcon", Size = UDim2.fromOffset(16, 32), Position = UDim2.fromOffset(8, 0),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
-        TextColor3 = Theme.accentLight, Text = iconMap[id] or "•",
-    }, button)
-    local label = make("TextLabel", {
-        Size = UDim2.new(1, -25, 1, 0), Position = UDim2.fromOffset(25, 0),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Theme.muted,
-        TextTruncate = Enum.TextTruncate.AtEnd, Text = name,
-    }, button)
-    tabs[id] = {name = name, components = {}}
-    tabButtons[id] = {frame = button, label = label, indicator = indicator, stroke = outline}
-    button.MouseEnter:Connect(function()
-        if activeTab ~= id then
-            TweenService:Create(button, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(29, 31, 39)}):Play()
-        end
-    end)
-    button.MouseLeave:Connect(function()
-        if activeTab ~= id then
-            TweenService:Create(button, TweenInfo.new(0.12), {BackgroundColor3 = Theme.surface}):Play()
-        end
-    end)
-    button.Activated:Connect(function() switchTab(id) end)
-    return id
+---------------------------------------------------------------------
+-- WINDOW
+---------------------------------------------------------------------
+local function createWindow(opts)
+	opts = opts or {}
+	local W, H = opts.Width or 560, opts.Height or 360
+	local HEADER_H, FOOTER_H, SIDE_W = 42, 34, 150
+
+	local gui = create("ScreenGui", {
+		Name = "Leon4951hub",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = 99999,
+	}, guiParent())
+	genv.__LeonHubGui = gui
+
+	-- luar: tampilan (hitam + outline biru); dalam: konten yang diskalakan untuk layar kecil
+	local main = create("Frame", {
+		Name = "Main",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(W, H),
+		BackgroundColor3 = Theme.bg,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Active = true,
+	}, gui)
+	round(main, 12)
+	outline(main, Theme.accent, 1.5, 0.1)
+
+	local ui = create("Frame", {
+		Name = "UI",
+		Size = UDim2.fromOffset(W, H),
+		BackgroundTransparency = 1,
+	}, main)
+	local scale = create("UIScale", { Scale = 1 }, ui)
+
+	local collapsed = false
+	local currentScale = 1
+	local function targetSize()
+		return UDim2.fromOffset(W * currentScale, (collapsed and (HEADER_H + 2) or H) * currentScale)
+	end
+	local function fit()
+		local cam = workspace.CurrentCamera
+		local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+		currentScale = math.clamp(math.min(vp.X * 0.92 / W, vp.Y * 0.86 / H), 0.5, 1)
+		scale.Scale = currentScale
+		main.Size = targetSize()
+	end
+	fit()
+	local cam0 = workspace.CurrentCamera
+	if cam0 then
+		track(cam0:GetPropertyChangedSignal("ViewportSize"):Connect(fit))
+	end
+
+	---------------- header ----------------
+	local header = create("Frame", {
+		Name = "Header",
+		Size = UDim2.new(1, 0, 0, HEADER_H),
+		BackgroundTransparency = 1,
+	}, ui)
+
+	create("Frame", {
+		Position = UDim2.fromOffset(14, 14),
+		Size = UDim2.fromOffset(4, 14),
+		BackgroundColor3 = Theme.accent,
+		BorderSizePixel = 0,
+	}, header)
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(26, 0),
+		Size = UDim2.new(0, 190, 1, 0),
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Theme.text,
+		Text = opts.Title or "Leon4951hub",
+	}, header)
+
+	local searchBox = create("TextBox", {
+		Name = "Search",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -84, 0.5, 0),
+		Size = UDim2.fromOffset(150, 26),
+		BackgroundColor3 = Theme.card,
+		BorderSizePixel = 0,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextColor3 = Theme.text,
+		PlaceholderText = "Search",
+		PlaceholderColor3 = Theme.sub,
+		Text = "",
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, header)
+	round(searchBox, 13)
+	outline(searchBox, Theme.accent, 1, 0.7)
+	create("UIPadding", {
+		PaddingLeft = UDim.new(0, 12),
+		PaddingRight = UDim.new(0, 8),
+	}, searchBox)
+
+	local function headerButton(text, x)
+		local b = create("TextButton", {
+			AutoButtonColor = false,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, x, 0.5, 0),
+			Size = UDim2.fromOffset(26, 26),
+			BackgroundColor3 = Theme.card,
+			BorderSizePixel = 0,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = Theme.text,
+			Text = text,
+		}, header)
+		round(b, 13)
+		b.MouseEnter:Connect(function() tween(b, { BackgroundColor3 = Theme.cardHover }, 0.12) end)
+		b.MouseLeave:Connect(function() tween(b, { BackgroundColor3 = Theme.card }, 0.12) end)
+		return b
+	end
+	local closeBtn = headerButton("x", -12)
+	local minBtn = headerButton("-", -44)
+
+	create("Frame", {
+		Position = UDim2.fromOffset(0, HEADER_H),
+		Size = UDim2.new(1, 0, 0, 1),
+		BackgroundColor3 = Theme.accent,
+		BackgroundTransparency = 0.75,
+		BorderSizePixel = 0,
+	}, ui)
+
+	---------------- body ----------------
+	local body = create("Frame", {
+		Name = "Body",
+		Position = UDim2.fromOffset(0, HEADER_H + 1),
+		Size = UDim2.new(1, 0, 1, -(HEADER_H + 1 + FOOTER_H)),
+		BackgroundTransparency = 1,
+	}, ui)
+
+	local sideList = create("ScrollingFrame", {
+		Name = "Sidebar",
+		Size = UDim2.new(0, SIDE_W, 1, 0),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 0,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+	}, body)
+	create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, sideList)
+	create("UIPadding", {
+		PaddingTop = UDim.new(0, 10),
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+	}, sideList)
+
+	create("Frame", {
+		Position = UDim2.fromOffset(SIDE_W, 8),
+		Size = UDim2.new(0, 1, 1, -16),
+		BackgroundColor3 = Theme.accent,
+		BackgroundTransparency = 0.8,
+		BorderSizePixel = 0,
+	}, body)
+
+	local content = create("Frame", {
+		Name = "Content",
+		Position = UDim2.fromOffset(SIDE_W + 1, 0),
+		Size = UDim2.new(1, -(SIDE_W + 1), 1, 0),
+		BackgroundTransparency = 1,
+	}, body)
+
+	---------------- footer ----------------
+	local footer = create("Frame", {
+		Name = "Footer",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, FOOTER_H),
+		BackgroundTransparency = 1,
+	}, ui)
+	create("Frame", {
+		Size = UDim2.new(1, 0, 0, 1),
+		BackgroundColor3 = Theme.accent,
+		BackgroundTransparency = 0.75,
+		BorderSizePixel = 0,
+	}, footer)
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(16, 0),
+		Size = UDim2.new(0.5, 0, 1, 0),
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Theme.sub,
+		Text = "Welcome, " .. tostring(LocalPlayer and LocalPlayer.DisplayName or "player"),
+	}, footer)
+
+	local function chip(x)
+		local c = create("TextLabel", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, x, 0.5, 1),
+			Size = UDim2.fromOffset(74, 22),
+			BackgroundColor3 = Theme.card,
+			BorderSizePixel = 0,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 12,
+			TextColor3 = Theme.text,
+			Text = "--",
+		}, footer)
+		round(c, 11)
+		outline(c, Theme.accent, 1, 0.8)
+		return c
+	end
+	local pingChip = chip(-12)
+	local fpsChip = chip(-92)
+
+	do
+		local frames, acc = 0, 0
+		track(RunService.RenderStepped:Connect(function(dt)
+			frames = frames + 1
+			acc = acc + dt
+			if acc < 0.5 then
+				return
+			end
+			local fps = math.floor(frames / acc + 0.5)
+			frames, acc = 0, 0
+			fpsChip.Text = fps .. " FPS"
+			fpsChip.TextColor3 = fps >= 50 and Theme.ok or (fps >= 30 and Theme.warn or Theme.bad)
+			local ms
+			pcall(function()
+				ms = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
+			end)
+			pingChip.Text = (ms and tostring(ms) or "--") .. " ms"
+		end))
+	end
+
+	---------------- toast ----------------
+	local toast = create("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 10)),
+		Size = UDim2.fromOffset(300, 28),
+		BackgroundColor3 = Theme.panel,
+		BackgroundTransparency = 1,
+		TextTransparency = 1,
+		BorderSizePixel = 0,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		TextColor3 = Theme.text,
+		Text = "",
+		ZIndex = 20,
+	}, ui)
+	round(toast, 8)
+	local toastId = 0
+
+	---------------- window object ----------------
+	local win = {}
+	local tabs = {}
+	local currentTab
+
+	local function applySearch()
+		local q = string.lower(searchBox.Text or "")
+		for _, t in ipairs(tabs) do
+			for _, it in ipairs(t.items) do
+				it.frame.Visible = (q == "") or (string.find(it.key, q, 1, true) ~= nil)
+			end
+			for _, s in ipairs(t.sections) do
+				s.Visible = (q == "")
+			end
+		end
+	end
+	track(searchBox:GetPropertyChangedSignal("Text"):Connect(applySearch))
+
+	local function selectTab(tab)
+		for _, t in ipairs(tabs) do
+			local on = (t == tab)
+			t.page.Visible = on
+			t.bar.Visible = on
+			tween(t.btn, {
+				BackgroundTransparency = on and 0.7 or 1,
+				TextColor3 = on and Theme.text or Theme.sub,
+			}, 0.15)
+		end
+		currentTab = tab
+		applySearch()
+	end
+
+	function win:Notify(text, secs)
+		toastId = toastId + 1
+		local id = toastId
+		toast.Text = tostring(text)
+		tween(toast, { BackgroundTransparency = 0.05, TextTransparency = 0 }, 0.2)
+		task.delay(secs or 2.5, function()
+			if id == toastId then
+				tween(toast, { BackgroundTransparency = 1, TextTransparency = 1 }, 0.3)
+			end
+		end)
+	end
+
+	function win:Destroy()
+		for _, c in ipairs(conns) do
+			pcall(function() c:Disconnect() end)
+		end
+		pcall(function() gui:Destroy() end)
+	end
+
+	function win:SelectTab(tab)
+		selectTab(tab)
+	end
+
+	---------------- kartu komponen ----------------
+	local function makeCard(tab, o, rightW)
+		tab.order = tab.order + 1
+		local card = create("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = Theme.card,
+			BorderSizePixel = 0,
+			LayoutOrder = tab.order,
+		}, tab.page)
+		round(card, 8)
+		outline(card, Theme.accent, 1, 0.85)
+		create("UIPadding", {
+			PaddingTop = UDim.new(0, 10),
+			PaddingBottom = UDim.new(0, 10),
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+		}, card)
+		create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, card)
+
+		local row = create("Frame", {
+			Size = UDim2.new(1, 0, 0, 26),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			LayoutOrder = 1,
+		}, card)
+		local holder = create("Frame", {
+			Size = UDim2.new(1, -(rightW or 0), 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+		}, row)
+		create("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, holder)
+
+		local titleLbl = create("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 15,
+			TextColor3 = Theme.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			Text = o.Title or "",
+			LayoutOrder = 1,
+		}, holder)
+
+		local contentLbl
+		if o.Content and o.Content ~= "" then
+			contentLbl = create("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = Theme.sub,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextWrapped = true,
+				Text = o.Content,
+				LayoutOrder = 2,
+			}, holder)
+		end
+
+		tab.items[#tab.items + 1] = {
+			frame = card,
+			key = string.lower((o.Title or "") .. " " .. (o.Content or "")),
+		}
+		return card, row, titleLbl, contentLbl, holder
+	end
+
+	---------------- tab ----------------
+	function win:AddTab(o)
+		o = o or {}
+		local tab = { Name = o.Name or "Tab", items = {}, sections = {}, order = 0 }
+
+		local btn = create("TextButton", {
+			AutoButtonColor = false,
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = Theme.accentDim,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 14,
+			TextColor3 = Theme.sub,
+			Text = tab.Name,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = o.LayoutOrder or (#tabs + 1),
+		}, sideList)
+		round(btn, 8)
+		create("UIPadding", { PaddingLeft = UDim.new(0, 16) }, btn)
+		local bar = create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, -12, 0.5, 0),
+			Size = UDim2.fromOffset(3, 18),
+			BackgroundColor3 = Theme.accent,
+			BorderSizePixel = 0,
+			Visible = false,
+		}, btn)
+		round(bar, 2)
+
+		local page = create("ScrollingFrame", {
+			Name = tab.Name,
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = Theme.accent,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(),
+			Visible = false,
+		}, content)
+		create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, page)
+		create("UIPadding", {
+			PaddingTop = UDim.new(0, 10),
+			PaddingBottom = UDim.new(0, 10),
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 14),
+		}, page)
+
+		tab.btn, tab.bar, tab.page = btn, bar, page
+		tabs[#tabs + 1] = tab
+		btn.MouseButton1Click:Connect(function()
+			selectTab(tab)
+		end)
+
+		---------- Section ----------
+		function tab:AddSection(title)
+			tab.order = tab.order + 1
+			local lbl = create("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 22),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = Theme.accent,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = string.upper(tostring(title or "")),
+				LayoutOrder = tab.order,
+			}, page)
+			tab.sections[#tab.sections + 1] = lbl
+			return lbl
+		end
+
+		---------- Paragraph ----------
+		function tab:AddParagraph(opt)
+			opt = opt or {}
+			opt.Content = opt.Content or " "
+			local _, _, titleLbl, contentLbl = makeCard(tab, opt, 0)
+			local obj = {}
+			function obj:Set(title, text)
+				if title ~= nil then
+					titleLbl.Text = tostring(title)
+				end
+				if text ~= nil and contentLbl then
+					contentLbl.Text = tostring(text)
+				end
+			end
+			return obj
+		end
+
+		---------- Toggle ----------
+		function tab:AddToggle(opt)
+			opt = opt or {}
+			local _, row = makeCard(tab, opt, 56)
+			local rail = create("Frame", {
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, 0, 0.5, 0),
+				Size = UDim2.fromOffset(44, 24),
+				BackgroundColor3 = Theme.off,
+				BorderSizePixel = 0,
+			}, row)
+			round(rail, 12)
+			outline(rail, Theme.accent, 1, 0.7)
+			local knob = create("Frame", {
+				Size = UDim2.fromOffset(18, 18),
+				Position = UDim2.fromOffset(3, 3),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BorderSizePixel = 0,
+			}, rail)
+			round(knob, 9)
+			local hit = create("TextButton", {
+				BackgroundTransparency = 1,
+				Text = "",
+				Size = UDim2.fromScale(1, 1),
+				ZIndex = 5,
+			}, row)
+
+			local obj = { Value = opt.Default == true }
+			local function render(animated)
+				local t = animated and 0.18 or 0
+				tween(rail, { BackgroundColor3 = obj.Value and Theme.accent or Theme.off }, t)
+				tween(knob, { Position = obj.Value and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3) }, t)
+			end
+			render(false)
+
+			function obj:Set(v, silent)
+				obj.Value = v and true or false
+				render(true)
+				if not silent and opt.Callback then
+					task.spawn(opt.Callback, obj.Value)
+				end
+			end
+			hit.MouseButton1Click:Connect(function()
+				obj:Set(not obj.Value)
+			end)
+			return obj
+		end
+
+		---------- Button ----------
+		function tab:AddButton(opt)
+			opt = opt or {}
+			local _, row = makeCard(tab, opt, 96)
+			local b = create("TextButton", {
+				AutoButtonColor = false,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, 0, 0.5, 0),
+				Size = UDim2.fromOffset(88, 28),
+				BackgroundColor3 = Theme.accentDim,
+				BorderSizePixel = 0,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 13,
+				TextColor3 = Theme.text,
+				Text = opt.ButtonText or "Run",
+			}, row)
+			round(b, 6)
+			b.MouseEnter:Connect(function() tween(b, { BackgroundColor3 = Theme.accent }, 0.12) end)
+			b.MouseLeave:Connect(function() tween(b, { BackgroundColor3 = Theme.accentDim }, 0.12) end)
+			b.MouseButton1Click:Connect(function()
+				if opt.Callback then
+					task.spawn(opt.Callback)
+				end
+			end)
+			local obj = {}
+			function obj:SetText(t)
+				b.Text = tostring(t)
+			end
+			return obj
+		end
+
+		---------- Slider ----------
+		function tab:AddSlider(opt)
+			opt = opt or {}
+			local min, max = opt.Min or 0, opt.Max or 100
+			local step = opt.Step or 1
+			local card, row = makeCard(tab, opt, 58)
+
+			local valLbl = create("TextLabel", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, 0, 0, 0),
+				Size = UDim2.fromOffset(50, 22),
+				BackgroundColor3 = Theme.panel,
+				BorderSizePixel = 0,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 13,
+				TextColor3 = Theme.text,
+				Text = "",
+			}, row)
+			round(valLbl, 6)
+
+			local area = create("Frame", {
+				Size = UDim2.new(1, 0, 0, 18),
+				BackgroundTransparency = 1,
+				LayoutOrder = 2,
+			}, card)
+			local rail = create("Frame", {
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.fromScale(0, 0.5),
+				Size = UDim2.new(1, 0, 0, 4),
+				BackgroundColor3 = Theme.off,
+				BorderSizePixel = 0,
+			}, area)
+			round(rail, 2)
+			local fill = create("Frame", {
+				Size = UDim2.fromScale(0, 1),
+				BackgroundColor3 = Theme.accent,
+				BorderSizePixel = 0,
+			}, rail)
+			round(fill, 2)
+			local knob = create("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0, 0.5),
+				Size = UDim2.fromOffset(14, 14),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BorderSizePixel = 0,
+			}, rail)
+			round(knob, 7)
+			local hit = create("TextButton", {
+				BackgroundTransparency = 1,
+				Text = "",
+				Size = UDim2.fromScale(1, 1),
+				ZIndex = 5,
+			}, area)
+
+			local obj = { Value = math.clamp(opt.Default or min, min, max) }
+			local function setValue(v, silent)
+				v = math.clamp(math.floor((v - min) / step + 0.5) * step + min, min, max)
+				v = math.floor(v * 1000 + 0.5) / 1000
+				obj.Value = v
+				local a = (max == min) and 0 or (v - min) / (max - min)
+				fill.Size = UDim2.fromScale(a, 1)
+				knob.Position = UDim2.fromScale(a, 0.5)
+				valLbl.Text = tostring(v)
+				if not silent and opt.Callback then
+					task.spawn(opt.Callback, v)
+				end
+			end
+			setValue(obj.Value, true)
+			function obj:Set(v, silent)
+				setValue(v, silent)
+			end
+
+			local dragging = false
+			local function fromX(x)
+				local a = math.clamp((x - rail.AbsolutePosition.X) / math.max(rail.AbsoluteSize.X, 1), 0, 1)
+				setValue(min + a * (max - min))
+			end
+			hit.InputBegan:Connect(function(i)
+				if isPress(i) then
+					dragging = true
+					fromX(i.Position.X)
+				end
+			end)
+			track(UserInputService.InputChanged:Connect(function(i)
+				if dragging and isMove(i) then
+					fromX(i.Position.X)
+				end
+			end))
+			track(UserInputService.InputEnded:Connect(function(i)
+				if isPress(i) then
+					dragging = false
+				end
+			end))
+			return obj
+		end
+
+		---------- Dropdown (single / multi) ----------
+		function tab:AddDropdown(opt)
+			opt = opt or {}
+			local options = opt.Options or {}
+			local multi = opt.Multi == true
+			local card, row = makeCard(tab, opt, 154)
+
+			local btn = create("TextButton", {
+				AutoButtonColor = false,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, 0, 0.5, 0),
+				Size = UDim2.fromOffset(146, 28),
+				BackgroundColor3 = Theme.panel,
+				BorderSizePixel = 0,
+				Text = "",
+			}, row)
+			round(btn, 6)
+			outline(btn, Theme.accent, 1, 0.7)
+			local lbl = create("TextLabel", {
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(8, 0),
+				Size = UDim2.new(1, -28, 1, 0),
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = Theme.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Text = "",
+			}, btn)
+			local arrow = create("TextLabel", {
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -8, 0.5, 0),
+				Size = UDim2.fromOffset(14, 14),
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = Theme.sub,
+				Text = "v",
+			}, btn)
+
+			local list = create("Frame", {
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				Visible = false,
+				LayoutOrder = 2,
+			}, card)
+			create("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+
+			local obj = { Value = nil }
+			local selected = {}
+			local current = nil
+			if multi then
+				for _, name in ipairs(opt.Default or {}) do
+					selected[name] = true
+				end
+			else
+				current = opt.Default
+			end
+
+			local optButtons = {}
+			local function collect()
+				local picked = {}
+				for _, name in ipairs(options) do
+					if selected[name] then
+						picked[#picked + 1] = name
+					end
+				end
+				return picked
+			end
+			local function refresh()
+				if multi then
+					local picked = collect()
+					local names = {}
+					for _, name in ipairs(picked) do
+						names[#names + 1] = tostring(name)
+					end
+					lbl.Text = (#names > 0) and table.concat(names, ", ") or (opt.Placeholder or "Select Options")
+					obj.Value = picked
+				else
+					lbl.Text = (current ~= nil) and tostring(current) or (opt.Placeholder or "Select")
+					obj.Value = current
+				end
+				for name, b in pairs(optButtons) do
+					local on
+					if multi then
+						on = selected[name] == true
+					else
+						on = (current == name)
+					end
+					b.BackgroundColor3 = on and Theme.accentDim or Theme.panel
+				end
+			end
+
+			for i, name in ipairs(options) do
+				local ob = create("TextButton", {
+					AutoButtonColor = false,
+					Size = UDim2.new(1, 0, 0, 26),
+					BackgroundColor3 = Theme.panel,
+					BorderSizePixel = 0,
+					Font = Enum.Font.Gotham,
+					TextSize = 13,
+					TextColor3 = Theme.text,
+					Text = tostring(name),
+					LayoutOrder = i,
+				}, list)
+				round(ob, 6)
+				optButtons[name] = ob
+				ob.MouseButton1Click:Connect(function()
+					if multi then
+						selected[name] = (not selected[name]) or nil
+					else
+						current = name
+						list.Visible = false
+						arrow.Text = "v"
+					end
+					refresh()
+					if opt.Callback then
+						task.spawn(opt.Callback, obj.Value)
+					end
+				end)
+			end
+			refresh()
+
+			btn.MouseButton1Click:Connect(function()
+				list.Visible = not list.Visible
+				arrow.Text = list.Visible and "^" or "v"
+			end)
+
+			function obj:Set(v, silent)
+				if multi then
+					selected = {}
+					for _, name in ipairs(v or {}) do
+						selected[name] = true
+					end
+				else
+					current = v
+				end
+				refresh()
+				if not silent and opt.Callback then
+					task.spawn(opt.Callback, obj.Value)
+				end
+			end
+			return obj
+		end
+
+		---------- Input ----------
+		function tab:AddInput(opt)
+			opt = opt or {}
+			local card = makeCard(tab, opt, 0)
+			local box = create("TextBox", {
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundColor3 = Theme.panel,
+				BorderSizePixel = 0,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextColor3 = Theme.text,
+				PlaceholderText = opt.Placeholder or "",
+				PlaceholderColor3 = Theme.sub,
+				Text = opt.Default or "",
+				ClearTextOnFocus = false,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = 2,
+			}, card)
+			round(box, 6)
+			outline(box, Theme.accent, 1, 0.7)
+			create("UIPadding", {
+				PaddingLeft = UDim.new(0, 10),
+				PaddingRight = UDim.new(0, 10),
+			}, box)
+			box.FocusLost:Connect(function()
+				if opt.Callback then
+					task.spawn(opt.Callback, box.Text)
+				end
+			end)
+			local obj = {}
+			function obj:Set(text)
+				box.Text = tostring(text)
+			end
+			function obj:Get()
+				return box.Text
+			end
+			return obj
+		end
+
+		if not currentTab then
+			selectTab(tab)
+		end
+		return tab
+	end
+
+	---------------- kontrol window ----------------
+	local function setCollapsed(v)
+		collapsed = v
+		minBtn.Text = v and "+" or "-"
+		tween(main, { Size = targetSize() }, 0.22)
+	end
+	minBtn.MouseButton1Click:Connect(function()
+		setCollapsed(not collapsed)
+	end)
+	closeBtn.MouseButton1Click:Connect(function()
+		win:Destroy()
+	end)
+
+	-- geser lewat header (mouse & layar sentuh)
+	do
+		local dragging, dragStart, startPos
+		header.InputBegan:Connect(function(i)
+			if isPress(i) then
+				dragging = true
+				dragStart = i.Position
+				startPos = main.Position
+				i.Changed:Connect(function()
+					if i.UserInputState == Enum.UserInputState.End then
+						dragging = false
+					end
+				end)
+			end
+		end)
+		track(UserInputService.InputChanged:Connect(function(i)
+			if dragging and isMove(i) then
+				local d = i.Position - dragStart
+				main.Position = UDim2.new(
+					startPos.X.Scale, startPos.X.Offset + d.X,
+					startPos.Y.Scale, startPos.Y.Offset + d.Y
+				)
+			end
+		end))
+	end
+
+	-- RightShift: sembunyikan / tampilkan (PC)
+	track(UserInputService.InputBegan:Connect(function(i, processed)
+		if not processed and i.KeyCode == Enum.KeyCode.RightShift then
+			main.Visible = not main.Visible
+		end
+	end))
+
+	-- animasi muncul
+	main.Size = UDim2.fromOffset(W * currentScale * 0.94, H * currentScale * 0.94)
+	tween(main, { Size = targetSize() }, 0.25)
+
+	return win
 end
 
-local function notify(title, message)
-    print(("[Sena UI Demo] %s: %s"):format(title, tostring(message)))
-end
-
-local function addSection(tabId, title, isSub)
-    local frame = make("Frame", {
-        Name = (isSub and "SubSection_" or "Section_") .. title:gsub("%s+", "_"),
-        Size = UDim2.new(1, -4, 0, isSub and 20 or 24), BackgroundTransparency = 1,
-    })
-    -- A small accent rail gives every group a visual anchor without wasting space.
-    local rail = make("Frame", {
-        Name = "SectionAccent",
-        Size = UDim2.fromOffset(isSub and 2 or 3, isSub and 10 or 13),
-        Position = UDim2.fromOffset(isSub and 1 or 0, isSub and 5 or 5),
-        BackgroundColor3 = isSub and Color3.fromRGB(83, 135, 190) or Theme.accent,
-        BorderSizePixel = 0,
-    }, frame)
-    corner(rail, 2)
-    make("TextLabel", {
-        Name = "SectionTitle",
-        Size = UDim2.new(1, -18, 1, 0), Position = UDim2.fromOffset(isSub and 9 or 8, 0),
-        BackgroundTransparency = 1, Font = isSub and Enum.Font.GothamMedium or Enum.Font.GothamBold,
-        TextSize = isSub and 9 or 10, TextXAlignment = Enum.TextXAlignment.Left,
-        TextColor3 = isSub and Color3.fromRGB(153, 169, 192) or Color3.fromRGB(210, 220, 236),
-        Text = isSub and title or string.upper(title),
-    }, frame)
-    local line = make("Frame", {
-        Name = "SectionHairline",
-        Size = UDim2.new(1, -10, 0, 1),
-        Position = UDim2.new(0, 8, 1, -1),
-        BackgroundColor3 = Color3.fromRGB(48, 57, 72),
-        BackgroundTransparency = isSub and 0.72 or 0.48,
-        BorderSizePixel = 0,
-    }, frame)
-    return registerComponent(tabId, frame)
-end
-
-local function addToggle(tabId, title, desc, default)
-    local frame = make("Frame", {
-        Name = "Toggle_" .. title:gsub("%s+", "_"), Size = UDim2.new(1, -4, 0, 44),
-        BackgroundColor3 = Theme.cardBg, BorderSizePixel = 0,
-    })
-    corner(frame, 6); stroke(frame, Theme.stroke, 1, 0.28)
-    make("UIGradient", {
-        Rotation = 90,
-        Color = ColorSequence.new(Color3.fromRGB(23, 24, 31), Color3.fromRGB(16, 17, 22)),
-    }, frame)
-    local edge = make("Frame", {
-        Name = "AccentEdge", Size = UDim2.new(0, 2, 1, -14), Position = UDim2.fromOffset(0, 7),
-        BackgroundColor3 = Theme.accent, BackgroundTransparency = 0.35, BorderSizePixel = 0,
-    }, frame)
-    corner(edge, 2)
-    make("TextLabel", {
-        Size = UDim2.new(1, -80, 0, 16), Position = UDim2.fromOffset(10, 6),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.text, Text = title,
-    }, frame)
-    make("TextLabel", {
-        Size = UDim2.new(1, -80, 0, 14), Position = UDim2.fromOffset(10, 23),
-        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.muted, Text = desc or "",
-    }, frame)
-    local state = default == true
-    local toggle = make("TextButton", {
-        Size = UDim2.fromOffset(44, 22), Position = UDim2.new(1, -54, 0.5, -11),
-        BackgroundColor3 = state and Theme.on or Theme.off, Text = "", AutoButtonColor = false,
-    }, frame)
-    corner(toggle, 11)
-    local knob = make("Frame", {
-        Size = UDim2.fromOffset(18, 18),
-        Position = state and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9),
-        BackgroundColor3 = Theme.white, BorderSizePixel = 0,
-    }, toggle)
-    corner(knob, 9)
-    toggle.Activated:Connect(function()
-        state = not state
-        toggle.BackgroundColor3 = state and Theme.on or Theme.off
-        knob.Position = state and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-        notify(title, state and "ON (demo only)" or "OFF (demo only)")
-    end)
-    return registerComponent(tabId, frame)
-end
-
-local function addButton(tabId, title, desc)
-    local frame = make("Frame", {
-        Name = "Button_" .. title:gsub("%s+", "_"), Size = UDim2.new(1, -4, 0, 40),
-        BackgroundColor3 = Theme.cardBg, BorderSizePixel = 0,
-    })
-    corner(frame, 6); stroke(frame, Theme.stroke, 1, 0.28)
-    make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(23, 24, 31), Color3.fromRGB(16, 17, 22))}, frame)
-    make("TextLabel", {
-        Size = UDim2.new(1, -90, 0, 16), Position = UDim2.fromOffset(10, 5),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.text, Text = title,
-    }, frame)
-    make("TextLabel", {
-        Size = UDim2.new(1, -90, 0, 12), Position = UDim2.fromOffset(10, 22),
-        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.muted, Text = desc or "",
-    }, frame)
-    local btn = make("TextButton", {
-        Size = UDim2.fromOffset(70, 26), Position = UDim2.new(1, -80, 0.5, -13),
-        BackgroundColor3 = Theme.accent, Text = "TEST", Font = Enum.Font.GothamBold,
-        TextSize = 10, TextColor3 = Theme.white, AutoButtonColor = true,
-    }, frame)
-    corner(btn, 6)
-    btn.Activated:Connect(function() notify(title, "clicked (demo only)") end)
-    return registerComponent(tabId, frame), btn
-end
-
-local function addDropdown(tabId, title, desc, options, multi, default)
-    options = options or {}
-    local selected = {}
-    if type(default) == "table" then
-        for _, value in ipairs(default) do selected[value] = true end
-    elseif default ~= nil then selected[default] = true end
-
-    local frame = make("Frame", {
-        Name = "Dropdown_" .. title:gsub("%s+", "_"), Size = UDim2.new(1, -4, 0, 44),
-        BackgroundColor3 = Theme.cardBg, BorderSizePixel = 0, ClipsDescendants = false, ZIndex = 2,
-    })
-    corner(frame, 6); stroke(frame, Theme.stroke, 1, 0.28)
-    make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(23, 24, 31), Color3.fromRGB(16, 17, 22))}, frame)
-    make("TextLabel", {
-        Size = UDim2.new(0.58, -10, 0, 16), Position = UDim2.fromOffset(10, 6),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.text, Text = title, ZIndex = 3,
-    }, frame)
-    make("TextLabel", {
-        Size = UDim2.new(0.58, -10, 0, 12), Position = UDim2.fromOffset(10, 23),
-        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.muted, Text = desc or "", ZIndex = 3,
-    }, frame)
-
-    local function summary()
-        local names = {}
-        for _, option in ipairs(options) do
-            if selected[option] then table.insert(names, tostring(option)) end
-        end
-        if #names == 0 then return "Select..." end
-        if multi and #names > 1 then return tostring(#names) .. " selected" end
-        return names[1]
-    end
-
-    local btn = make("TextButton", {
-        Size = UDim2.fromOffset(130, 26), Position = UDim2.new(1, -140, 0.5, -13),
-        BackgroundColor3 = Theme.btnBg, Text = summary(), Font = Enum.Font.GothamBold,
-        TextSize = 10, TextColor3 = Theme.text, TextTruncate = Enum.TextTruncate.AtEnd,
-        AutoButtonColor = true, ZIndex = 4,
-    }, frame)
-    corner(btn, 6); stroke(btn, Theme.stroke, 1)
-    local popup
-
-    btn.Activated:Connect(function()
-        if popup then popup:Destroy(); popup = nil; return end
-        popup = make("Frame", {
-            Name = "OptionsPopup",
-            Size = UDim2.fromOffset(130, math.min(#options * 24 + 8, 168)),
-            Position = UDim2.new(1, -140, 0.5, 16),
-            BackgroundColor3 = Theme.surface, BorderSizePixel = 0, ZIndex = 20,
-        }, frame)
-        corner(popup, 6); stroke(popup, Theme.accent, 1)
-        local scroll = make("ScrollingFrame", {
-            Size = UDim2.new(1, -4, 1, -4), Position = UDim2.fromOffset(2, 2),
-            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2,
-            AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), ZIndex = 21,
-        }, popup)
-        make("UIListLayout", {Padding = UDim.new(0, 2)}, scroll)
-        for _, option in ipairs(options) do
-            local optionBtn = make("TextButton", {
-                Size = UDim2.new(1, -2, 0, 22),
-                BackgroundColor3 = selected[option] and Theme.surfaceHi or Theme.btnBg,
-                Text = (selected[option] and "✓ " or "") .. tostring(option),
-                Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = Theme.text,
-                TextTruncate = Enum.TextTruncate.AtEnd, AutoButtonColor = true, ZIndex = 22,
-            }, scroll)
-            corner(optionBtn, 4)
-            optionBtn.Activated:Connect(function()
-                if multi then
-                    selected[option] = not selected[option] or nil
-                    optionBtn.Text = (selected[option] and "✓ " or "") .. tostring(option)
-                    optionBtn.BackgroundColor3 = selected[option] and Theme.surfaceHi or Theme.btnBg
-                    btn.Text = summary()
-                else
-                    selected = {[option] = true}
-                    btn.Text = summary()
-                    popup:Destroy()
-                    popup = nil
-                end
-                notify(title, summary())
-            end)
-        end
-    end)
-    return registerComponent(tabId, frame)
-end
-
-local function addSlider(tabId, title, desc, minValue, maxValue, default)
-    maxValue = math.max(maxValue, minValue + 1)
-    local value = math.clamp(tonumber(default) or minValue, minValue, maxValue)
-    local frame = make("Frame", {
-        Name = "Slider_" .. title:gsub("%s+", "_"), Size = UDim2.new(1, -4, 0, 50),
-        BackgroundColor3 = Theme.cardBg, BorderSizePixel = 0,
-    })
-    corner(frame, 6); stroke(frame, Theme.stroke, 1, 0.28)
-    make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(23, 24, 31), Color3.fromRGB(16, 17, 22))}, frame)
-    make("TextLabel", {
-        Size = UDim2.new(0.75, -10, 0, 16), Position = UDim2.fromOffset(10, 6),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.text, Text = title,
-    }, frame)
-    local valueLabel = make("TextLabel", {
-        Size = UDim2.fromOffset(50, 16), Position = UDim2.new(1, -60, 0, 6),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = Theme.accent, Text = tostring(value),
-    }, frame)
-    make("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 10), Position = UDim2.fromOffset(10, 20),
-        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.muted, Text = desc or "",
-    }, frame)
-    local bar = make("TextButton", {
-        Size = UDim2.new(1, -20, 0, 6), Position = UDim2.new(0, 10, 1, -12),
-        BackgroundColor3 = Theme.btnBg, Text = "", AutoButtonColor = false,
-    }, frame)
-    corner(bar, 3)
-    local fill = make("Frame", {
-        Size = UDim2.new((value - minValue) / (maxValue - minValue), 0, 1, 0),
-        BackgroundColor3 = Theme.accent, BorderSizePixel = 0,
-    }, bar)
-    corner(fill, 3)
-    local dragging = false
-    local function update(x)
-        local ratio = math.clamp((x - bar.AbsolutePosition.X) / math.max(bar.AbsoluteSize.X, 1), 0, 1)
-        value = math.floor(minValue + ratio * (maxValue - minValue) + 0.5)
-        fill.Size = UDim2.new((value - minValue) / (maxValue - minValue), 0, 1, 0)
-        valueLabel.Text = tostring(value)
-        notify(title, value)
-    end
-    bar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            update(input.Position.X)
-        end
-    end)
-    local moveConn = UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            update(input.Position.X)
-        end
-    end)
-    local endConn = UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    screen.Destroying:Connect(function() moveConn:Disconnect(); endConn:Disconnect() end)
-    return registerComponent(tabId, frame)
-end
-
-local function addInput(tabId, title, desc, placeholder, default)
-    local frame = make("Frame", {
-        Name = "Input_" .. title:gsub("%s+", "_"), Size = UDim2.new(1, -4, 0, 44),
-        BackgroundColor3 = Theme.cardBg, BorderSizePixel = 0,
-    })
-    corner(frame, 6); stroke(frame, Theme.stroke, 1, 0.28)
-    make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(23, 24, 31), Color3.fromRGB(16, 17, 22))}, frame)
-    make("TextLabel", {
-        Size = UDim2.new(0.55, -10, 0, 16), Position = UDim2.fromOffset(10, 6),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.text, Text = title,
-    }, frame)
-    make("TextLabel", {
-        Size = UDim2.new(0.55, -10, 0, 12), Position = UDim2.fromOffset(10, 23),
-        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.muted, Text = desc or "",
-    }, frame)
-    local box = make("TextBox", {
-        Size = UDim2.fromOffset(130, 26), Position = UDim2.new(1, -140, 0.5, -13),
-        BackgroundColor3 = Theme.btnBg, Text = default or "", PlaceholderText = placeholder or "Type...",
-        Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = Theme.text,
-        PlaceholderColor3 = Theme.muted, ClearTextOnFocus = false,
-    }, frame)
-    corner(box, 6); stroke(box, Theme.stroke, 1)
-    box.FocusLost:Connect(function(enterPressed)
-        if enterPressed then notify(title, box.Text) end
-    end)
-    return registerComponent(tabId, frame)
-end
-
-local function addParagraph(tabId, title, text)
-    local frame = make("Frame", {
-        Name = "Paragraph_" .. title:gsub("%s+", "_"), Size = UDim2.new(1, -4, 0, 50),
-        BackgroundColor3 = Theme.cardBg, BorderSizePixel = 0,
-    })
-    corner(frame, 6); stroke(frame, Theme.stroke, 1, 0.28)
-    make("UIGradient", {Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(23, 24, 31), Color3.fromRGB(16, 17, 22))}, frame)
-    make("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 16), Position = UDim2.fromOffset(10, 6),
-        BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Theme.text, Text = title,
-    }, frame)
-    make("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 26), Position = UDim2.fromOffset(10, 23),
-        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-        TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd,
-        TextColor3 = Theme.muted, Text = text,
-    }, frame)
-    return registerComponent(tabId, frame)
-end
-
-local function buildTab(name, order, builder)
-    local id = createTab(name, order)
-    builder(id)
-    return id
-end
-local function section(id, title) addSection(id, title, false) end
-local function sub(id, title) addSection(id, title, true) end
-local function toggle(id, title, desc, default) addToggle(id, title, desc, default) end
-local function button(id, title, desc) return addButton(id, title, desc) end
-local function dropdown(id, title, desc, opts, multi, default) addDropdown(id, title, desc, opts, multi, default) end
-local function slider(id, title, desc, minV, maxV, default) addSlider(id, title, desc, minV, maxV, default) end
-local function input(id, title, desc, placeholder, default) addInput(id, title, desc, placeholder, default) end
-local function paragraph(id, title, text) addParagraph(id, title, text) end
-
-local rarities = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Cosmic","Secret","Eternal","Divine"}
-local areas = {"None","Forest","Lake","Jungle","Desert","Snow","Volcano","Abyss Ocean","Prehistoric","Cosmic","Cherry Blossom","Titan Temple","Light Dark","Enchanted Forest"}
-local eggs = {"None","Dog","Cat","Unicorn","Dragon","Phoenix","Kitsune","Mosasaurus","Oni Tiger","Lunar Dragon","Gorilla King","Ice Dragon","Godzilla","Pegasus","ArchAngel","Skeleton Horse"}
-local mutations = {"Golden","Rainbow","Shocked","Frozen","Burnt","Boss"}
-local species = {"None","Dog","Cat","Unicorn","Dragon","Phoenix","Kitsune","Mosasaurus","Oni Tiger","Lunar Dragon"}
-local modes = {"Low Speed User","High Speed User Normal","High Speed User (Fly)","Zig-Zag High Speed User"}
-local priorities = {"Rarity","Highest Value","Heaviest"}
-local butterflyTiers = {"Radiant","Amethyst","Sapphire","Emerald"}
-local butterflyModes = {"Tween to Butterfly","Stand","Zigzag","Circle"}
-local recipes = {"All Recipes","For Essence (shortfall only)","Emerald to Sapphire","Sapphire to Amethyst","Amethyst to Radiant"}
-local shopItems = {"CashBooster","SpeedBoost","TreadmillBoost","MutationToken","RacingBat"}
-local banners = {"Biohazard Pets","Experimental Pets","Unstable DNA"}
-local waypoints = {"Respawn Point","Forest","Lake","Jungle","Desert","Snow","Volcano","Abyss Ocean","Prehistoric","Cosmic","Cherry Blossom","Titan Temple","Light Dark","Enchanted Forest"}
-
-buildTab("Admin Abuse", 1, function(id)
-    section(id, "Capture The Egg")
-    toggle(id, "Auto Steal Capture", "Demo toggle only; no event action.", false)
-    section(id, "Movement")
-    toggle(id, "Admin Abuse Boost", "Demo toggle only.", false)
-    toggle(id, "Fly For Capture", "Demo toggle only.", false)
-    toggle(id, "Instant Grab", "Demo toggle only.", false)
-    toggle(id, "Infinite Jump", "Demo toggle only.", false)
-    toggle(id, "Noclip", "Demo toggle only.", false)
-    section(id, "Ring Event")
-    toggle(id, "Auto Ring Event", "Demo toggle only.", false)
-end)
-
-buildTab("Main", 2, function(id)
-    section(id, "Auto Steal")
-    toggle(id, "Auto Steal", "Demo only; no game actions.", false)
-    toggle(id, "Help Friend", "Demo toggle only.", false)
-    button(id, "Egg Checker", "Demo action only.")
-    button(id, "Egg Spawn Analyst", "Demo action only.")
-    toggle(id, "Aura Bat", "Demo toggle only.", true)
-    dropdown(id, "Steal Mode", "Demo selection", modes, false, "High Speed User Normal")
-    slider(id, "Low Speed Multiplier", "Demo value only", 1, 10, 5)
-    paragraph(id, "Speed Advice", "Demo display only\nRecommended: 4–6")
-    section(id, "Egg Filter"); sub(id, "Egg")
-    dropdown(id, "Filter By Egg Name", "Demo selection", eggs, true)
-    dropdown(id, "Filter By Rarity", "Demo selection", rarities, true)
-    sub(id, "Area & Value")
-    dropdown(id, "Select Area", "Demo selection", areas, true)
-    input(id, "Steal By Value", "Demo input only", "e.g. 500k")
-    dropdown(id, "Filter By Mutation", "Demo selection", mutations, true)
-    input(id, "Steal By Weight", "Demo input only", "e.g. 12000")
-    dropdown(id, "Steal Priority", "Demo selection", priorities, false, "Rarity")
-    toggle(id, "Auto Index", "Demo toggle only.", false)
-    section(id, "Egg ESP")
-    toggle(id, "Egg ESP", "Demo toggle only.", false)
-    dropdown(id, "ESP Details", "Demo selection", {"Name","Rarity","Value","Weight","Mutation","Placed Eggs","Icon"}, true)
-    dropdown(id, "ESP Min Rarity", "Demo selection", {"Any", table.unpack(rarities)}, false, "Any")
-    input(id, "ESP Min Value", "Demo input only", "e.g. 500k")
-    toggle(id, "Backpack Value/s", "Demo toggle only.", false)
-    section(id, "Steal Webhook")
-    toggle(id, "Steal Webhook", "Demo toggle only; no network request.", false)
-    input(id, "Webhook URL", "Demo input only; never transmitted.", "Webhook URL")
-    toggle(id, "Disconnect Alert", "Demo toggle only.", false)
-    sub(id, "Filter")
-    dropdown(id, "Notify Rarities", "Demo selection", rarities, true)
-    input(id, "Notify Minimum Value", "Demo input only", "e.g. 500k")
-    button(id, "Test Webhook", "No webhook is sent.")
-end)
-
-buildTab("Auto", 3, function(id)
-    section(id, "Egg Automation"); sub(id, "Place")
-    toggle(id, "Auto Place Egg", "Demo toggle only.", false)
-    dropdown(id, "Place Egg Rarity", "Demo selection", rarities, true)
-    sub(id, "Hatch")
-    toggle(id, "Auto Hatch Egg", "Demo toggle only.", false)
-    sub(id, "Mutate")
-    dropdown(id, "Select Mutation", "Demo selection", {"Scrambled","Fractured"}, false, "Scrambled")
-    dropdown(id, "Mutate Egg Name", "Demo selection", eggs, true)
-    dropdown(id, "Mutate Egg Rarity", "Demo selection", rarities, true)
-    input(id, "Mutate Min Value", "Demo input only", "e.g. 100k")
-    toggle(id, "Retry Until Mutated", "Demo toggle only.", true)
-    toggle(id, "Auto Apply Mutation", "Demo toggle only.", false)
-    button(id, "Apply Mutation Now", "Demo action only.")
-    section(id, "Equip & Collect")
-    toggle(id, "Auto Equip Best", "Demo toggle only.", false)
-    toggle(id, "Collect Offline Income", "Demo toggle only.", false)
-    toggle(id, "Auto Upgrade Base", "Demo toggle only.", false)
-    toggle(id, "Auto Claim Almanac", "Demo toggle only.", false)
-    button(id, "Upgrade Base Now", "Demo action only.")
-    section(id, "Treadmill")
-    toggle(id, "Auto Treadmill", "Demo toggle only.", false)
-    toggle(id, "Auto Upgrade Treadmill", "Demo toggle only.", false)
-end)
-
-buildTab("Pets", 4, function(id)
-    section(id, "Pet Selling")
-    toggle(id, "Auto Sell Pet", "Demo toggle only.", false); sub(id, "Filter")
-    dropdown(id, "Pet Name Filter", "Demo selection", {"None","All",table.unpack(species)}, true)
-    dropdown(id, "Pet Rarity Filter", "Demo selection", {"None","All",table.unpack(rarities)}, true)
-    input(id, "Sell By Value (max)", "Demo input only", "e.g. 100k")
-    section(id, "Egg Selling")
-    toggle(id, "Auto Sell Egg", "Demo toggle only.", false)
-    dropdown(id, "Egg Rarity Filter", "Demo selection", {"None","All",table.unpack(rarities)}, true)
-    input(id, "Sell Egg By Value (max)", "Demo input only", "e.g. 100k")
-    section(id, "Pet Favorite")
-    toggle(id, "Auto Favorite", "Demo toggle only.", false)
-    dropdown(id, "Favorite Rule", "Demo selection", {"Rarity","Species"}, false, "Rarity")
-    sub(id, "Only when Rule = Rarity")
-    dropdown(id, "Rarities to Keep", "Demo selection", rarities, true)
-    sub(id, "Only when Rule = Species")
-    dropdown(id, "Species to Keep", "Demo selection", species, true)
-    button(id, "Unfavorite Everything", "Demo action only.")
-    section(id, "Pet Fusion")
-    toggle(id, "Auto Fuse", "Demo toggle only.", false)
-    dropdown(id, "Fusion Rule", "Demo selection", {"Any Species","Selected Species"}, false, "Any Species")
-    dropdown(id, "Rarities to Fuse", "Demo selection", rarities, true)
-    sub(id, "Only when Rule = Selected Species")
-    dropdown(id, "Species to Fuse", "Demo selection", species, true)
-end)
-
-buildTab("Events", 5, function(id)
-    section(id, "Butterfly Bloom")
-    paragraph(id, "Bloom Status", "DEMO STATUS\nNo live event data is loaded.")
-    toggle(id, "Auto Claim Net", "Demo toggle only.", false)
-    toggle(id, "Auto Catch", "Demo toggle only.", false)
-    dropdown(id, "Catch Mode", "Demo selection", butterflyModes, false, "Tween to Butterfly")
-    dropdown(id, "Catch Tiers", "Demo selection", butterflyTiers, true)
-    toggle(id, "Butterfly ESP", "Demo toggle only.", false)
-    sub(id, "Trade & Craft")
-    toggle(id, "Auto Trade Up", "Demo toggle only.", false)
-    dropdown(id, "Trade Recipe", "Demo selection", recipes, false, "All Recipes")
-    toggle(id, "Auto Craft Essence", "Demo toggle only.", false)
-    button(id, "Claim Net Now", "Demo action only.")
-    button(id, "Trade Up Now", "Demo action only.")
-    button(id, "Craft Essence Now", "Demo action only.")
-    section(id, "Dr Scramble Event")
-    paragraph(id, "About This Event", "Demo only. No event actions are connected.")
-    toggle(id, "Auto Buy Shop", "Demo toggle only.", false)
-    dropdown(id, "Shop Buy List", "Demo selection", shopItems, true)
-    sub(id, "Trade-In")
-    toggle(id, "Auto Trade-In", "Demo toggle only.", false)
-    toggle(id, "Auto Free Reroll", "Demo toggle only.", false)
-    dropdown(id, "Target Banners", "Demo selection", banners, true)
-    button(id, "Trade-In Once", "Demo action only.")
-    button(id, "Use Free Reroll", "Demo action only.")
-    button(id, "Open Trade-In UI", "Demo action only.")
-    sub(id, "Boss Fight")
-    toggle(id, "Auto Boss", "Demo toggle only.", false)
-    paragraph(id, "Boss Status", "Demo status: idle.")
-end)
-
-buildTab("Misc", 6, function(id)
-    section(id, "Performance")
-    toggle(id, "Startup Boost", "Demo toggle only.", true)
-    toggle(id, "Boost FPS", "Demo toggle only.", false)
-    toggle(id, "Uncap FPS", "Demo toggle only.", false)
-    section(id, "Guard")
-    toggle(id, "Anti Guard Knockback", "Demo toggle only.", true)
-    toggle(id, "Anti Hit Guard", "Demo toggle only.", false)
-    section(id, "Windows")
-    button(id, "Egg Logs", "Demo action only."); button(id, "Egg Board", "Demo action only.")
-    button(id, "Inventory & Base", "Demo action only."); button(id, "Egg Checker", "Demo action only.")
-    button(id, "Egg Data & History", "Demo action only."); button(id, "Open All Windows", "Demo action only.")
-    section(id, "Blocker")
-    toggle(id, "Anti Treadmill", "Demo toggle only.", false)
-    section(id, "Server Hop")
-    toggle(id, "Hop When Nothing Matches", "Demo toggle only.", false)
-    sub(id, "Limits"); slider(id, "Hop Cooldown", "Demo value only", 1, 60, 5)
-    section(id, "Roaming")
-    dropdown(id, "Waypoint", "Demo selection only", waypoints, false, "Respawn Point")
-    button(id, "Teleport To Waypoint", "Demo action only.")
-    section(id, "Run Once")
-    button(id, "Place Everything Now", "Demo action only.")
-    button(id, "Hatch Everything Ready", "Demo action only.")
-    button(id, "Sell Pets Now", "Demo action only.")
-    button(id, "Sell Eggs Now", "Demo action only.")
-    section(id, "Session")
-    toggle(id, "Botting Mode", "Demo toggle only.", false)
-    toggle(id, "Anti Cutscene", "Demo toggle only.", false)
-    button(id, "Rejoin This Server", "Demo action only.")
-    local _, unloadButton = button(id, "Stop & Unload", "Closes this demo UI.")
-    unloadButton.Activated:Connect(function() screen:Destroy() end)
-    section(id, "Player")
-    toggle(id, "Anti AFK", "Demo toggle only.", true)
-    toggle(id, "Auto Reconnect", "Demo toggle only.", true)
-    toggle(id, "Auto Execute (Rejoin)", "Demo toggle only.", false)
-end)
-
-buildTab("Steal Players", 7, function(id)
-    section(id, "Auto Steal")
-    toggle(id, "Auto Steal From Players", "Demo toggle only.", false)
-    dropdown(id, "Rarity Filter", "Demo selection", rarities, true)
-    input(id, "Minimum Value", "Demo input only", "e.g. 500k")
-    section(id, "Steal From Specific Player")
-    paragraph(id, "Players in this server", "[Demo] Player list is not connected.")
-    section(id, "Steal History")
-    paragraph(id, "History", "[Demo] No history is loaded.")
-    button(id, "Clear History", "Demo action only.")
-end)
-
-buildTab("Live Chat", 8, function(id)
-    section(id, "Global Chat")
-    paragraph(id, "Live Chat", "[Demo] No chat service is connected.")
-end)
-
-buildTab("Donate", 9, function(id)
-    section(id, "Support Sena")
-    paragraph(id, "Support Card", "[Demo] Donation information is not configured.")
-end)
-
-buildTab("Private Server", 10, function(id)
-    section(id, "Find Private Server")
-    paragraph(id, "Current Server", "DEMO STATUS\nNo server hopping is performed.")
-    dropdown(id, "Max Players", "Demo selection", {"1","2","3","4","5"}, false, "2")
-    button(id, "Hop Server Now", "Demo action only.")
-    toggle(id, "Auto Hop", "Demo toggle only.", false)
-end)
-
-buildTab("Visual", 11, function(id)
-    section(id, "Fish It"); sub(id, "Rods")
-    dropdown(id, "Select Rod", "Demo selection", {"Basic Rod","Silver Rod","Golden Rod","Diamond Rod","Mythic Rod","Forgotten Rod"}, false)
-    button(id, "Spawn Rod", "Demo only; no item is created.")
-    slider(id, "Rod Size", "Demo value only", 5, 20, 10)
-    sub(id, "Fish")
-    dropdown(id, "Select Fish", "Demo selection", {"Basic Fish","Silver Fish","Golden Fish","Diamond Fish","Mythic Fish","Forgotten Fish"}, false)
-    button(id, "Spawn Fish", "Demo only; no item is created.")
-    slider(id, "Fish Weight", "Demo value only", 0, 100, 0)
-    sub(id, "Manage")
-    paragraph(id, "Status", "Idle · demo mode")
-    button(id, "Remove All Visual Items", "Demo action only.")
-    section(id, "Steal an Egg")
-    dropdown(id, "Type", "Demo selection", {"Egg","Pet"}, false, "Egg")
-    dropdown(id, "Select Egg / Pet", "Demo selection", eggs, false)
-    slider(id, "Size / Flex", "Demo value only", 1, 100, 50)
-    button(id, "Hold in Hand", "Demo only; no model is spawned.")
-    button(id, "Add to Backpack (Kg)", "Demo only; inventory is unchanged.")
-    button(id, "Remove Egg / Pet Visuals", "Demo action only.")
-end)
-
--- Drag support for mouse/touch.
-local dragging, dragStart, startPosition = false, nil, nil
-header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging, dragStart, startPosition = true, input.Position, main.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-
-local floating = make("TextButton", {
-    Name = "FloatingToggle", Size = UDim2.fromOffset(40, 40),
-    Position = UDim2.new(0, 16, 0.4, 0), BackgroundColor3 = Theme.background,
-    Text = "S", Font = Enum.Font.GothamBlack, TextSize = 18,
-    TextColor3 = Theme.accentLight, Visible = false, AutoButtonColor = true,
-}, screen)
-corner(floating, 10); stroke(floating, Theme.accent, 1.5)
-make("UIGradient", {Rotation = 135, Color = ColorSequence.new(Color3.fromRGB(24, 35, 52), Color3.fromRGB(9, 11, 16))}, floating)
-floating.MouseEnter:Connect(function()
-    TweenService:Create(floating, TweenInfo.new(0.14), {Size = UDim2.fromOffset(43, 43)}):Play()
-end)
-floating.MouseLeave:Connect(function()
-    TweenService:Create(floating, TweenInfo.new(0.14), {Size = UDim2.fromOffset(40, 40)}):Play()
-end)
-
-local function setVisible(show)
-    if show then
-        main.Visible = true
-        floating.Visible = false
-        scale.Scale = 0.92
-        TweenService:Create(scale, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
-    else
-        main.Visible = false
-        floating.Visible = true
-    end
-end
-closeButton.Activated:Connect(function() setVisible(false) end)
-floating.Activated:Connect(function() setVisible(true) end)
-
--- Scale the fixed 720x520 design down on small viewports without changing its base size.
-local function updateViewportScale()
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-    local viewport = camera.ViewportSize
-    local fitX = (viewport.X - 20) / 600
-    local fitY = (viewport.Y - 20) / 430
-    scale.Scale = math.clamp(math.min(1, fitX, fitY), 0.48, 1)
-end
-updateViewportScale()
-local cameraConnection
-local function bindCamera()
-    if cameraConnection then cameraConnection:Disconnect() end
-    local camera = workspace.CurrentCamera
-    if camera then cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateViewportScale) end
-end
-bindCamera()
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
-screen.Destroying:Connect(function()
-    if cameraConnection then cameraConnection:Disconnect() end
-end)
-
-switchTab("main")
-
-print("=======================================================")
-print(" SENA UI RECONSTRUCTION TEST - LOADED")
-print(" Tabs: 11 | UI-only demo | Feature logic disabled")
-print(" Controls only log mock interactions to Output.")
-print("=======================================================")
-
---[[
-===============================================================================
-UI DETAIL SPECIFICATION / COMPONENT CATALOG
-===============================================================================
-This appendix is intentionally part of the source file so future UI-only edits
-can preserve consistent grouping, spacing, naming, and demo-only behavior.
-No entry in this catalog activates a Roblox gameplay feature or sends a request.
-All actual widgets are created by the component factories above.
-===============================================================================
-
--------------------------------------------------------------------------------
-TAB: ADMIN ABUSE
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Capture The Egg
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Steal Capture
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Capture The Egg.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Movement
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Admin Abuse Boost
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Movement.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Fly For Capture
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Movement.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Instant Grab
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Movement.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Infinite Jump
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Movement.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Noclip
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Movement.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Ring Event
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Ring Event
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Ring Event.
-    Parent tab: Admin Abuse.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: MAIN
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Auto Steal
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Steal
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Help Friend
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Egg Checker
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Egg Spawn Analyst
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Aura Bat
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Steal Mode
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Low Speed Multiplier
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Speed Advice
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Egg Filter / Egg
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Filter By Egg Name
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Egg.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Filter By Rarity
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Egg.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Egg Filter / Area & Value
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Select Area
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Area & Value.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Steal By Value
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Area & Value.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Filter By Mutation
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Area & Value.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Steal By Weight
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Area & Value.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Steal Priority
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Area & Value.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Index
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Filter / Area & Value.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Egg ESP
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Egg ESP
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg ESP.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: ESP Details
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg ESP.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: ESP Min Rarity
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg ESP.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: ESP Min Value
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg ESP.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Backpack Value/s
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg ESP.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Steal Webhook
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Steal Webhook
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal Webhook.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Webhook URL
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal Webhook.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Disconnect Alert
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal Webhook.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Notify Rarities
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal Webhook.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Notify Minimum Value
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal Webhook.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Test Webhook
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal Webhook.
-    Parent tab: Main.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: AUTO
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Egg Automation / Place
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Place Egg
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Place.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Place Egg Rarity
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Place.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Egg Automation / Hatch
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Hatch Egg
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Hatch.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Egg Automation / Mutate
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Select Mutation
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Mutate Egg Name
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Mutate Egg Rarity
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Mutate Min Value
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Retry Until Mutated
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Apply Mutation
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Apply Mutation Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Automation / Mutate.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Equip & Collect
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Equip Best
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Equip & Collect.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Collect Offline Income
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Equip & Collect.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Upgrade Base
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Equip & Collect.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Claim Almanac
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Equip & Collect.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Upgrade Base Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Equip & Collect.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Treadmill
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Treadmill
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Treadmill.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Upgrade Treadmill
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Treadmill.
-    Parent tab: Auto.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: PETS
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Pet Selling
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Sell Pet
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Pet Name Filter
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Pet Rarity Filter
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Sell By Value (max)
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Egg Selling
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Sell Egg
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Egg Rarity Filter
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Sell Egg By Value (max)
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Egg Selling.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Pet Favorite
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Favorite
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Favorite.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Favorite Rule
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Favorite.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Rarities to Keep
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Favorite.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Species to Keep
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Favorite.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Unfavorite Everything
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Favorite.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Pet Fusion
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Fuse
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Fusion.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Fusion Rule
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Fusion.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Rarities to Fuse
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Fusion.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Species to Fuse
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Pet Fusion.
-    Parent tab: Pets.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: EVENTS
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Butterfly Bloom
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Bloom Status
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Claim Net
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Catch
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Catch Mode
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Catch Tiers
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Butterfly ESP
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Trade Up
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Trade Recipe
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Craft Essence
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Claim Net Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Trade Up Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Craft Essence Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Butterfly Bloom.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Dr Scramble Event
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: About This Event
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Buy Shop
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Shop Buy List
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Trade-In
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Free Reroll
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Target Banners
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Trade-In Once
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Use Free Reroll
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Open Trade-In UI
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Boss
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Boss Status
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Dr Scramble Event.
-    Parent tab: Events.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: MISC
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Performance
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Startup Boost
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Performance.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Boost FPS
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Performance.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Uncap FPS
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Performance.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Guard
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Anti Guard Knockback
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Guard.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Anti Hit Guard
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Guard.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Windows
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Egg Logs
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Windows.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Egg Board
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Windows.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Inventory & Base
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Windows.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Egg Checker
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Windows.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Egg Data & History
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Windows.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Open All Windows
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Windows.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Blocker
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Anti Treadmill
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Blocker.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Server Hop
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Hop When Nothing Matches
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Server Hop.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Hop Cooldown
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Server Hop.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Roaming
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Waypoint
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Roaming.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Teleport To Waypoint
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Roaming.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Run Once
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Place Everything Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Run Once.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Hatch Everything Ready
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Run Once.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Sell Pets Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Run Once.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Sell Eggs Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Run Once.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Session
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Botting Mode
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Session.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Anti Cutscene
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Session.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Rejoin This Server
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Session.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Stop & Unload
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Session.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Player
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Anti AFK
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Player.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Reconnect
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Player.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Execute (Rejoin)
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Player.
-    Parent tab: Misc.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: STEAL PLAYERS
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Auto Steal
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Auto Steal From Players
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Steal Players.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Rarity Filter
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Steal Players.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Minimum Value
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Auto Steal.
-    Parent tab: Steal Players.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Steal From Specific Player
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Players in this server
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal From Specific Player.
-    Parent tab: Steal Players.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Steal History
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: History
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal History.
-    Parent tab: Steal Players.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Clear History
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal History.
-    Parent tab: Steal Players.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: LIVE CHAT
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Global Chat
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Live Chat
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Global Chat.
-    Parent tab: Live Chat.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: DONATE
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Support Sena
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Support Card
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Support Sena.
-    Parent tab: Donate.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: PRIVATE SERVER
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Find Private Server
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Current Server
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Find Private Server.
-    Parent tab: Private Server.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Max Players
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Find Private Server.
-    Parent tab: Private Server.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Hop Server Now
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Find Private Server.
-    Parent tab: Private Server.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Auto Hop
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Find Private Server.
-    Parent tab: Private Server.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
--------------------------------------------------------------------------------
-TAB: VISUAL
--------------------------------------------------------------------------------
-Tab purpose: keep related controls discoverable without crowding the compact panel.
-Layout contract: one vertical scroll column; groups stay in their declared order.
-Navigation contract: the sidebar selects this tab and resets scroll to the top.
-Visual contract: use dark layered surfaces, muted labels, and blue accent rails.
-Input contract: controls change only their local demo state or print a mock message.
-Safety contract: no gameplay remotes, network requests, or automation are attached.
-
-  GROUP: Fish It / Rods
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Select Rod
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Rods.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Spawn Rod
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Rods.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Rod Size
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Rods.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Fish It / Fish
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Select Fish
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Fish.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Spawn Fish
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Fish.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Fish Weight
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Fish.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Fish It / Manage
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Status
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Manage.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Remove All Visual Items
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Fish It / Manage.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-  GROUP: Steal an Egg
-  -----------------------------------------------------------------------------
-  Grouping rationale: related controls are placed together to reduce scanning.
-  Heading style: compact uppercase title with a thin low-contrast divider.
-  Spacing style: consistent vertical rhythm; avoid oversized empty containers.
-  Card style: rounded dark gradient, fine outline, subtle accent on the leading edge.
-  Responsive style: the main panel scales down to fit narrow viewports.
-
-    COMPONENT: Type
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal an Egg.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Select Egg / Pet
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal an Egg.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Size / Flex
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal an Egg.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Hold in Hand
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal an Egg.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Add to Backpack (Kg)
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal an Egg.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-    COMPONENT: Remove Egg / Pet Visuals
-    Component identity: preserve this label unless the feature specification changes.
-    Parent group: Steal an Egg.
-    Parent tab: Visual.
-    Layout rule: align the title with other controls in the same group.
-    Typography rule: use Gotham-family fonts and compact readable sizing.
-    Surface rule: keep contrast sufficient against the charcoal background.
-    Border rule: prefer smooth rounded corners and thin low-contrast outlines.
-    Accent rule: blue is reserved for active, selected, or highlighted states.
-    Interaction rule: hover/pressed states should be subtle and quick.
-    State rule: toggles and selectors represent local demo state only.
-    Feedback rule: buttons report mock interactions rather than running game actions.
-    Scroll rule: component height must remain small enough for a dense settings list.
-    Grouping rule: do not move this control outside its named feature group.
-    Maintenance rule: update this catalog if the control is renamed or relocated.
-    Accessibility rule: avoid relying on color alone to communicate selection.
-    Consistency rule: use the shared component factory instead of ad-hoc styling.
-    Performance rule: avoid adding per-frame loops for purely decorative effects.
-    Scope rule: this component must remain part of the UI reconstruction demo.
-
-===============================================================================
-GLOBAL VISUAL QA CHECKLIST
-===============================================================================
-
-QA-001: Main panel uses a compact fixed base size of 600 by 430 pixels.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-002: Viewport fitting scales the panel down when the screen is smaller than the base size.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-003: Outer corners use a smooth rounded radius with a restrained blue-gray outline.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-004: Inner inset border separates the panel from the background without a heavy frame.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-005: Header remains short and avoids consuming space needed by tab content.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-006: Sidebar remains narrower than the content region to prioritize settings readability.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-007: Sidebar is scrollable so all eleven tabs remain reachable on short displays.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-008: Content region uses its own scroll container and resets position when changing tabs.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-009: Selected tab has an indicator rail and stronger label contrast.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-010: Inactive tabs use muted text and restrained hover feedback.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-011: Group headings use a small accent rail and hairline divider.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-012: Cards use a subtle gradient rather than a flat empty fill.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-013: Card borders are thin and softened to avoid a harsh boxed-in appearance.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-014: Blue accents are used sparingly to preserve visual hierarchy.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-015: Status badges remain distinct from ordinary settings controls.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-016: Close button remains visible in the header.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-017: Floating toggle allows the panel to be reopened after hiding it.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-018: Mouse and touch dragging remain supported.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-019: All tab component containers are detached and reattached when switching tabs.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-020: Dropdown menus remain inside the owning screen GUI.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-021: Long option lists use scrolling rather than extending beyond the viewport.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-022: Text inputs retain placeholder text and local-only values.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-023: Sliders update their visual fill and displayed demo value.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-024: Toggle controls visually distinguish on and off states.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-025: Buttons provide feedback through the demo notification/output path.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-026: Descriptions clearly indicate that feature behavior is not connected.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-027: No actual exploit, game automation, remote invocation, or network transmission exists.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-028: No third-party image URL is assumed to be a Roblox asset identifier.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-029: Decorative gradients use native Roblox UIGradient instances.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-030: Rounded corners use UICorner instances rather than raster images.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-031: Borders use UIStroke with low thickness.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-032: Decorative elements should not cover labels or block button input.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-033: ZIndex should keep decorative elements behind text and interactive controls.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-034: Text should truncate gracefully when the panel is scaled down.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-035: Tab labels should remain legible at the compact panel's normal scale.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-036: Feature groups should remain in their existing semantic order.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-037: Do not introduce extra tabs without updating the catalog and icon map.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-038: Do not add unrequested features merely to fill empty space.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-039: Use shared helpers for consistent corner, stroke, padding, and object creation.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-040: Keep cleanup connections scoped to the ScreenGui lifetime.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-041: Recheck camera viewport binding if viewport scaling is changed.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-042: Keep this source runnable as a Roblox Studio LocalScript.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-043: Prefer maintainable names for UI instances and helper functions.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-044: Use consistent capitalization for component names and tab labels.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-045: Keep the dark palette neutral; avoid turning the interface purple.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-046: Use the existing blue accent as the primary interactive color.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-047: Use a white/gray text hierarchy rather than multiple bright text colors.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-048: Keep hover animations short so the interface feels responsive.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-049: Keep the floating icon visually related to the main panel.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-050: Do not add external web calls to a UI-only LocalScript.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-QA-051: Keep each feature's callbacks mocked and clearly identified as such.
-Verification note: inspect this item whenever the corresponding UI area is edited.
-Regression note: visual polish must not alter the demo-only behavior contract.
-
-END OF UI DETAIL SPECIFICATION
-]]
+local Library = { Window = createWindow }
+genv.LeonHubLib = Library
+
+---------------------------------------------------------------------
+-- SHELL: Leon4951hub
+---------------------------------------------------------------------
+local Hub = Library.Window({ Title = "Leon4951hub" })
+genv.LeonHub = Hub
+
+-- HOME
+local home = Hub:AddTab({ Name = "Home" })
+home:AddSection("Leon4951hub")
+home:AddParagraph({
+	Title = "Selamat datang",
+	Content = "UI standalone: latar hitam, outline biru. Pilih tab di sebelah kiri. Kolom Search memfilter isi tab yang sedang dibuka.",
+})
+home:AddParagraph({
+	Title = "Kontrol",
+	Content = "Geser lewat header. Tombol '-' menciutkan, 'x' menutup. RightShift menyembunyikan / menampilkan (PC).",
+})
+
+-- PERFORMANCE (terhubung ke FPS Boost di script.lua)
+local perf = Hub:AddTab({ Name = "Performance" })
+perf:AddSection("FPS Boost")
+local perfStatus = perf:AddParagraph({
+	Title = "Status",
+	Content = genv.FPSBoost and "Siap. Tekan tombol di bawah." or "script.lua (FPS Boost) belum dijalankan. Jalankan dulu, lalu tombol di bawah aktif.",
+})
+local running = false
+perf:AddButton({
+	Title = "Jalankan FPS Boost",
+	Content = "Startup Boost + Boost FPS + Uncap FPS (sekitar 5 detik), lalu otomatis nonaktif.",
+	ButtonText = "Jalankan",
+	Callback = function()
+		local fp = genv.FPSBoost
+		if not (fp and fp.Run) then
+			Hub:Notify("Jalankan script.lua (FPS Boost) dulu")
+			return
+		end
+		if running then
+			Hub:Notify("Masih berjalan...")
+			return
+		end
+		running = true
+		perfStatus:Set(nil, "Memproses...")
+		local dt = fp.Run()
+		running = false
+		if dt then
+			perfStatus:Set(nil, string.format("Selesai (%.1f dtk). Hasil optimasi tetap bertahan.", dt))
+			Hub:Notify(string.format("FPS Boost selesai (%.1f dtk)", dt))
+		else
+			perfStatus:Set(nil, "Dibatalkan.")
+		end
+	end,
+})
+perf:AddButton({
+	Title = "Kembalikan grafis",
+	Content = "Mengembalikan grafis & cap FPS. Objek yang sudah dihapus baru kembali setelah rejoin.",
+	ButtonText = "Restore",
+	Callback = function()
+		local fp = genv.FPSBoost
+		if not (fp and fp.Restore) then
+			Hub:Notify("Jalankan script.lua (FPS Boost) dulu")
+			return
+		end
+		fp.Restore()
+		perfStatus:Set(nil, "Grafis dikembalikan.")
+		Hub:Notify("Grafis dikembalikan")
+	end,
+})
+perf:AddToggle({
+	Title = "Uncap FPS",
+	Content = "ON = batas 240 FPS, OFF = 60 FPS.",
+	Default = false,
+	Callback = function(v)
+		local fp = genv.FPSBoost
+		if fp and fp.UncapFps then
+			fp.UncapFps(v)
+		else
+			Hub:Notify("Jalankan script.lua (FPS Boost) dulu")
+		end
+	end,
+})
+
+-- COMPONENTS (contoh semua komponen)
+local demo = Hub:AddTab({ Name = "Components" })
+demo:AddSection("Contoh komponen")
+demo:AddToggle({
+	Title = "Toggle",
+	Content = "Contoh toggle ON / OFF.",
+	Default = false,
+	Callback = function(v) Hub:Notify("Toggle: " .. tostring(v), 1.5) end,
+})
+demo:AddButton({
+	Title = "Button",
+	Content = "Contoh tombol.",
+	ButtonText = "Klik",
+	Callback = function() Hub:Notify("Tombol ditekan", 1.5) end,
+})
+demo:AddSlider({
+	Title = "Slider",
+	Content = "Geser untuk mengubah nilai.",
+	Min = 0, Max = 100, Step = 5, Default = 50,
+	Callback = function(v) print("[Leon4951hub] slider =", v) end,
+})
+demo:AddDropdown({
+	Title = "Dropdown",
+	Content = "Pilih satu opsi.",
+	Options = { "Satu", "Dua", "Tiga" },
+	Default = "Satu",
+	Callback = function(v) Hub:Notify("Dipilih: " .. tostring(v), 1.5) end,
+})
+demo:AddDropdown({
+	Title = "Dropdown (multi)",
+	Content = "Pilih beberapa opsi.",
+	Options = { "Merah", "Hijau", "Biru", "Kuning" },
+	Multi = true,
+	Default = { "Biru" },
+	Callback = function(v) print("[Leon4951hub] multi =", table.concat(v, ", ")) end,
+})
+demo:AddInput({
+	Title = "Input",
+	Content = "Ketik lalu tekan Enter / klik di luar.",
+	Placeholder = "Ketik di sini...",
+	Callback = function(text) Hub:Notify("Input: " .. tostring(text), 1.5) end,
+})
+
+print("[Leon4951hub] siap")
