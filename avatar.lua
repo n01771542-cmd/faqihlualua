@@ -287,7 +287,7 @@ local E = {
 	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "",
+	busy = false, remote = nil, lastMethod = "", injectFirst = false,
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -572,6 +572,7 @@ function E.inject(id, tid)
 			face.Parent = head
 		end
 		face.Texture = decal.Texture
+		char:SetAttribute("ASX_" .. tostring(id), true)
 		return true
 	elseif ANIM_SLOT[tid] then
 		local animate = char:FindFirstChild("Animate")
@@ -605,6 +606,7 @@ function E.inject(id, tid)
 			end
 		end
 		restartAnimate(char, hum)
+		char:SetAttribute("ASX_" .. tostring(id), true)
 		return true
 	end
 	return false -- bodypart (kepala/torso/lengan/kaki) hanya didukung jalur native/server
@@ -614,6 +616,35 @@ function E.cleanInjected(char)
 	for _, ch in ipairs(char:GetChildren()) do
 		if ch:GetAttribute("AS") then
 			ch:Destroy()
+		end
+	end
+	for name in pairs(char:GetAttributes()) do
+		if string.sub(name, 1, 4) == "ASX_" then
+			char:SetAttribute(name, nil)
+		end
+	end
+end
+
+-- penjaga: pasang ulang item injector yang dihapus/direset oleh map
+function E.guard()
+	local char = player.Character
+	if not char or not char:FindFirstChildOfClass("Humanoid") or not E.look then
+		return
+	end
+	local nowSet = collect(E.look)
+	local present = {}
+	for _, ch in ipairs(char:GetChildren()) do
+		local a = ch:GetAttribute("AS")
+		if a then
+			present[a] = true
+		end
+	end
+	for id in pairs(E.failed) do
+		if nowSet[id] and not present[id] and not char:GetAttribute("ASX_" .. tostring(id)) then
+			local tid = E.assetType(id)
+			if tid then
+				E.inject(id, tid)
+			end
 		end
 	end
 end
@@ -665,7 +696,7 @@ local function applyNative(hum, desc)
 	return false, tostring(err)
 end
 
-function E._commit(newLook, text, skipHist)
+function E._commit(newLook, text, skipHist, force)
 	local hum, char = E.humanoid()
 	local prevSet = collect(E.look)
 	local nowSet = collect(newLook)
@@ -673,6 +704,63 @@ function E._commit(newLook, text, skipHist)
 	for id in pairs(nowSet) do
 		if not prevSet[id] then
 			table.insert(added, id)
+		end
+	end
+
+	-- MODE INJECT-FIRST (executor / map orang): tempel item langsung ke karakter,
+	-- tanpa ApplyDescription, supaya tidak ditolak/direset oleh map.
+	if E.injectFirst and not E.remote and not force then
+		local removedNative = false
+		local removed = {}
+		for id in pairs(prevSet) do
+			if not nowSet[id] then
+				if E.failed[id] then
+					table.insert(removed, id)
+				else
+					removedNative = true
+				end
+			end
+		end
+		local injectable = true
+		for _, id in ipairs(added) do
+			local t = E.assetType(id)
+			if not (t and (ACC[t] or t == 11 or t == 12 or t == 2 or t == 18 or ANIM_SLOT[t])) then
+				injectable = false
+			end
+		end
+		if not removedNative and injectable then
+			for _, id in ipairs(removed) do
+				E.failed[id] = nil
+				for _, ch in ipairs(char:GetChildren()) do
+					if ch:GetAttribute("AS") == id then
+						ch:Destroy()
+					end
+				end
+				char:SetAttribute("ASX_" .. tostring(id), nil)
+			end
+			local bad = {}
+			for _, id in ipairs(added) do
+				E.failed[id] = true
+				if not E.inject(id, E.assetType(id)) then
+					E.failed[id] = nil
+					table.insert(bad, id)
+				end
+			end
+			for _, id in ipairs(bad) do
+				removeFromDesc(newLook, id)
+				toast("Tidak bisa memasang \"" .. E.name(id) .. "\" di map ini (aset diblokir / rig tidak cocok).", "warn")
+			end
+			E.lastMethod = "injector"
+			if not skipHist and E.look then
+				table.insert(E.history, E.look)
+				while #E.history > 40 do
+					table.remove(E.history, 1)
+				end
+				E.redo = {}
+			end
+			E.look = newLook
+			fire()
+			return #bad == 0
 		end
 	end
 
@@ -689,8 +777,12 @@ function E._commit(newLook, text, skipHist)
 		nd = E.withoutFailed(newLook)
 		ok, how = applyNative(hum, nd)
 		if not ok then
-			toast("Gagal menerapkan: " .. tostring(how), "danger")
-			return false
+			if E.injectFirst then
+				how = "injector"
+			else
+				toast("Gagal menerapkan: " .. tostring(how), "danger")
+				return false
+			end
 		end
 	else
 		-- verifikasi: apakah jumlah aksesori di karakter sesuai?
@@ -746,13 +838,13 @@ function E._commit(newLook, text, skipHist)
 	return #dropped == 0
 end
 
-function E.commit(newLook, text, skipHist)
+function E.commit(newLook, text, skipHist, force)
 	if E.busy then
 		toast("Tunggu sebentar, avatar masih diproses...", "warn")
 		return false
 	end
 	E.busy = true
-	local ok, res = pcall(E._commit, newLook, text, skipHist)
+	local ok, res = pcall(E._commit, newLook, text, skipHist, force)
 	E.busy = false
 	if not ok then
 		toast("Error: " .. tostring(res), "danger")
@@ -942,7 +1034,7 @@ function E.diagnose()
 	local ok = pcall(function()
 		return game:GetObjects("rbxassetid://1028606")
 	end)
-	toast("game:GetObjects: " .. (ok and "tersedia" or "tidak tersedia")
+	toast("Mode inject-first: " .. (E.injectFirst and "AKTIF" or "mati") .. "  |  game:GetObjects: " .. (ok and "tersedia" or "tidak tersedia")
 		.. "  |  Mode terakhir: " .. (E.lastMethod ~= "" and E.lastMethod or "-"), "info")
 	if not E.remote and not ok then
 		toast("Hanya jalur native yang aktif. Untuk hasil paling pasti, pasang AvatarStudioServer.lua di ServerScriptService.", "warn")
@@ -952,6 +1044,10 @@ end
 function E.init()
 	local hum, char = E.humanoid()
 	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
+	local okG, resG = pcall(function()
+		return game:GetObjects("rbxassetid://1028606")
+	end)
+	E.injectFirst = okG and type(resG) == "table" and #resG > 0
 	local d = hum:GetAppliedDescription()
 	E.original = d:Clone()
 	E.look = d:Clone()
@@ -966,7 +1062,14 @@ function E.init()
 		newChar:WaitForChild("Humanoid")
 		task.wait(1)
 		if E.look then
-			E.commit(E.look:Clone(), "respawn", true)
+			E.commit(E.look:Clone(), "respawn", true, true)
+		end
+	end)
+	task.spawn(function()
+		while task.wait(1.5) do
+			if E.injectFirst and not E.remote and not E.busy then
+				pcall(E.guard)
+			end
 		end
 	end)
 	fire()
@@ -2000,5 +2103,5 @@ task.spawn(function()
 		toast("Gagal menyiapkan karakter: " .. tostring(err), "danger")
 		return
 	end
-	toast("Avatar Studio siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or "native/injector"), "ok")
+	toast("Avatar Studio siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or (E.injectFirst and "INJECTOR (visual klien)" or "native")), "ok")
 end)
