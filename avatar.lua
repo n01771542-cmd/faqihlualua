@@ -11,9 +11,12 @@
 
   CARA KERJA PEMASANGAN (otomatis, urut):
     A. Server  : kalau AvatarStudioServer ada -> server yang memasang.
-    B. Native  : HumanoidDescription:ApplyDescription di klien.
-    C. Injector: kalau B gagal untuk item tertentu dan lingkungan mengizinkan
-                 game:GetObjects / LoadAsset, item dimuat & dipasang langsung.
+    B. Injector: 1 item -> dimuat (GetObjects / LoadAsset / donor rig) lalu
+                 ditempel + DILAS manual ke karakter.
+    C. Donor   : avatar/banyak item -> Roblox membangun rig donor dari
+                 HumanoidDescription (klien boleh untuk rig buatan sendiri),
+                 lalu aksesori/pakaian/animasinya dipindah ke karakter kamu.
+  (ApplyDescription ke karakter sendiri dari klien DITOLAK Roblox, jadi tidak dipakai.)
   Hasilnya diverifikasi (jumlah aksesori dihitung ulang). Kalau item benar-benar
   tidak bisa ditampilkan, kamu diberi tahu dan item tidak ditandai "dipakai".
 ============================================================================= ]]
@@ -259,6 +262,79 @@ local function setProp(desc, key, value)
 end
 
 ----------------------------------------------------------------------------
+-- [3b] KOMPATIBILITAS API  (Roblox v702, Des 2025: banyak fungsi diganti *Async)
+----------------------------------------------------------------------------
+-- coba tiap nama metode berurutan (nama baru dulu); mengembalikan ok, hasil, namaYangDipakai
+local function callAny(obj, names, ...)
+	local lastErr = "metode tidak ditemukan"
+	local args = table.pack(...)
+	for _, name in ipairs(names) do
+		local okF, f = pcall(function()
+			return obj[name]
+		end)
+		if okF and type(f) == "function" then
+			local ok, res = pcall(function()
+				return f(obj, table.unpack(args, 1, args.n))
+			end)
+			if ok then
+				return true, res, name
+			end
+			lastErr = name .. ": " .. tostring(res)
+		else
+			lastErr = name .. " tidak ada"
+		end
+	end
+	return false, lastErr
+end
+
+local function hasMember(obj, name)
+	local ok, v = pcall(function()
+		return obj[name]
+	end)
+	return ok and type(v) == "function"
+end
+
+local function productInfo(id, infoType)
+	local ok, res = callAny(MarketplaceService, { "GetProductInfoAsync", "GetProductInfo" }, id, infoType)
+	if ok then
+		return res
+	end
+	return nil
+end
+
+local function descFromUser(uid)
+	local ok, res = callAny(Players, { "GetHumanoidDescriptionFromUserIdAsync", "GetHumanoidDescriptionFromUserId" }, uid)
+	if ok and res then
+		return res
+	end
+	return nil, res
+end
+
+local function descFromOutfit(id)
+	local ok, res = callAny(Players, { "GetHumanoidDescriptionFromOutfitIdAsync", "GetHumanoidDescriptionFromOutfitId" }, id)
+	if ok and res then
+		return res
+	end
+	return nil
+end
+
+local function batchDetails(ids, itemType)
+	return callAny(AvatarEditorService, { "GetBatchItemDetailsAsync", "GetBatchItemDetails" }, ids, itemType)
+end
+
+local function appliedDesc(hum)
+	local ok, d = callAny(hum, { "GetAppliedDescriptionAsync", "GetAppliedDescription" })
+	if ok and d then
+		return d
+	end
+	local d2 = descFromUser(player.UserId)
+	if d2 then
+		return d2
+	end
+	return Instance.new("HumanoidDescription")
+end
+
+----------------------------------------------------------------------------
 -- [4] TOAST
 ----------------------------------------------------------------------------
 local LOG = {}
@@ -344,10 +420,8 @@ function E.assetType(id)
 	if E.types[id] then
 		return E.types[id]
 	end
-	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfo(id, Enum.InfoType.Asset)
-	end)
-	if ok and info then
+	local info = productInfo(id, Enum.InfoType.Asset)
+	if info then
 		E.types[id] = info.AssetTypeId
 		E.names[id] = E.names[id] or info.Name
 		return info.AssetTypeId
@@ -516,9 +590,7 @@ end
 local function donorModel(desc)
 	local hum = E.humanoid()
 	local rig = (hum.RigType == Enum.HumanoidRigType.R6) and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
-	local ok, m = pcall(function()
-		return Players:CreateHumanoidModelFromDescription(desc, rig)
-	end)
+	local ok, m = callAny(Players, { "CreateHumanoidModelFromDescriptionAsync", "CreateHumanoidModelFromDescription" }, desc, rig)
 	if ok and m then
 		return m
 	end
@@ -589,32 +661,136 @@ local function restartAnimate(char, hum)
 	end)
 end
 
--- las manual Handle aksesori ke karakter lewat Attachment yang namanya sama
-local function manualAttach(acc, char)
-	local handle = acc:FindFirstChild("Handle")
-	if not handle then
-		return false
+-- Humanoid:AddAccessory di klien TIDAK membuat las (weld dibuat server) -> aksesori
+-- tertinggal di posisi awal / tidak terlihat. Jadi kita las sendiri.
+local function findBodyAttachment(char, name)
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("Attachment") and d.Name == name and d.Parent and d.Parent:IsA("BasePart") then
+			return d
+		end
 	end
+	return nil
+end
+
+local function attachAccessory(acc, char)
+	local handle = acc:FindFirstChild("Handle")
+	if not handle or not handle:IsA("BasePart") then
+		acc.Parent = char
+		return false, "Accessory tidak punya Handle"
+	end
+	for _, w in ipairs(handle:GetChildren()) do
+		if w.Name == "AccessoryWeld" then
+			w:Destroy()
+		end
+	end
+	handle.Anchored = false
+	handle.CanCollide = false
+	handle.Massless = true
+	local part1, c0, c1
 	for _, att in ipairs(handle:GetChildren()) do
 		if att:IsA("Attachment") then
-			for _, part in ipairs(char:GetChildren()) do
-				if part:IsA("BasePart") then
-					local target = part:FindFirstChild(att.Name)
-					if target and target:IsA("Attachment") then
-						local w = Instance.new("Weld")
-						w.Name = "AccessoryWeld"
-						w.Part0 = handle
-						w.Part1 = part
-						w.C0 = att.CFrame
-						w.C1 = target.CFrame
-						w.Parent = handle
-						return true
-					end
-				end
+			local target = findBodyAttachment(char, att.Name)
+			if target then
+				part1, c0, c1 = target.Parent, att.CFrame, target.CFrame
+				break
 			end
 		end
 	end
-	return false
+	local how = "attachment"
+	if not part1 then
+		how = "cadangan"
+		local layered = acc:FindFirstChildWhichIsA("WrapLayer", true) ~= nil
+		if layered then
+			part1 = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+			c0, c1 = CFrame.new(), CFrame.new()
+		else
+			part1 = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+			if part1 then
+				c0, c1 = CFrame.new(), CFrame.new(0, part1.Size.Y / 2, 0)
+			end
+		end
+		if not part1 then
+			acc.Parent = char
+			return false, "tidak ada bagian tubuh untuk dilas"
+		end
+	end
+	local w = Instance.new("Weld")
+	w.Name = "AccessoryWeld"
+	w.Part0 = handle
+	w.Part1 = part1
+	w.C0 = c0
+	w.C1 = c1
+	handle.CFrame = part1.CFrame * c1 * c0:Inverse()
+	acc.Parent = char
+	w.Parent = handle
+	return true, how
+end
+
+-- pindahkan aksesori dari rig donor ke karakter kita, las asli engine disambung ulang
+local function harvestAccessory(donorAcc, char)
+	local c = donorAcc:Clone()
+	c:SetAttribute("ASU", true)
+	local dh, ch = donorAcc:FindFirstChild("Handle"), c:FindFirstChild("Handle")
+	local wired = false
+	if dh and ch then
+		local dw = dh:FindFirstChild("AccessoryWeld") or dh:FindFirstChildWhichIsA("Weld")
+		local cw = ch:FindFirstChild("AccessoryWeld") or ch:FindFirstChildWhichIsA("Weld")
+		if dw and cw and dw.Part1 then
+			local tgt = char:FindFirstChild(dw.Part1.Name) or char:FindFirstChild(dw.Part1.Name, true)
+			if tgt and tgt:IsA("BasePart") then
+				cw.Part0 = ch
+				cw.Part1 = tgt
+				wired = true
+			end
+		end
+	end
+	if wired then
+		c.Parent = char
+	else
+		local ok, how = attachAccessory(c, char)
+		if not ok then
+			logf("las aksesori gagal: %s", tostring(how))
+		end
+	end
+	return c
+end
+
+-- salin tekstur/mesh bagian tubuh dari donor (best-effort; MeshId bisa diblokir)
+local function copyBodyParts(model, char)
+	for _, dp in ipairs(model:GetChildren()) do
+		if dp:IsA("MeshPart") and dp.Name ~= "HumanoidRootPart" then
+			local cp = char:FindFirstChild(dp.Name)
+			if cp and cp:IsA("MeshPart") then
+				pcall(function()
+					if dp.MeshId ~= "" and cp.MeshId ~= dp.MeshId then
+						cp.MeshId = dp.MeshId
+					end
+					cp.TextureID = dp.TextureID
+				end)
+				pcall(function()
+					for _, x in ipairs(cp:GetChildren()) do
+						if x:IsA("SurfaceAppearance") then
+							x:Destroy()
+						end
+					end
+					local sa = dp:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						sa:Clone().Parent = cp
+					end
+				end)
+			end
+		end
+	end
+end
+
+local function pickAnim(anims, name, i)
+	local lname = string.lower(name)
+	for _, a in ipairs(anims) do
+		if string.lower(a.Name) == lname then
+			return a
+		end
+	end
+	return anims[i] or anims[1]
 end
 
 local function injectCore(id, tid, objs, kind)
@@ -627,24 +803,19 @@ local function injectCore(id, tid, objs, kind)
 			E.lastInjectErr = "aset bukan Accessory"
 			return false
 		end
-		local c = acc:Clone()
-		c.Name = tag
-		c:SetAttribute("AS", id)
-		local okA, errA = pcall(function()
-			hum:AddAccessory(c)
-		end)
-		if not okA then
-			logf("AddAccessory error: %s (coba tempel manual)", tostring(errA))
-		end
-		if c.Parent ~= char then
-			c.Parent = char
-		end
-		local handle = c:FindFirstChild("Handle")
-		if handle and not handle:FindFirstChildOfClass("Weld") and not c:FindFirstChildWhichIsA("WrapLayer", true) then
-			if not manualAttach(c, char) then
-				E.lastInjectErr = "Handle tidak punya Attachment yang cocok dengan rig ini"
+		local c
+		if kind == "donor" then
+			c = harvestAccessory(acc, char)
+			c:SetAttribute("ASU", nil)
+		else
+			c = acc:Clone()
+			local okA, how = attachAccessory(c, char)
+			if not okA then
+				E.lastInjectErr = tostring(how)
 			end
 		end
+		c.Name = tag
+		c:SetAttribute("AS", id)
 		return c.Parent == char
 	elseif tid == 11 or tid == 12 or tid == 2 then
 		local class = (tid == 11 and "Shirt") or (tid == 12 and "Pants") or "ShirtGraphic"
@@ -731,7 +902,7 @@ local function injectCore(id, tid, objs, kind)
 		local rec = {}
 		for i, name in ipairs(slot[2]) do
 			local target = folder:FindFirstChild(name)
-			local src = anims[i] or anims[1]
+			local src = pickAnim(anims, name, i)
 			if target and src then
 				target.AnimationId = src.AnimationId
 				table.insert(rec, { target, src.AnimationId })
@@ -833,6 +1004,19 @@ function E.guard()
 			end
 		end
 	end
+	-- aksesori hasil render donor dihapus map? render ulang (maks 1x / 6 detik)
+	if not E.remote and (E.rendered or 0) > 0 and os.clock() - (E.lastRenderAt or 0) > 6 then
+		local have = 0
+		for _, ch in ipairs(char:GetChildren()) do
+			if ch:IsA("Accessory") and ch:GetAttribute("ASU") then
+				have = have + 1
+			end
+		end
+		if have < E.rendered then
+			E.lastRenderAt = os.clock()
+			task.spawn(E.rerender)
+		end
+	end
 end
 
 local function countAccessories(char)
@@ -858,159 +1042,200 @@ end
 ------------------------------------------------------------------------
 -- COMMIT: terapkan "look" baru ke karakter + verifikasi
 ------------------------------------------------------------------------
-local function applyNative(hum, desc)
-	if E.remote then
-		local okI, r = pcall(function()
-			return E.remote:InvokeServer(serialize(desc))
-		end)
-		if okI and type(r) == "table" and r.ok then
-			if r.missing then
-				for _, mid in ipairs(r.missing) do
-					E.failed[mid] = true
+local function serverApply(desc)
+	local okI, r = pcall(function()
+		return E.remote:InvokeServer(serialize(desc))
+	end)
+	if okI and type(r) == "table" and r.ok then
+		if r.missing then
+			for _, mid in ipairs(r.missing) do
+				E.failed[mid] = true
+			end
+		end
+		return true
+	end
+	return false, okI and (type(r) == "table" and r.err or tostring(r)) or tostring(r)
+end
+
+-- RENDER DONOR: bangun rig donor dari description (diizinkan di klien untuk rig buatan sendiri),
+-- lalu pindahkan aksesori / pakaian / wajah / animasi / warna ke karakter kita.
+function E.renderLook(desc)
+	local hum, char = E.humanoid()
+	local model = donorModel(desc)
+	if not model then
+		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
+	end
+	E.cleanInjected(char)
+	for _, ch in ipairs(char:GetChildren()) do
+		if ch:IsA("Accessory") or ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+			ch:Destroy()
+		end
+	end
+	local nAcc = 0
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			harvestAccessory(ch, char)
+			nAcc = nAcc + 1
+		elseif ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+			local c = ch:Clone()
+			c.Parent = char
+		end
+	end
+	local faceId = getProp(desc, "Face")
+	local mh, head = model:FindFirstChild("Head"), char:FindFirstChild("Head")
+	if mh and head and type(faceId) == "number" and faceId > 0 then
+		local mf, f = mh:FindFirstChildOfClass("Decal"), head:FindFirstChildOfClass("Decal")
+		if mf and f then
+			f.Texture = mf.Texture
+		end
+	end
+	local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
+	local animChanged = false
+	if dan and can then
+		for tid, slot in pairs(ANIM_SLOT) do
+			local prop = CLASSIC[tid]
+			local v = prop and getProp(desc, prop)
+			if type(v) == "number" and v > 0 then
+				local df, cf = dan:FindFirstChild(slot[1]), can:FindFirstChild(slot[1])
+				if df and cf then
+					for _, name in ipairs(slot[2]) do
+						local a, b = df:FindFirstChild(name), cf:FindFirstChild(name)
+						if a and b and a:IsA("Animation") then
+							b.AnimationId = a.AnimationId
+							animChanged = true
+						end
+					end
 				end
 			end
-			return true, "server"
 		end
-		print("[AvatarStudio] server gagal, pindah ke native:", okI and (type(r) == "table" and r.err or r) or r)
 	end
-	local okA, err = pcall(function()
-		hum:ApplyDescription(desc)
+	if animChanged then
+		restartAnimate(char, hum)
+	end
+	copyBodyParts(model, char)
+	model:Destroy()
+	E.rendered = nAcc
+	E.lastRenderAt = os.clock()
+	logf("render donor: %d aksesori dipasang", nAcc)
+	return true
+end
+
+function E.rerender()
+	if E.busy or not E.look or E.remote then
+		return
+	end
+	E.busy = true
+	local ok, err = pcall(function()
+		local r, e = E.renderLook(E.look)
+		if not r then
+			logf("render ulang gagal: %s", tostring(e))
+		end
+		E.failed = {}
 	end)
-	if okA then
-		return true, "native"
+	if not ok then
+		logf("render ulang error: %s", tostring(err))
 	end
-	return false, tostring(err)
+	E.busy = false
+	E.reapplyTweaks()
+end
+
+local function isInjectable(t)
+	return t and (ACC[t] or t == 11 or t == 12 or t == 2 or t == 18 or ANIM_SLOT[t])
 end
 
 function E._commit(newLook, text, skipHist, force)
 	local hum, char = E.humanoid()
 	local prevSet = collect(E.look)
 	local nowSet = collect(newLook)
-	local added = {}
+	local added, removed = {}, {}
 	for id in pairs(nowSet) do
 		if not prevSet[id] then
 			table.insert(added, id)
 		end
 	end
+	for id in pairs(prevSet) do
+		if not nowSet[id] then
+			table.insert(removed, id)
+		end
+	end
 
-	-- MODE INJECT-FIRST (executor / map orang): tempel item langsung ke karakter,
-	-- tanpa ApplyDescription, supaya tidak ditolak/direset oleh map.
-	if E.injectFirst and not E.remote and not force then
-		local removedNative = false
-		local removed = {}
-		for id in pairs(prevSet) do
-			if not nowSet[id] then
-				if E.failed[id] then
-					table.insert(removed, id)
-				else
-					removedNative = true
-				end
-			end
-		end
-		local injectable = true
-		for _, id in ipairs(added) do
-			local t = E.assetType(id)
-			if not (t and (ACC[t] or t == 11 or t == 12 or t == 2 or t == 18 or ANIM_SLOT[t])) then
-				injectable = false
-			end
-		end
-		if not removedNative and injectable then
-			for _, id in ipairs(removed) do
-				E.failed[id] = nil
-				for _, ch in ipairs(char:GetChildren()) do
-					if ch:GetAttribute("AS") == id then
-						ch:Destroy()
+	local how
+	-- 1) server (kalau AvatarStudioServer ada)
+	if E.remote then
+		E.cleanInjected(char)
+		local ok, err = serverApply(newLook)
+		if ok then
+			how = "server"
+			for id in pairs(E.failed) do
+				if nowSet[id] then
+					local tid = E.assetType(id)
+					if tid then
+						E.inject(id, tid)
 					end
 				end
-				char:SetAttribute("ASX_" .. tostring(id), nil)
 			end
-			local bad = {}
-			for _, id in ipairs(added) do
-				E.failed[id] = true
-				if not E.inject(id, E.assetType(id)) then
-					E.failed[id] = nil
-					table.insert(bad, id)
-				end
-			end
-			for _, id in ipairs(bad) do
-				removeFromDesc(newLook, id)
-				toast("Tidak bisa memasang \"" .. E.name(id) .. "\": " .. tostring(E.lastInjectErr or "rig tidak cocok / diblokir"), "warn")
-			end
-			E.lastMethod = "injector"
-			if not skipHist and E.look then
-				table.insert(E.history, E.look)
-				while #E.history > 40 do
-					table.remove(E.history, 1)
-				end
-				E.redo = {}
-			end
-			E.look = newLook
-			fire()
-			return #bad == 0
+		else
+			logf("server menolak (%s) -> jalur klien", tostring(err))
 		end
 	end
 
-	E.cleanInjected(char)
-	local nd = E.withoutFailed(newLook)
-	local ok, how = applyNative(hum, nd)
-
-	if not ok then
-		-- semua item baru dianggap gagal native -> coba lewat injector
-		for _, id in ipairs(added) do
-			E.failed[id] = true
+	if not how then
+		-- 2) injector: tambah/lepas beberapa item saja, tanpa menyentuh yang lain
+		if not force and (#added + #removed) > 0 then
+			local canInc = true
+			for _, id in ipairs(removed) do
+				if not E.failed[id] then
+					canInc = false
+				end
+			end
+			for _, id in ipairs(added) do
+				if not isInjectable(E.assetType(id)) then
+					canInc = false
+				end
+			end
+			if canInc then
+				for _, id in ipairs(removed) do
+					E.failed[id] = nil
+					for _, ch in ipairs(char:GetChildren()) do
+						if ch:GetAttribute("AS") == id then
+							ch:Destroy()
+						end
+					end
+					char:SetAttribute("ASX_" .. tostring(id), nil)
+				end
+				local bad = 0
+				for _, id in ipairs(added) do
+					E.failed[id] = true
+					if not E.inject(id, E.assetType(id)) then
+						E.failed[id] = nil
+						bad = bad + 1
+					end
+				end
+				if bad == 0 then
+					how = "injector"
+				else
+					logf("injector gagal untuk %d item -> coba render donor", bad)
+				end
+			end
 		end
-		E.cleanInjected(char)
-		nd = E.withoutFailed(newLook)
-		ok, how = applyNative(hum, nd)
-		if not ok then
-			if E.injectFirst then
-				how = "injector"
-			else
-				toast("Gagal menerapkan: " .. tostring(how), "danger")
+		-- 3) render donor: seluruh look dibangun ulang oleh Roblox sendiri
+		if not how then
+			local ok, err = E.renderLook(newLook)
+			if not ok then
+				toast("Gagal memasang: " .. tostring(err) .. (E.lastInjectErr and (" | injector: " .. E.lastInjectErr) or ""), "danger")
 				return false
 			end
-		end
-	else
-		-- verifikasi: apakah jumlah aksesori di karakter sesuai?
-		local expected = #nd:GetAccessories(true)
-		local have = waitAccessories(char, expected, 3.5)
-		if have < expected then
-			local marked = 0
-			for _, id in ipairs(added) do
-				local t = E.assetType(id)
-				if t and ACC[t] then
-					E.failed[id] = true
-					marked = marked + 1
-				end
-			end
-			if marked > 0 then
-				E.cleanInjected(char)
-				nd = E.withoutFailed(newLook)
-				applyNative(hum, nd)
+			E.failed = {}
+			how = "donor-render"
+			local expected = #newLook:GetAccessories(true)
+			if (E.rendered or 0) < expected then
+				toast(string.format("Hanya %d dari %d aksesori yang berhasil dirender (sisanya diblokir Roblox/map).",
+					E.rendered or 0, expected), "warn")
 			end
 		end
 	end
 
-	-- jalur injector untuk item yang gagal native
-	local injected, dropped = 0, {}
-	for id in pairs(E.failed) do
-		if nowSet[id] then
-			local tid = E.assetType(id)
-			if tid and E.inject(id, tid) then
-				injected = injected + 1
-			else
-				table.insert(dropped, id)
-			end
-		end
-	end
-	for _, id in ipairs(dropped) do
-		removeFromDesc(newLook, id)
-		E.failed[id] = nil
-		toast("Tidak bisa menampilkan \"" .. E.name(id) .. "\". Item mungkin diblokir untuk game ini. "
-			.. "Pasang AvatarStudioServer.lua di ServerScriptService lalu coba lagi.", "warn")
-	end
-
-	E.lastMethod = how .. (injected > 0 and "+injector" or "")
+	E.lastMethod = how
 	if not skipHist and E.look then
 		table.insert(E.history, E.look)
 		while #E.history > 40 do
@@ -1021,7 +1246,7 @@ function E._commit(newLook, text, skipHist, force)
 	E.look = newLook
 	task.delay(0.3, E.reapplyTweaks)
 	fire()
-	return #dropped == 0
+	return true
 end
 
 function E.commit(newLook, text, skipHist, force)
@@ -1077,20 +1302,16 @@ function E.removeAsset(id)
 end
 
 function E.equipBundle(bundleId, bundleName)
-	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfo(bundleId, Enum.InfoType.Bundle)
-	end)
-	if not ok or not info or not info.Items then
+	local info = productInfo(bundleId, Enum.InfoType.Bundle)
+	if not info or not info.Items then
 		toast("Gagal membaca isi bundle", "danger")
 		return false
 	end
 	local nl = E.look:Clone()
 	for _, item in ipairs(info.Items) do
 		if item.Type == "UserOutfit" then
-			local ok2, od = pcall(function()
-				return Players:GetHumanoidDescriptionFromOutfitId(item.Id)
-			end)
-			if ok2 and od then
+			local od = descFromOutfit(item.Id)
+			if od then
 				mergeDescription(nl, od)
 			end
 		elseif item.Type == "Asset" then
@@ -1108,104 +1329,57 @@ function E.equipBundle(bundleId, bundleName)
 end
 
 function E.applyUserVisual(userId, displayName, keepLook)
-	local hum, char = E.humanoid()
-	local okM, model = pcall(function()
-		return Players:GetCharacterAppearanceAsync(userId)
-	end)
-	local fromDonor = false
-	if not okM or not model then
-		logf("GetCharacterAppearanceAsync gagal (%s), coba donor rig", tostring(model))
-		local okD2, d2 = pcall(function()
-			return Players:GetHumanoidDescriptionFromUserId(userId)
-		end)
-		model = (okD2 and d2) and donorModel(d2) or nil
-		fromDonor = model ~= nil
+	local desc, derr = descFromUser(userId)
+	if not desc then
+		logf("ambil avatar %s gagal: %s", tostring(userId), tostring(derr))
+		return false, "gagal mengambil avatar: " .. tostring(derr)
 	end
-	if not model then
-		return false
+	local ok, err = E.renderLook(desc)
+	if not ok then
+		logf("render avatar %s gagal: %s", tostring(userId), tostring(err))
+		return false, err
 	end
-	E.cleanInjected(char)
-	for _, ch in ipairs(char:GetChildren()) do
-		if ch:IsA("Accessory") or ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
-			ch:Destroy()
-		end
-	end
-	for _, ch in ipairs(model:GetChildren()) do
-		if ch:IsA("Accessory") then
-			local c = ch:Clone()
-			c:SetAttribute("ASU", true)
-			pcall(function()
-				hum:AddAccessory(c)
-			end)
-		elseif ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
-			local c = ch:Clone()
-			c:SetAttribute("ASU", true)
-			c.Parent = char
-		end
-	end
-	local mh, head = model:FindFirstChild("Head"), char:FindFirstChild("Head")
-	if mh and head then
-		local mf, f = mh:FindFirstChildOfClass("Decal"), head:FindFirstChildOfClass("Decal")
-		if mf and f then
-			f.Texture = mf.Texture
-		end
-	end
-	if fromDonor then
-		local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
-		if dan and can then
-			for _, slot in pairs(ANIM_SLOT) do
-				local df, cf = dan:FindFirstChild(slot[1]), can:FindFirstChild(slot[1])
-				if df and cf then
-					for _, name in ipairs(slot[2]) do
-						local a, b = df:FindFirstChild(name), cf:FindFirstChild(name)
-						if a and b and a:IsA("Animation") then
-							b.AnimationId = a.AnimationId
-						end
-					end
-				end
-			end
-			restartAnimate(char, hum)
-		end
-	end
-	model:Destroy()
 	if not keepLook then
-		E.failed = {}
-		local okD, desc = pcall(function()
-			return Players:GetHumanoidDescriptionFromUserId(userId)
-		end)
-		if okD and desc then
-			if E.look then
-				table.insert(E.history, E.look)
-				E.redo = {}
-			end
-			E.look = desc
+		if E.look then
+			table.insert(E.history, E.look)
+			E.redo = {}
 		end
+		E.look = desc
+		E.failed = {}
 		E.userVisual = userId
 		fire()
 	end
+	task.delay(0.3, E.reapplyTweaks)
 	return true
 end
 
 function E.applyUser(userId, displayName)
-	if not E.remote then
-		if E.applyUserVisual(userId, displayName) then
-			E.lastMethod = "visual-klien"
-			toast("Avatar dipakai: " .. tostring(displayName or userId) .. "  (visual-klien)", "ok")
-			return true
-		end
-	end
-	local ok, desc = pcall(function()
-		return Players:GetHumanoidDescriptionFromUserId(userId)
-	end)
-	if not ok or not desc then
-		toast("Avatar pemain tidak bisa dimuat", "danger")
+	if E.busy then
+		toast("Tunggu sebentar, avatar masih diproses...", "warn")
 		return false
 	end
-	local done = E.commit(desc, displayName)
-	if done then
-		toast("Avatar dipakai: " .. tostring(displayName or userId), "ok")
+	if E.remote then
+		local desc = descFromUser(userId)
+		if not desc then
+			toast("Avatar pemain tidak bisa dimuat", "danger")
+			return false
+		end
+		local done = E.commit(desc, displayName)
+		if done then
+			toast("Avatar dipakai: " .. tostring(displayName or userId), "ok")
+		end
+		return done
 	end
-	return done
+	E.busy = true
+	local ok, res, why = pcall(E.applyUserVisual, userId, displayName)
+	E.busy = false
+	if ok and res then
+		E.lastMethod = "donor-render"
+		toast("Avatar dipakai: " .. tostring(displayName or userId) .. "  (donor-render)", "ok")
+		return true
+	end
+	toast("Avatar tidak bisa dipasang: " .. tostring(ok and why or res) .. "  (lihat tab Log)", "danger")
+	return false
 end
 
 function E.removeAll()
@@ -1371,6 +1545,11 @@ function E.fullTest()
 			end
 		end)
 		logf("Executor: %s | PlaceId: %s | Server script: %s", exName, tostring(game.PlaceId), E.remote and "ADA" or "tidak ada")
+		logf("API baru: ApplyDescriptionAsync=%s | CreateHumanoidModelFromDescriptionAsync=%s | GetHumanoidDescriptionFromUserIdAsync=%s | GetProductInfoAsync=%s",
+			tostring(hasMember(Instance.new("Humanoid"), "ApplyDescriptionAsync")),
+			tostring(hasMember(Players, "CreateHumanoidModelFromDescriptionAsync")),
+			tostring(hasMember(Players, "GetHumanoidDescriptionFromUserIdAsync")),
+			tostring(hasMember(MarketplaceService, "GetProductInfoAsync")))
 		local hum, char = E.humanoid()
 		res("Karakter & Humanoid", true, "rig " .. hum.RigType.Name .. ", aksesori " .. countAccessories(char)
 			.. ", Animate " .. (char:FindFirstChild("Animate") and "ada" or "TIDAK ADA"))
@@ -1407,9 +1586,8 @@ function E.fullTest()
 			r4:Destroy()
 		end
 
-		local ok5, r5 = pcall(function()
-			return MarketplaceService:GetProductInfo(1028606, Enum.InfoType.Asset)
-		end)
+		local r5 = productInfo(1028606, Enum.InfoType.Asset)
+		local ok5 = r5 ~= nil
 		res("MarketplaceService:GetProductInfo", ok5 and r5 ~= nil, ok5 and "bisa" or tostring(r5))
 
 		local ok6, r6 = pcall(function()
@@ -1420,10 +1598,8 @@ function E.fullTest()
 		end)
 		res("AvatarEditorService:SearchCatalog", ok6 and r6 and r6 > 0, ok6 and (tostring(r6) .. " hasil") or tostring(r6))
 
-		local ok7, r7 = pcall(function()
-			hum:ApplyDescription(hum:GetAppliedDescription())
-		end)
-		res("Humanoid:ApplyDescription (native)", ok7, ok7 and "tidak error (bisa saja diabaikan map)" or tostring(r7))
+		local ok7, r7 = callAny(hum, { "ApplyDescriptionAsync", "ApplyDescription" }, appliedDesc(hum))
+		res("ApplyDescription ke karakter sendiri (biasanya DITOLAK di klien)", ok7, ok7 and "tidak error" or tostring(r7))
 
 		E.cap = { getObjects = ok1 and (gObj or nil) or false, insert = ok2 and (gIns or nil) or false, donor = gDon or false }
 		E.injectFirst = (E.cap.getObjects ~= false) or (E.cap.insert ~= false) or (E.cap.donor ~= false)
@@ -1434,17 +1610,25 @@ function E.fullTest()
 		local c = char:FindFirstChild("AS_1028606")
 		local handle = c and c:FindFirstChild("Handle")
 		local detail
+		local tooFar = false
 		if not injOk then
 			detail = E.lastInjectErr or "inject mengembalikan gagal"
 		elseif not c then
 			detail = "topi HILANG setelah 1 detik (map menghapusnya?)"
 		else
-			local mesh = handle and (handle:FindFirstChildOfClass("SpecialMesh"))
+			local mesh = handle and handle:FindFirstChildOfClass("SpecialMesh")
+			local head = char:FindFirstChild("Head")
+			local dist = (handle and head) and (handle.Position - head.Position).Magnitude or nil
 			detail = "handle=" .. (handle and "ada" or "TIDAK ADA") .. ", weld="
 				.. ((handle and handle:FindFirstChildOfClass("Weld")) and "ada" or "TIDAK ADA")
 				.. ", mesh=" .. tostring(handle and (handle:IsA("MeshPart") and handle.MeshId or (mesh and mesh.MeshId)) or "-")
+				.. ", jarak ke kepala=" .. (dist and string.format("%.1f", dist) or "?") .. " studs"
+			if dist and dist > 8 then
+				tooFar = true
+				detail = detail .. "  <-- TIDAK MENEMPEL (las gagal)"
+			end
 		end
-		res("Pasang topi uji (inject)", injOk and c ~= nil, detail)
+		res("Pasang topi uji (inject)", injOk and c ~= nil and not tooFar, detail)
 		if c then
 			c:Destroy()
 		end
@@ -1453,6 +1637,8 @@ function E.fullTest()
 		logf("----- KESIMPULAN -----")
 		if not (gObj or gIns or gDon) then
 			logf("Tidak ada pemuat aset yang jalan di sini -> item katalog TIDAK bisa dipasang oleh script ini.")
+		elseif tooFar then
+			logf("Aksesori masuk ke karakter tapi TIDAK menempel (las gagal / rig tidak cocok).")
 		elseif not injOk then
 			logf("Pemuat ada, tapi pemasangan gagal: %s", tostring(E.lastInjectErr))
 		else
@@ -1473,7 +1659,7 @@ function E.init()
 	E.hookChar(char)
 	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
 	E.probe()
-	local d = hum:GetAppliedDescription()
+	local d = appliedDesc(hum)
 	E.original = d:Clone()
 	E.look = d:Clone()
 	E.origColors = {}
@@ -1487,11 +1673,18 @@ function E.init()
 		newChar:WaitForChild("Humanoid")
 		E.hookChar(newChar)
 		task.wait(1)
-		if E.userVisual and not E.remote then
-			E.applyUserVisual(E.userVisual, nil, true)
-			E.guard()
-		elseif E.look then
-			E.commit(E.look:Clone(), "respawn", true, true)
+		if E.look then
+			if E.remote then
+				E.commit(E.look:Clone(), "respawn", true, true)
+			elseif not E.busy then
+				E.busy = true
+				pcall(function()
+					E.renderLook(E.look)
+					E.failed = {}
+				end)
+				E.busy = false
+				E.reapplyTweaks()
+			end
 		end
 	end)
 	task.spawn(function()
@@ -1569,9 +1762,7 @@ local function fetchDetails(ids, itemType)
 	if #ids == 0 then
 		return out
 	end
-	local ok, res = pcall(function()
-		return AvatarEditorService:GetBatchItemDetails(ids, itemType)
-	end)
+	local ok, res = batchDetails(ids, itemType)
 	if ok and type(res) == "table" then
 		for _, d in ipairs(res) do
 			out[d.Id] = d
@@ -2501,6 +2692,8 @@ UI.builders.info = function(page)
 	txt.Size = UDim2.new(1, 0, 0, 90)
 	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
 		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
+	button(scroll, { text = "↻ Render ulang avatar (jika item hilang)", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function() task.spawn(E.rerender) end })
 	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), order = 4, onClick = function() UI.setOpen(false) end })
 	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 36), bg = T.Danger, order = 5,
 		onClick = function() UI.gui:Destroy() end })
