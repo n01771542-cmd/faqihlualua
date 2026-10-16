@@ -261,10 +261,32 @@ end
 ----------------------------------------------------------------------------
 -- [4] TOAST
 ----------------------------------------------------------------------------
+local LOG = {}
+local logHook = nil
+
+local function logf(fmt, ...)
+	local line
+	if select("#", ...) > 0 then
+		local ok, r = pcall(string.format, fmt, ...)
+		line = ok and r or tostring(fmt)
+	else
+		line = tostring(fmt)
+	end
+	line = os.date("%H:%M:%S") .. "  " .. line
+	table.insert(LOG, line)
+	while #LOG > 500 do
+		table.remove(LOG, 1)
+	end
+	print("[AvatarStudio] " .. line)
+	if logHook then
+		pcall(logHook)
+	end
+end
+
 local toastHolder
 
 local function toast(text, kind)
-	print("[AvatarStudio] " .. tostring(text))
+	logf("%s", tostring(text))
 	if not toastHolder then
 		return
 	end
@@ -298,7 +320,7 @@ local E = {
 	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "", injectFirst = false,
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {},
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -489,18 +511,49 @@ end
 ------------------------------------------------------------------------
 -- INJECTOR (jalur cadangan): muat aset lalu pasang langsung ke karakter
 ------------------------------------------------------------------------
-local function loadAsset(id)
-	local ok, objs = pcall(function()
-		return game:GetObjects("rbxassetid://" .. tostring(id))
+-- "Donor rig": Roblox sendiri membangun model karakter dari HumanoidDescription.
+-- Kita ambil aksesori/pakaian/animasinya dari model itu -> tidak butuh GetObjects/LoadAsset.
+local function donorModel(desc)
+	local hum = E.humanoid()
+	local rig = (hum.RigType == Enum.HumanoidRigType.R6) and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
+	local ok, m = pcall(function()
+		return Players:CreateHumanoidModelFromDescription(desc, rig)
 	end)
-	if ok and type(objs) == "table" and #objs > 0 then
-		return objs
+	if ok and m then
+		return m
 	end
-	local ok2, model = pcall(function()
-		return InsertService:LoadAsset(id)
-	end)
-	if ok2 and model then
-		return { model }
+	logf("donor rig gagal: %s", tostring(m))
+	return nil
+end
+
+-- mengembalikan (objs, metode)
+local function loadAsset(id, tid)
+	if E.cap.getObjects ~= false then
+		local ok, objs = pcall(function()
+			return game:GetObjects("rbxassetid://" .. tostring(id))
+		end)
+		if ok and type(objs) == "table" and #objs > 0 then
+			return objs, "GetObjects"
+		end
+		logf("GetObjects gagal untuk %s: %s", tostring(id), ok and "hasil kosong" or tostring(objs))
+	end
+	if E.cap.insert ~= false then
+		local ok2, model = pcall(function()
+			return InsertService:LoadAsset(id)
+		end)
+		if ok2 and model then
+			return { model }, "LoadAsset"
+		end
+		logf("LoadAsset gagal untuk %s: %s", tostring(id), ok2 and "kosong" or tostring(model))
+	end
+	if E.cap.donor ~= false and tid then
+		local d = Instance.new("HumanoidDescription")
+		if addToDesc(d, id, tid) then
+			local m = donorModel(d)
+			if m then
+				return { m }, "donor"
+			end
+		end
 	end
 	return nil
 end
@@ -536,14 +589,36 @@ local function restartAnimate(char, hum)
 	end)
 end
 
-function E.inject(id, tid)
-	local hum, char = E.humanoid()
-	E.lastInjectErr = nil
-	local objs = loadAsset(id)
-	if not objs then
-		E.lastInjectErr = "aset tidak bisa dimuat (GetObjects/LoadAsset ditolak atau aset dihapus)"
+-- las manual Handle aksesori ke karakter lewat Attachment yang namanya sama
+local function manualAttach(acc, char)
+	local handle = acc:FindFirstChild("Handle")
+	if not handle then
 		return false
 	end
+	for _, att in ipairs(handle:GetChildren()) do
+		if att:IsA("Attachment") then
+			for _, part in ipairs(char:GetChildren()) do
+				if part:IsA("BasePart") then
+					local target = part:FindFirstChild(att.Name)
+					if target and target:IsA("Attachment") then
+						local w = Instance.new("Weld")
+						w.Name = "AccessoryWeld"
+						w.Part0 = handle
+						w.Part1 = part
+						w.C0 = att.CFrame
+						w.C1 = target.CFrame
+						w.Parent = handle
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function injectCore(id, tid, objs, kind)
+	local hum, char = E.humanoid()
 	local tag = "AS_" .. tostring(id)
 
 	if ACC[tid] then
@@ -559,8 +634,16 @@ function E.inject(id, tid)
 			hum:AddAccessory(c)
 		end)
 		if not okA then
-			E.lastInjectErr = "AddAccessory gagal: " .. tostring(errA)
-			return false
+			logf("AddAccessory error: %s (coba tempel manual)", tostring(errA))
+		end
+		if c.Parent ~= char then
+			c.Parent = char
+		end
+		local handle = c:FindFirstChild("Handle")
+		if handle and not handle:FindFirstChildOfClass("Weld") and not c:FindFirstChildWhichIsA("WrapLayer", true) then
+			if not manualAttach(c, char) then
+				E.lastInjectErr = "Handle tidak punya Attachment yang cocok dengan rig ini"
+			end
 		end
 		return c.Parent == char
 	elseif tid == 11 or tid == 12 or tid == 2 then
@@ -602,7 +685,33 @@ function E.inject(id, tid)
 		local slot = ANIM_SLOT[tid]
 		local folder = animate:FindFirstChild(slot[1])
 		if not folder then
+			E.lastInjectErr = "karakter tidak punya folder animasi '" .. slot[1] .. "'"
 			return false
+		end
+		if kind == "donor" then
+			local dan = objs[1]:FindFirstChild("Animate")
+			local df = dan and dan:FindFirstChild(slot[1])
+			if not df then
+				E.lastInjectErr = "donor rig tanpa Animate"
+				return false
+			end
+			E.animState = E.animState or {}
+			local rec2 = {}
+			for _, name in ipairs(slot[2]) do
+				local src, target = df:FindFirstChild(name), folder:FindFirstChild(name)
+				if src and target and src:IsA("Animation") then
+					target.AnimationId = src.AnimationId
+					table.insert(rec2, { target, src.AnimationId })
+				end
+			end
+			if #rec2 == 0 then
+				E.lastInjectErr = "slot animasi kosong"
+				return false
+			end
+			E.animState[id] = rec2
+			restartAnimate(char, hum)
+			char:SetAttribute("ASX_" .. tostring(id), true)
+			return true
 		end
 		local anims = {}
 		for _, o in ipairs(objs) do
@@ -618,18 +727,49 @@ function E.inject(id, tid)
 		if #anims == 0 then
 			return false
 		end
+		E.animState = E.animState or {}
+		local rec = {}
 		for i, name in ipairs(slot[2]) do
 			local target = folder:FindFirstChild(name)
 			local src = anims[i] or anims[1]
 			if target and src then
 				target.AnimationId = src.AnimationId
+				table.insert(rec, { target, src.AnimationId })
 			end
 		end
+		E.animState[id] = rec
 		restartAnimate(char, hum)
 		char:SetAttribute("ASX_" .. tostring(id), true)
 		return true
 	end
-	return false -- bodypart (kepala/torso/lengan/kaki) hanya didukung jalur native/server
+	E.lastInjectErr = "tipe item ini tidak bisa dipasang lewat injector (bodypart hanya native/server)"
+	return false
+end
+
+function E.inject(id, tid)
+	E.lastInjectErr = nil
+	local objs, kind = loadAsset(id, tid)
+	if not objs then
+		E.lastInjectErr = "semua pemuat gagal (GetObjects, LoadAsset, donor rig)"
+		logf("inject %s gagal: %s", tostring(id), E.lastInjectErr)
+		return false
+	end
+	local ok, res = pcall(injectCore, id, tid, objs, kind)
+	if kind == "donor" then
+		pcall(function()
+			objs[1]:Destroy()
+		end)
+	end
+	if not ok then
+		E.lastInjectErr = tostring(res)
+		res = false
+	end
+	if not res and not E.lastInjectErr then
+		E.lastInjectErr = "aset termuat tapi bentuknya tidak sesuai / tidak menempel di karakter"
+	end
+	logf("inject %s (tipe %s) via %s -> %s%s", tostring(id), tostring(tid), kind, res and "BERHASIL" or "GAGAL",
+		(not res and E.lastInjectErr) and (" : " .. E.lastInjectErr) or "")
+	return res and true or false
 end
 
 function E.cleanInjected(char)
@@ -646,9 +786,24 @@ function E.cleanInjected(char)
 end
 
 -- penjaga: pasang ulang item injector yang dihapus/direset oleh map
+function E.hookChar(char)
+	local pending = false
+	char.ChildRemoved:Connect(function(ch)
+		if ch:GetAttribute("AS") and not pending then
+			pending = true
+			task.delay(0.15, function()
+				pending = false
+				if E.injectFirst and not E.remote and not E.busy then
+					pcall(E.guard)
+				end
+			end)
+		end
+	end)
+end
+
 function E.guard()
 	local char = player.Character
-	if not char or not char:FindFirstChildOfClass("Humanoid") or not E.look then
+	if E.busy or not char or not char:FindFirstChildOfClass("Humanoid") or not E.look then
 		return
 	end
 	local nowSet = collect(E.look)
@@ -660,7 +815,18 @@ function E.guard()
 		end
 	end
 	for id in pairs(E.failed) do
-		if nowSet[id] and not present[id] and not char:GetAttribute("ASX_" .. tostring(id)) then
+		local intact = present[id] or (char:GetAttribute("ASX_" .. tostring(id)) ~= nil)
+		local rec = E.animState and E.animState[id]
+		if rec and char:GetAttribute("ASX_" .. tostring(id)) then
+			for _, r in ipairs(rec) do
+				if not r[1]:IsDescendantOf(char) or r[1].AnimationId ~= r[2] then
+					intact = false
+					char:SetAttribute("ASX_" .. tostring(id), nil)
+					break
+				end
+			end
+		end
+		if nowSet[id] and not intact then
 			local tid = E.assetType(id)
 			if tid then
 				E.inject(id, tid)
@@ -946,7 +1112,16 @@ function E.applyUserVisual(userId, displayName, keepLook)
 	local okM, model = pcall(function()
 		return Players:GetCharacterAppearanceAsync(userId)
 	end)
+	local fromDonor = false
 	if not okM or not model then
+		logf("GetCharacterAppearanceAsync gagal (%s), coba donor rig", tostring(model))
+		local okD2, d2 = pcall(function()
+			return Players:GetHumanoidDescriptionFromUserId(userId)
+		end)
+		model = (okD2 and d2) and donorModel(d2) or nil
+		fromDonor = model ~= nil
+	end
+	if not model then
 		return false
 	end
 	E.cleanInjected(char)
@@ -973,6 +1148,23 @@ function E.applyUserVisual(userId, displayName, keepLook)
 		local mf, f = mh:FindFirstChildOfClass("Decal"), head:FindFirstChildOfClass("Decal")
 		if mf and f then
 			f.Texture = mf.Texture
+		end
+	end
+	if fromDonor then
+		local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
+		if dan and can then
+			for _, slot in pairs(ANIM_SLOT) do
+				local df, cf = dan:FindFirstChild(slot[1]), can:FindFirstChild(slot[1])
+				if df and cf then
+					for _, name in ipairs(slot[2]) do
+						local a, b = df:FindFirstChild(name), cf:FindFirstChild(name)
+						if a and b and a:IsA("Animation") then
+							b.AnimationId = a.AnimationId
+						end
+					end
+				end
+			end
+			restartAnimate(char, hum)
 		end
 	end
 	model:Destroy()
@@ -1122,13 +1314,165 @@ function E.diagnose()
 	end
 end
 
-function E.init()
-	local hum, char = E.humanoid()
-	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
-	local okG, resG = pcall(function()
+-- deteksi kemampuan lingkungan (false = pasti tidak bisa, true = bisa, nil = belum pasti)
+function E.probe()
+	local cap = {}
+	local ok, r = pcall(function()
 		return game:GetObjects("rbxassetid://1028606")
 	end)
-	E.injectFirst = okG and type(resG) == "table" and #resG > 0
+	if not ok then
+		cap.getObjects = false
+	elseif type(r) == "table" and #r > 0 then
+		cap.getObjects = true
+	end
+	local ok2, m2 = pcall(function()
+		return InsertService:LoadAsset(1028606)
+	end)
+	if not ok2 then
+		cap.insert = false
+	elseif m2 then
+		cap.insert = true
+		pcall(function()
+			m2:Destroy()
+		end)
+	end
+	local d = Instance.new("HumanoidDescription")
+	addToDesc(d, 1028606, 8)
+	local dm = donorModel(d)
+	if dm then
+		cap.donor = dm:FindFirstChildOfClass("Accessory") ~= nil or nil
+		pcall(function()
+			dm:Destroy()
+		end)
+	else
+		cap.donor = false
+	end
+	E.cap = cap
+	E.injectFirst = (cap.getObjects ~= false) or (cap.insert ~= false) or (cap.donor ~= false)
+	logf("probe: GetObjects=%s LoadAsset=%s Donor=%s -> inject-first=%s", tostring(cap.getObjects), tostring(cap.insert),
+		tostring(cap.donor), tostring(E.injectFirst))
+end
+
+-- tes lengkap: mencari penyebab item/avatar/animasi tidak muncul
+function E.fullTest()
+	if E.testing then
+		return
+	end
+	E.testing = true
+	local function res(name, ok, detail)
+		logf("%s  %s%s", ok and "[ OK ]" or "[GAGAL]", name, detail and (" -> " .. tostring(detail)) or "")
+	end
+	local okAll, err = pcall(function()
+		logf("===== TES PENYEBAB =====")
+		local exName = "tidak diketahui"
+		pcall(function()
+			if identifyexecutor then
+				exName = tostring((identifyexecutor()))
+			end
+		end)
+		logf("Executor: %s | PlaceId: %s | Server script: %s", exName, tostring(game.PlaceId), E.remote and "ADA" or "tidak ada")
+		local hum, char = E.humanoid()
+		res("Karakter & Humanoid", true, "rig " .. hum.RigType.Name .. ", aksesori " .. countAccessories(char)
+			.. ", Animate " .. (char:FindFirstChild("Animate") and "ada" or "TIDAK ADA"))
+
+		local ok1, r1 = pcall(function()
+			return game:GetObjects("rbxassetid://1028606")
+		end)
+		local gObj = ok1 and type(r1) == "table" and #r1 > 0
+		res("game:GetObjects", gObj, ok1 and ("kelas: " .. ((r1 and r1[1]) and r1[1].ClassName or "kosong")) or tostring(r1))
+
+		local ok2, r2 = pcall(function()
+			return InsertService:LoadAsset(1028606)
+		end)
+		local gIns = ok2 and r2 ~= nil
+		res("InsertService:LoadAsset", gIns, ok2 and "bisa" or tostring(r2))
+		if ok2 and r2 then
+			r2:Destroy()
+		end
+
+		local dd = Instance.new("HumanoidDescription")
+		addToDesc(dd, 1028606, 8)
+		local dm = donorModel(dd)
+		local gDon = dm ~= nil and dm:FindFirstChildOfClass("Accessory") ~= nil
+		res("Donor rig (CreateHumanoidModelFromDescription)", gDon, dm and "model terbentuk" or "gagal / diblokir")
+		if dm then
+			dm:Destroy()
+		end
+
+		local ok4, r4 = pcall(function()
+			return Players:GetCharacterAppearanceAsync(1)
+		end)
+		res("GetCharacterAppearanceAsync", ok4 and r4 ~= nil, ok4 and "bisa" or tostring(r4))
+		if ok4 and r4 then
+			r4:Destroy()
+		end
+
+		local ok5, r5 = pcall(function()
+			return MarketplaceService:GetProductInfo(1028606, Enum.InfoType.Asset)
+		end)
+		res("MarketplaceService:GetProductInfo", ok5 and r5 ~= nil, ok5 and "bisa" or tostring(r5))
+
+		local ok6, r6 = pcall(function()
+			local prm = CatalogSearchParams.new()
+			prm.SearchKeyword = "cap"
+			local pg = AvatarEditorService:SearchCatalog(prm)
+			return #pg:GetCurrentPage()
+		end)
+		res("AvatarEditorService:SearchCatalog", ok6 and r6 and r6 > 0, ok6 and (tostring(r6) .. " hasil") or tostring(r6))
+
+		local ok7, r7 = pcall(function()
+			hum:ApplyDescription(hum:GetAppliedDescription())
+		end)
+		res("Humanoid:ApplyDescription (native)", ok7, ok7 and "tidak error (bisa saja diabaikan map)" or tostring(r7))
+
+		E.cap = { getObjects = ok1 and (gObj or nil) or false, insert = ok2 and (gIns or nil) or false, donor = gDon or false }
+		E.injectFirst = (E.cap.getObjects ~= false) or (E.cap.insert ~= false) or (E.cap.donor ~= false)
+
+		-- uji pemasangan topi sungguhan
+		local injOk = E.inject(1028606, 8)
+		task.wait(1.2)
+		local c = char:FindFirstChild("AS_1028606")
+		local handle = c and c:FindFirstChild("Handle")
+		local detail
+		if not injOk then
+			detail = E.lastInjectErr or "inject mengembalikan gagal"
+		elseif not c then
+			detail = "topi HILANG setelah 1 detik (map menghapusnya?)"
+		else
+			local mesh = handle and (handle:FindFirstChildOfClass("SpecialMesh"))
+			detail = "handle=" .. (handle and "ada" or "TIDAK ADA") .. ", weld="
+				.. ((handle and handle:FindFirstChildOfClass("Weld")) and "ada" or "TIDAK ADA")
+				.. ", mesh=" .. tostring(handle and (handle:IsA("MeshPart") and handle.MeshId or (mesh and mesh.MeshId)) or "-")
+		end
+		res("Pasang topi uji (inject)", injOk and c ~= nil, detail)
+		if c then
+			c:Destroy()
+		end
+		char:SetAttribute("ASX_1028606", nil)
+
+		logf("----- KESIMPULAN -----")
+		if not (gObj or gIns or gDon) then
+			logf("Tidak ada pemuat aset yang jalan di sini -> item katalog TIDAK bisa dipasang oleh script ini.")
+		elseif not injOk then
+			logf("Pemuat ada, tapi pemasangan gagal: %s", tostring(E.lastInjectErr))
+		else
+			logf("Pemasangan topi uji BERHASIL. Jika item lain tetap tidak muncul, kirim baris log 'inject ... GAGAL'.")
+		end
+		if hum.RigType == Enum.HumanoidRigType.R6 then
+			logf("Rig R6: pakaian layered tidak akan terlihat; aksesori biasa & pakaian klasik masih bisa.")
+		end
+	end)
+	if not okAll then
+		logf("[ERROR TES] %s", tostring(err))
+	end
+	E.testing = false
+end
+
+function E.init()
+	local hum, char = E.humanoid()
+	E.hookChar(char)
+	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
+	E.probe()
 	local d = hum:GetAppliedDescription()
 	E.original = d:Clone()
 	E.look = d:Clone()
@@ -1141,6 +1485,7 @@ function E.init()
 	end
 	player.CharacterAdded:Connect(function(newChar)
 		newChar:WaitForChild("Humanoid")
+		E.hookChar(newChar)
 		task.wait(1)
 		if E.userVisual and not E.remote then
 			E.applyUserVisual(E.userVisual, nil, true)
@@ -1150,7 +1495,7 @@ function E.init()
 		end
 	end)
 	task.spawn(function()
-		while task.wait(1.5) do
+		while task.wait(0.75) do
 			if E.injectFirst and not E.remote and not E.busy then
 				pcall(E.guard)
 			end
@@ -1421,6 +1766,7 @@ local TABS = {
 	{ key = "avatars", icon = "👥", name = "Avatar" },
 	{ key = "body", icon = "📏", name = "Tubuh" },
 	{ key = "color", icon = "🎨", name = "Warna" },
+	{ key = "log", icon = "📋", name = "Log" },
 	{ key = "info", icon = "⚙", name = "Setelan" },
 }
 UI.pages, UI.builders, UI.built, UI.railBtns, UI.onShow = {}, {}, {}, {}, {}
@@ -2099,6 +2445,46 @@ end
 ----------------------------------------------------------------------------
 -- [12] HALAMAN SETELAN
 ----------------------------------------------------------------------------
+UI.builders.log = function(page)
+	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Parent = page })
+	label(head, "Log & Tes Penyebab", 20, T.Text, Enum.Font.GothamBold).Size = UDim2.new(1, 0, 0, 26)
+	local sub = label(head, "Jalankan tes, lalu salin log dan kirim ke pembuat script.", 12, T.Dim, Enum.Font.Gotham)
+	sub.Position = UDim2.fromOffset(0, 24)
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 34), Position = UDim2.fromOffset(0, 46), BackgroundTransparency = 1, Parent = page })
+	button(row, { text = "▶ Jalankan Tes Penyebab", size = UDim2.new(0.42, -4, 1, 0), bg = T.Accent, textSize = 13,
+		onClick = function() task.spawn(E.fullTest) end })
+	button(row, { text = "📋 Salin", size = UDim2.new(0.29, -4, 1, 0), position = UDim2.new(0.42, 0, 0, 0), textSize = 13,
+		onClick = function()
+			local ok = pcall(function()
+				setclipboard(table.concat(LOG, "\n"))
+			end)
+			toast(ok and "Log disalin ke clipboard" or "setclipboard tidak ada di executor ini: blok lalu salin manual dari kotak log", ok and "ok" or "warn")
+		end })
+	button(row, { text = "Bersihkan", size = UDim2.new(0.29, 0, 1, 0), position = UDim2.new(0.71, 0, 0, 0), textSize = 13,
+		onClick = function()
+			for i = #LOG, 1, -1 do
+				LOG[i] = nil
+			end
+			if logHook then
+				logHook()
+			end
+		end })
+	local sc = makeScroll(page, UDim2.new(1, 0, 1, -88), UDim2.fromOffset(0, 88))
+	local box = mk("TextBox", {
+		Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.Surface, BorderSizePixel = 0,
+		TextColor3 = T.Text, Font = Enum.Font.Code, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, MultiLine = true, TextEditable = false,
+		ClearTextOnFocus = false, Text = "", Parent = sc,
+	})
+	corner(box, 8)
+	pad(box, 8, 8, 8, 8)
+	logHook = function()
+		box.Text = table.concat(LOG, "\n")
+		sc.CanvasPosition = Vector2.new(0, 100000)
+	end
+	logHook()
+end
+
 UI.builders.info = function(page)
 	local scroll = makeScroll(page)
 	vlist(scroll, 8)
@@ -2113,8 +2499,8 @@ UI.builders.info = function(page)
 	txt.TextWrapped = true
 	txt.TextYAlignment = Enum.TextYAlignment.Top
 	txt.Size = UDim2.new(1, 0, 0, 90)
-	button(scroll, { text = "🩺 Diagnostik avatar", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
-		onClick = function() task.spawn(E.diagnose) end })
+	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
+		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
 	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), order = 4, onClick = function() UI.setOpen(false) end })
 	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 36), bg = T.Danger, order = 5,
 		onClick = function() UI.gui:Destroy() end })
