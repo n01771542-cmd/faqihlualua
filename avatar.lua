@@ -1,5 +1,5 @@
 --[[ =============================================================================
-  leon4951hub  -  script.lua (berbasis Avatar Studio v2 + Mirror Skin)   (LocalScript / StarterPlayerScripts)
+  AVATAR STUDIO v2  -  script.lua   (LocalScript / StarterPlayerScripts)
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
@@ -33,12 +33,11 @@ local AvatarEditorService = game:GetService("AvatarEditorService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local InsertService = game:GetService("InsertService")
-local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local old = playerGui:FindFirstChild("leon4951hub")
+local old = playerGui:FindFirstChild("AvatarStudioUI")
 if old then
 	old:Destroy()
 end
@@ -354,7 +353,7 @@ local function logf(fmt, ...)
 	while #LOG > 500 do
 		table.remove(LOG, 1)
 	end
-	print("[leon4951hub] " .. line)
+	print("[AvatarStudio] " .. line)
 	if logHook then
 		pcall(logHook)
 	end
@@ -974,9 +973,6 @@ function E.hookChar(char)
 end
 
 function E.guard()
-	if E.mirrorMode and E.mirrorModel then
-		return E.mirrorGuard()
-	end
 	local char = player.Character
 	if E.busy or not char or not char:FindFirstChildOfClass("Humanoid") or not E.look then
 		return
@@ -1063,7 +1059,7 @@ end
 
 -- RENDER DONOR: bangun rig donor dari description (diizinkan di klien untuk rig buatan sendiri),
 -- lalu pindahkan aksesori / pakaian / wajah / animasi / warna ke karakter kita.
-function E.renderLookClassic(desc)
+function E.renderLook(desc)
 	local hum, char = E.humanoid()
 	local model = donorModel(desc)
 	if not model then
@@ -1132,240 +1128,6 @@ function E.renderLookClassic(desc)
 	return true
 end
 
-E.mirrorMode = true
-
--- kembalikan karakter asli + hapus rig donor
-function E.clearMirror()
-	if E.mirrorModel then
-		pcall(function()
-			E.mirrorModel:Destroy()
-		end)
-	end
-	E.mirrorModel = nil
-	E.fpParts = nil
-	for part, tr in pairs(E.hidden or {}) do
-		pcall(function()
-			if part.Parent then
-				part.Transparency = tr
-			end
-		end)
-	end
-	E.hidden = {}
-end
-
--- sembunyikan badan asli (lokal saja, tidak mereplikasi). Tool yang dipegang tidak disembunyikan.
-function E.hideReal(char)
-	E.hidden = E.hidden or {}
-	for _, d in ipairs(char:GetDescendants()) do
-		if (d:IsA("BasePart") and d.Name ~= "HumanoidRootPart") or d:IsA("Decal") then
-			if not d:FindFirstAncestorWhichIsA("Tool") then
-				if E.hidden[d] == nil then
-					E.hidden[d] = d.Transparency
-				end
-				if d.Transparency ~= 1 then
-					d.Transparency = 1
-				end
-			end
-		end
-	end
-end
-
-local function copyDescAnims(desc, model, char, hum)
-	local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
-	if not (dan and can) then
-		return
-	end
-	local changed = false
-	for tid, slot in pairs(ANIM_SLOT) do
-		local prop = CLASSIC[tid]
-		local v = prop and getProp(desc, prop)
-		if type(v) == "number" and v > 0 then
-			local df, cf = dan:FindFirstChild(slot[1]), can:FindFirstChild(slot[1])
-			if df and cf then
-				for _, name in ipairs(slot[2]) do
-					local a, b = df:FindFirstChild(name), cf:FindFirstChild(name)
-					if a and b and a:IsA("Animation") then
-						b.AnimationId = a.AnimationId
-						changed = true
-					end
-				end
-			end
-		end
-	end
-	if changed then
-		restartAnimate(char, hum)
-	end
-end
-
-function E.renderMirror(desc)
-	local hum, char = E.humanoid()
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return false, "HumanoidRootPart tidak ada"
-	end
-
-	-- samakan skala donor dengan skala karakter asli supaya sendi/las pas
-	local d = desc:Clone()
-	for key, prop in pairs(SCALE_DESC) do
-		local nv = hum:FindFirstChild(SCALE_VALUES[key])
-		if nv and nv:IsA("NumberValue") then
-			setProp(d, prop, nv.Value)
-		end
-	end
-
-	local model = donorModel(d)
-	if not model then
-		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescription ditolak)"
-	end
-
-	E.cleanInjected(char)
-	copyDescAnims(desc, model, char, hum)
-
-	-- donor hanya patung: buang script & sendi, nanti dilas ke karakter asli
-	for _, x in ipairs(model:GetDescendants()) do
-		if x:IsA("Script") or x:IsA("LocalScript") or x:IsA("Motor6D") then
-			x:Destroy()
-		end
-	end
-	local dh = model:FindFirstChildOfClass("Humanoid")
-	if dh then
-		pcall(function()
-			dh.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-			dh.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
-			dh.BreakJointsOnDeath = false
-			dh.RequiresNeck = false
-		end)
-		pcall(function()
-			dh.EvaluateStateMachine = false
-		end)
-		pcall(function()
-			dh.AutomaticScalingEnabled = false
-		end)
-		pcall(function()
-			dh:ChangeState(Enum.HumanoidStateType.Physics)
-		end)
-	end
-	for _, x in ipairs(model:GetDescendants()) do
-		if x:IsA("BasePart") then
-			x.Anchored = false
-			x.CanCollide = false
-			x.Massless = true
-			pcall(function()
-				x.CanTouch = false
-				x.CanQuery = false
-			end)
-		end
-	end
-
-	-- las tiap bagian donor ke bagian asli yang namanya sama (R15: UpperTorso, LeftHand, dst.)
-	local welded, nAcc = 0, 0
-	model.Name = "leon4951hub_skin"
-	model:PivotTo(char:GetPivot())
-	for _, dp in ipairs(model:GetChildren()) do
-		if dp:IsA("BasePart") then
-			local rp = char:FindFirstChild(dp.Name)
-			if not (rp and rp:IsA("BasePart")) then
-				rp = hrp
-			end
-			dp.CFrame = rp.CFrame
-			local w = Instance.new("Weld")
-			w.Name = "L4951Weld"
-			w.Part0 = rp
-			w.Part1 = dp
-			w.Parent = dp
-			welded = welded + 1
-		elseif dp:IsA("Accessory") then
-			nAcc = nAcc + 1
-		end
-	end
-	if welded == 0 then
-		model:Destroy()
-		return false, "tidak ada bagian donor yang bisa dilas"
-	end
-
-	E.clearMirror()
-	model.Parent = Workspace
-	E.mirrorModel = model
-	E.hideReal(char)
-
-	-- first person: sembunyikan kepala+aksesori donor agar tidak menutupi kamera
-	local fp = {}
-	local head = model:FindFirstChild("Head")
-	if head then
-		table.insert(fp, head)
-	end
-	for _, acc in ipairs(model:GetChildren()) do
-		if acc:IsA("Accessory") then
-			local h = acc:FindFirstChild("Handle")
-			if h and h:IsA("BasePart") then
-				table.insert(fp, h)
-			end
-		end
-	end
-	E.fpParts = fp
-
-	E.rendered = nAcc
-	E.lastRenderAt = os.clock()
-	logf("mirror skin: %d bagian dilas, %d aksesori", welded, nAcc)
-	return true
-end
-
--- pembungkus: mirror dulu, kalau gagal baru jalur lama
-function E.renderLook(desc)
-	if E.mirrorMode then
-		local ok, r1, r2 = pcall(E.renderMirror, desc)
-		if ok and r1 then
-			return true
-		end
-		logf("mirror gagal (%s) -> jalur lama", tostring(ok and r2 or r1))
-		E.clearMirror()
-	end
-	return E.renderLookClassic(desc)
-end
-
-function E.mirrorGuard()
-	local char = player.Character
-	if E.busy or not char or not E.look then
-		return
-	end
-	if not E.mirrorModel or not E.mirrorModel.Parent then
-		if os.clock() - (E.lastRenderAt or 0) > 6 then
-			E.lastRenderAt = os.clock()
-			task.spawn(E.rerender)
-		end
-		return
-	end
-	E.hideReal(char)
-end
-
--- bangun ulang donor setelah slider ukuran / reset warna (ditunda 0.6 dtk)
-function E.rebuildMirror()
-	E.scaleToken = (E.scaleToken or 0) + 1
-	local tk = E.scaleToken
-	task.delay(0.6, function()
-		if tk == E.scaleToken and E.mirrorModel and not E.busy then
-			E.rerender()
-		end
-	end)
-end
-
-RunService.RenderStepped:Connect(function()
-	local fp, cam = E.fpParts, Workspace.CurrentCamera
-	if not fp or not cam then
-		return
-	end
-	local head = fp[1]
-	if not head or not head.Parent then
-		return
-	end
-	local v = ((cam.CFrame.Position - head.Position).Magnitude < 1.5) and 1 or 0
-	for _, p in ipairs(fp) do
-		if p.Parent and p.LocalTransparencyModifier ~= v then
-			p.LocalTransparencyModifier = v
-		end
-	end
-end)
-
 function E.rerender()
 	if E.busy or not E.look or E.remote then
 		return
@@ -1427,7 +1189,7 @@ function E._commit(newLook, text, skipHist, force)
 
 	if not how then
 		-- 2) injector: tambah/lepas beberapa item saja, tanpa menyentuh yang lain
-		if not force and not E.mirrorMode and (#added + #removed) > 0 then
+		if not force and (#added + #removed) > 0 then
 			local canInc = true
 			for _, id in ipairs(removed) do
 				if not E.failed[id] then
@@ -1661,28 +1423,17 @@ function E.reset()
 	E.failed = {}
 	E.resetScales()
 	E.resetSkin()
-	if E.remote then
-		E.commit(E.original:Clone(), "reset")
-	else
-		E.clearMirror()
-		E.look = E.original:Clone()
-		E.history, E.redo = {}, {}
-		fire()
-		E.rerender()
-	end
+	E.commit(E.original:Clone(), "reset")
 	toast("Avatar dikembalikan seperti semula", "ok")
 end
 
 -- ukuran tubuh & warna kulit (langsung, tanpa ApplyDescription)
-function E.setScale(key, value, noRebuild)
+function E.setScale(key, value)
 	E.scales[key] = value
 	local hum = E.humanoid()
 	local nv = hum:FindFirstChild(SCALE_VALUES[key])
 	if nv and nv:IsA("NumberValue") then
 		nv.Value = value
-	end
-	if not noRebuild and E.mirrorModel then
-		E.rebuildMirror()
 	end
 end
 
@@ -1700,34 +1451,13 @@ function E.resetScales()
 	end
 end
 
-local function skinTargets()
-	local list = {}
+function E.setSkin(color)
+	E.skin = color
 	local _, char = E.humanoid()
 	local bc = char:FindFirstChildOfClass("BodyColors")
 	if bc then
-		table.insert(list, bc)
-	end
-	if E.mirrorModel and E.mirrorModel.Parent then
-		local mb = E.mirrorModel:FindFirstChildOfClass("BodyColors")
-		if mb then
-			table.insert(list, mb)
-		end
-	end
-	return list
-end
-
-function E.setSkin(color)
-	E.skin = color
-	for _, bc in ipairs(skinTargets()) do
 		for _, prop in ipairs(BODY_COLOR_PROPS) do
 			bc[prop] = color
-		end
-	end
-	if E.mirrorModel and E.mirrorModel.Parent then
-		for _, p in ipairs(E.mirrorModel:GetChildren()) do
-			if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
-				p.Color = color
-			end
 		end
 	end
 end
@@ -1735,20 +1465,19 @@ end
 function E.resetSkin()
 	E.skin = nil
 	if E.origColors then
-		for _, bc in ipairs(skinTargets()) do
+		local _, char = E.humanoid()
+		local bc = char:FindFirstChildOfClass("BodyColors")
+		if bc then
 			for _, prop in ipairs(BODY_COLOR_PROPS) do
 				bc[prop] = E.origColors[prop]
 			end
 		end
 	end
-	if E.mirrorModel then
-		E.rebuildMirror()
-	end
 end
 
 function E.reapplyTweaks()
 	for k, v in pairs(E.scales) do
-		E.setScale(k, v, true)
+		E.setScale(k, v)
 	end
 	if E.skin then
 		E.setSkin(E.skin)
@@ -2134,116 +1863,12 @@ local function newQuery(cat, keyword, sortIdx, freeOnly)
 	end
 	setProp(params, "Limit", PAGE_SIZE)
 	local tid = (cat.kind == "asset" and cat.list and #cat.list == 1) and NAME2TID[cat.list[1]] or nil
-	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid,
-		cat = cat, keyword = keyword or "", sortIdx = sortIdx, freeOnly = freeOnly }, Query)
-end
-
-local FALLBACK_KW = {
-	hat = "hat", hair = "hair", face_acc = "mask", neck = "scarf", shoulder = "shoulder",
-	front = "front", back = "backpack", waist = "belt", jacket = "jacket", sweater = "sweater",
-	l_shirt = "shirt", l_tshirt = "t-shirt", l_pants = "pants", shorts = "shorts", dress = "dress",
-	lshoe = "shoe", rshoe = "shoe", shirt = "shirt", pants = "pants", tshirt = "t-shirt",
-	face = "face", head = "head", torso = "torso", rarm = "arm", larm = "arm", rleg = "leg",
-	lleg = "leg", brow = "eyebrow", lash = "eyelash", a_idle = "idle animation",
-	a_walk = "walk animation", a_run = "run animation", a_jump = "jump animation",
-	a_fall = "fall animation", a_climb = "climb animation", a_swim = "swim animation",
-	a_mood = "mood", b_body = "rthro", b_anim = "animation pack", b_shoes = "shoes",
-}
-
-local function httpBody(url)
-	local req = (syn and syn.request) or http_request or request or (http and http.request)
-	if req then
-		local ok, res = pcall(req, { Url = url, Method = "GET" })
-		if ok and type(res) == "table" and res.Body and (res.StatusCode == 200 or res.Success) then
-			return res.Body
-		end
-		return nil, ok and ("HTTP " .. tostring(type(res) == "table" and res.StatusCode or res)) or tostring(res)
-	end
-	local ok, body = pcall(function()
-		return game:HttpGet(url)
-	end)
-	if ok and body then
-		return body
-	end
-	return nil, tostring(body)
-end
-
-function Query:nextPageHttp()
-	if self.finished then
-		return {}
-	end
-	local cat = self.cat
-	local kw = self.keyword or ""
-	if kw == "" then
-		kw = FALLBACK_KW[cat.id] or cat.name
-	end
-	local url = "https://catalog.roblox.com/v1/search/items/details?Keyword=" .. HttpService:UrlEncode(kw)
-		.. "&Limit=30&SortType=" .. tostring((self.sortIdx or 1) - 1)
-	if self.freeOnly then
-		url = url .. "&MaxPrice=0"
-	end
-	local out, tries = {}, 0
-	while #out == 0 and tries < 4 do
-		tries = tries + 1
-		local u = url
-		if self.cursor then
-			u = u .. "&Cursor=" .. HttpService:UrlEncode(self.cursor)
-		end
-		local body, herr = httpBody(u)
-		if not body then
-			if tries == 1 then
-				return nil, herr
-			end
-			break
-		end
-		local okJ, data = pcall(function()
-			return HttpService:JSONDecode(body)
-		end)
-		if not okJ or type(data) ~= "table" or type(data.data) ~= "table" then
-			if tries == 1 then
-				return nil, "respon HTTP tidak valid"
-			end
-			break
-		end
-		self.cursor = data.nextPageCursor
-		if not self.cursor then
-			self.finished = true
-		end
-		local wantBundle = cat.kind == "bundle"
-		for _, it in ipairs(data.data) do
-			local isBundle = it.itemType == "Bundle"
-			local keep = isBundle == wantBundle
-			if keep and not isBundle and self.tid and it.assetType and it.assetType ~= self.tid then
-				keep = false
-			end
-			if keep and it.id then
-				self.total = self.total + 1
-				table.insert(out, {
-					Id = it.id, Type = isBundle and "Bundle" or "Asset",
-					Name = it.name or ("Item #" .. tostring(it.id)),
-					Price = it.price or it.lowestPrice, Order = self.total,
-				})
-				if not isBundle then
-					E.names[it.id] = E.names[it.id] or it.name
-					if it.assetType then
-						E.types[it.id] = it.assetType
-					end
-				end
-			end
-		end
-		if self.finished then
-			break
-		end
-	end
-	return out
+	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid }, Query)
 end
 
 function Query:nextPage()
 	if self.finished then
 		return {}
-	end
-	if self.viaHttp then
-		return self:nextPageHttp()
 	end
 	local ok, res = pcall(function()
 		if not self.pages then
@@ -2266,13 +1891,7 @@ function Query:nextPage()
 		return self.pages:GetCurrentPage()
 	end)
 	if not ok then
-		local items2, herr = self:nextPageHttp()
-		if items2 then
-			self.viaHttp = true
-			logf("katalog: AvatarEditorService gagal (%s) -> pakai HTTP", tostring(res))
-			return items2
-		end
-		return nil, tostring(res) .. "  |  HTTP: " .. tostring(herr)
+		return nil, tostring(res)
 	end
 	if self.pages.IsFinished then
 		self.finished = true
@@ -2304,15 +1923,6 @@ function Query:nextPage()
 			end
 		end
 	end
-	if #items == 0 and self.total == 0 and not self.triedHttp then
-		self.triedHttp = true
-		local items2 = self:nextPageHttp()
-		if items2 and #items2 > 0 then
-			self.viaHttp = true
-			self.finished = false
-			return items2
-		end
-	end
 	return items
 end
 
@@ -2325,7 +1935,7 @@ local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly 
 	favorites = {}, favOrder = {}, recent = {}, token = 0 }
 
 UI.gui = mk("ScreenGui", {
-	Name = "leon4951hub", ResetOnSpawn = false, IgnoreGuiInset = true,
+	Name = "AvatarStudioUI", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 50, Parent = playerGui,
 })
 
@@ -2356,7 +1966,7 @@ UI.scale.Scale = computeScale()
 -- titlebar
 local TITLE_H = 52
 local titlebar = mk("Frame", { Size = UDim2.new(1, 0, 0, TITLE_H), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = UI.window })
-local tl = label(titlebar, "leon4951hub", 18, T.Text, Enum.Font.GothamBold)
+local tl = label(titlebar, "Avatar Studio", 18, T.Text, Enum.Font.GothamBold)
 tl.Position = UDim2.fromOffset(16, 6)
 tl.Size = UDim2.new(0, 260, 0, 22)
 UI.subtitle = label(titlebar, "Memuat karakter...", 12, T.Dim, Enum.Font.Gotham)
@@ -3069,7 +2679,6 @@ UI.builders.body = function(page)
 	end
 	button(scroll, { text = "Reset ukuran", size = UDim2.new(1, 0, 0, 36), order = 30, onClick = function()
 		E.resetScales()
-		E.rebuildMirror()
 		toast("Ukuran tubuh direset", "ok")
 	end })
 	UI.onShow.body = function()
@@ -3153,4 +2762,113 @@ UI.builders.log = function(page)
 	corner(box, 8)
 	pad(box, 8, 8, 8, 8)
 	logHook = function()
-		box.Text = table.concat(LOG
+		box.Text = table.concat(LOG, "\n")
+		sc.CanvasPosition = Vector2.new(0, 100000)
+	end
+	logHook()
+end
+
+UI.builders.info = function(page)
+	local scroll = makeScroll(page)
+	vlist(scroll, 8)
+	pad(scroll, 0, 0, 10, 12)
+	local t = label(scroll, "Setelan & diagnostik", 20, T.Text, Enum.Font.GothamBold)
+	t.LayoutOrder = 1
+	t.Size = UDim2.new(1, 0, 0, 26)
+	local txt = label(scroll,
+		"K  buka / tutup UI\nCtrl+Z  undo   •   Ctrl+Y  redo\n\nJika item tidak muncul: tekan Diagnostik, lalu pasang "
+		.. "AvatarStudioServer.lua di ServerScriptService (jalur paling pasti).", 13, T.Dim, Enum.Font.GothamMedium)
+	txt.LayoutOrder = 2
+	txt.TextWrapped = true
+	txt.TextYAlignment = Enum.TextYAlignment.Top
+	txt.Size = UDim2.new(1, 0, 0, 90)
+	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
+		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
+	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function() task.spawn(E.restoreBody) end })
+	local cb
+	cb = button(scroll, { text = "Salin bentuk tubuh donor: MATI", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function()
+			E.copyBody = not E.copyBody
+			cb.Text = "Salin bentuk tubuh donor: " .. (E.copyBody and "HIDUP (eksperimental)" or "MATI")
+		end })
+	button(scroll, { text = "↻ Render ulang avatar (jika item hilang)", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function() task.spawn(E.rerender) end })
+	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), order = 4, onClick = function() UI.setOpen(false) end })
+	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 36), bg = T.Danger, order = 5,
+		onClick = function() UI.gui:Destroy() end })
+end
+
+----------------------------------------------------------------------------
+-- [13] BUKA/TUTUP, KEYBIND, REAKSI
+----------------------------------------------------------------------------
+UI.fab = mk("TextButton", {
+	Size = UDim2.fromOffset(54, 54), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 14, 0.5, 0), Text = "👗",
+	TextSize = 26, AutoButtonColor = false, BackgroundColor3 = T.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 20, Parent = UI.gui,
+})
+corner(UI.fab, 27)
+UI.fab.Activated:Connect(function()
+	UI.setOpen(true)
+end)
+
+function UI.setOpen(open)
+	State.open = open
+	UI.window.Visible = open
+	UI.fab.Visible = not open
+end
+UI.closeBtn.Activated:Connect(function()
+	UI.setOpen(false)
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then
+		return
+	end
+	if input.KeyCode == TOGGLE_KEY then
+		UI.setOpen(not State.open)
+		return
+	end
+	local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+	if ctrl and State.open then
+		if input.KeyCode == Enum.KeyCode.Z then
+			task.spawn(E.undo)
+		elseif input.KeyCode == Enum.KeyCode.Y then
+			task.spawn(E.doRedo)
+		end
+	end
+end)
+
+local cam = Workspace.CurrentCamera
+if cam then
+	cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+		UI.scale.Scale = computeScale()
+	end)
+end
+
+E.onChanged(function()
+	local n = #E.wornList()
+	UI.subtitle.Text = n .. " item dipakai  •  mode: " .. (E.lastMethod ~= "" and E.lastMethod or (E.remote and "server" or "native"))
+	UI.undoBtn.TextTransparency = #E.history > 0 and 0 or 0.65
+	UI.redoBtn.TextTransparency = #E.redo > 0 and 0 or 0.65
+	if UI.refreshCards then
+		UI.refreshCards()
+	end
+	if UI.refreshWorn and State.tab == "worn" then
+		UI.refreshWorn()
+	end
+end)
+
+----------------------------------------------------------------------------
+-- [14] START
+----------------------------------------------------------------------------
+UI.showTab("catalog")
+UI.setOpen(true)
+
+task.spawn(function()
+	local ok, err = pcall(E.init)
+	if not ok then
+		toast("Gagal menyiapkan karakter: " .. tostring(err), "danger")
+		return
+	end
+	toast("Avatar Studio siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or (E.injectFirst and "INJECTOR (visual klien)" or "native")), "ok")
+end)
