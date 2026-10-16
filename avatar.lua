@@ -1067,7 +1067,7 @@ function E.renderLook(desc)
 	end
 	E.cleanInjected(char)
 	for _, ch in ipairs(char:GetChildren()) do
-		if ch:IsA("Accessory") or ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+		if ch:IsA("Accessory") or ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") then
 			ch:Destroy()
 		end
 	end
@@ -1077,6 +1077,12 @@ function E.renderLook(desc)
 			harvestAccessory(ch, char)
 			nAcc = nAcc + 1
 		elseif ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+			if ch:IsA("BodyColors") then
+				local oldBC = char:FindFirstChildOfClass("BodyColors")
+				if oldBC then
+					oldBC:Destroy()
+				end
+			end
 			local c = ch:Clone()
 			c.Parent = char
 		end
@@ -1112,7 +1118,9 @@ function E.renderLook(desc)
 	if animChanged then
 		restartAnimate(char, hum)
 	end
-	copyBodyParts(model, char)
+	if E.copyBody then
+		copyBodyParts(model, char)
+	end
 	model:Destroy()
 	E.rendered = nAcc
 	E.lastRenderAt = os.clock()
@@ -1410,6 +1418,7 @@ function E.doRedo()
 end
 
 function E.reset()
+	pcall(E.restoreBody)
 	E.userVisual = nil
 	E.failed = {}
 	E.resetScales()
@@ -1654,8 +1663,57 @@ function E.fullTest()
 	E.testing = false
 end
 
+local LIMBS = { "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+	"RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", "Torso",
+	"Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+
+function E.snapBody(char)
+	E.bodySnap = {}
+	for _, n in ipairs(LIMBS) do
+		local p = char:FindFirstChild(n)
+		if p and p:IsA("BasePart") then
+			local rec = { Transparency = p.Transparency }
+			if p:IsA("MeshPart") then
+				rec.MeshId = p.MeshId
+				rec.TextureID = p.TextureID
+			end
+			local sa = p:FindFirstChildOfClass("SurfaceAppearance")
+			if sa then
+				rec.SA = sa:Clone()
+			end
+			E.bodySnap[n] = rec
+		end
+	end
+end
+
+function E.restoreBody()
+	local _, char = E.humanoid()
+	for n, rec in pairs(E.bodySnap or {}) do
+		local p = char:FindFirstChild(n)
+		if p and p:IsA("BasePart") then
+			pcall(function()
+				p.Transparency = rec.Transparency
+				if rec.MeshId and p:IsA("MeshPart") then
+					p.MeshId = rec.MeshId
+					p.TextureID = rec.TextureID
+				end
+				for _, x in ipairs(p:GetChildren()) do
+					if x:IsA("SurfaceAppearance") then
+						x:Destroy()
+					end
+				end
+				if rec.SA then
+					rec.SA:Clone().Parent = p
+				end
+			end)
+		end
+	end
+	toast("Badan/tangan/kaki dipulihkan ke bentuk awal", "ok")
+end
+
 function E.init()
 	local hum, char = E.humanoid()
+	E.snapBody(char)
 	E.hookChar(char)
 	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
 	E.probe()
@@ -1776,10 +1834,10 @@ Query.__index = Query
 
 local function newQuery(cat, keyword, sortIdx, freeOnly)
 	local params = CatalogSearchParams.new()
-	params.SearchKeyword = keyword or ""
+	setProp(params, "SearchKeyword", keyword or "")
 	local se = safeEnum(Enum.CatalogSortType, SORTS[sortIdx].enum)
 	if se then
-		params.SortType = se
+		setProp(params, "SortType", se)
 	end
 	local assetTypes, bundleTypes = {}, {}
 	if cat.kind == "asset" then
@@ -1797,13 +1855,13 @@ local function newQuery(cat, keyword, sortIdx, freeOnly)
 			end
 		end
 	end
-	params.AssetTypes = assetTypes
-	params.BundleTypes = bundleTypes
-	params.IncludeOffSale = false
+	setProp(params, "AssetTypes", assetTypes)
+	setProp(params, "BundleTypes", bundleTypes)
+	setProp(params, "IncludeOffSale", false)
 	if freeOnly then
-		params.MaxPrice = 0
+		setProp(params, "MaxPrice", 0)
 	end
-	params.Limit = PAGE_SIZE
+	setProp(params, "Limit", PAGE_SIZE)
 	local tid = (cat.kind == "asset" and cat.list and #cat.list == 1) and NAME2TID[cat.list[1]] or nil
 	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid }, Query)
 end
@@ -1814,7 +1872,19 @@ function Query:nextPage()
 	end
 	local ok, res = pcall(function()
 		if not self.pages then
-			self.pages = AvatarEditorService:SearchCatalog(self.params)
+			local okS, r = callAny(AvatarEditorService, { "SearchCatalogAsync", "SearchCatalog" }, self.params)
+			if not okS then
+				local p2 = CatalogSearchParams.new()
+				setProp(p2, "SearchKeyword", getProp(self.params, "SearchKeyword") or "")
+				setProp(p2, "AssetTypes", getProp(self.params, "AssetTypes") or {})
+				setProp(p2, "BundleTypes", getProp(self.params, "BundleTypes") or {})
+				local ok2, r2 = callAny(AvatarEditorService, { "SearchCatalogAsync", "SearchCatalog" }, p2)
+				if not ok2 then
+					error(tostring(r) .. " | ulang: " .. tostring(r2))
+				end
+				r = r2
+			end
+			self.pages = r
 		else
 			self.pages:AdvanceToNextPageAsync()
 		end
@@ -2165,8 +2235,29 @@ UI.builders.catalog = function(page)
 			startQuery()
 		end })
 	local countL = label(row2, "", 12, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
-	countL.Size = UDim2.new(1, -252, 1, 0)
+	countL.Size = UDim2.new(1, -440, 1, 0)
 	countL.Position = UDim2.fromOffset(252, 0)
+	local idBox = mk("TextBox", { Size = UDim2.fromOffset(112, 32), Position = UDim2.new(1, -184, 0, 0), BackgroundColor3 = T.Surface,
+		BorderSizePixel = 0, Text = "", PlaceholderText = "ID item", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 13, Font = Enum.Font.GothamMedium, Parent = row2 })
+	corner(idBox, 8)
+	button(row2, { text = "Pakai", size = UDim2.fromOffset(64, 32), position = UDim2.new(1, -64, 0, 0), bg = T.Accent, textSize = 13,
+		onClick = function()
+			local id = tonumber(idBox.Text)
+			if not id then
+				toast("Isi ID angka dulu", "warn")
+				return
+			end
+			task.spawn(function()
+				if not E.assetType(id) then
+					local t = State.cat and State.cat.list and NAME2TID[State.cat.list[1]]
+					if t then
+						E.types[id] = t
+					end
+				end
+				E.toggleAsset(id, "ID " .. id)
+			end)
+		end })
 
 	-- grid
 	local grid = makeScroll(main, UDim2.new(1, 0, 1, -84), UDim2.fromOffset(0, 84))
@@ -2220,6 +2311,7 @@ UI.builders.catalog = function(page)
 			end
 			loading = false
 			if not items then
+				logf("katalog gagal: %s", tostring(err))
 				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err) .. "\n(Di Studio: pakai Play Solo & game harus punya akses API)")
 				countL.Text = ""
 				return
@@ -2692,6 +2784,14 @@ UI.builders.info = function(page)
 	txt.Size = UDim2.new(1, 0, 0, 90)
 	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
 		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
+	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function() task.spawn(E.restoreBody) end })
+	local cb
+	cb = button(scroll, { text = "Salin bentuk tubuh donor: MATI", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function()
+			E.copyBody = not E.copyBody
+			cb.Text = "Salin bentuk tubuh donor: " .. (E.copyBody and "HIDUP (eksperimental)" or "MATI")
+		end })
 	button(scroll, { text = "↻ Render ulang avatar (jika item hilang)", size = UDim2.new(1, 0, 0, 36), order = 3,
 		onClick = function() task.spawn(E.rerender) end })
 	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), order = 4, onClick = function() UI.setOpen(false) end })
