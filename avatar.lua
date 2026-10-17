@@ -33,6 +33,7 @@ local AvatarEditorService = game:GetService("AvatarEditorService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local InsertService = game:GetService("InsertService")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -347,6 +348,44 @@ local function appliedDesc(hum)
 		return d2
 	end
 	return Instance.new("HumanoidDescription")
+end
+
+local function urlenc(str)
+	return (tostring(str):gsub("[^%w%-_%.~]", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end))
+end
+
+-- ambil URL lewat: game:HttpGet (executor) -> request/http_request -> HttpService
+local function httpGet(url)
+	local why = {}
+	local okG, body = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if okG and type(body) == "string" and #body > 0 then
+		return body
+	end
+	table.insert(why, "HttpGet: " .. tostring(okG and "kosong" or body))
+	local req = (syn and syn.request) or request or http_request or (http and http.request) or (fluxus and fluxus.request)
+	if req then
+		local okR, res = pcall(function()
+			return req({ Url = url, Method = "GET" })
+		end)
+		if okR and type(res) == "table" and res.Body and (res.Success or res.StatusCode == 200) then
+			return res.Body
+		end
+		table.insert(why, "request: " .. tostring(okR and ("status " .. tostring(res and res.StatusCode)) or res))
+	else
+		table.insert(why, "request: tidak ada")
+	end
+	local okH, b2 = pcall(function()
+		return HttpService:GetAsync(url)
+	end)
+	if okH and type(b2) == "string" then
+		return b2
+	end
+	table.insert(why, "HttpService: " .. tostring(b2))
+	return nil, table.concat(why, " | ")
 end
 
 ----------------------------------------------------------------------------
@@ -2060,6 +2099,10 @@ function E.fullTest()
 		end)
 		res("AvatarEditorService:SearchCatalog", ok6 and r6 and r6 > 0, ok6 and (tostring(r6) .. " hasil") or tostring(r6))
 
+		local hb, he = httpGet("https://catalog.roblox.com/v2/search/items/details?assetTypeIds=8&Limit=10")
+		res("Katalog via web (HttpGet/request)", hb ~= nil and string.find(hb, "data", 1, true) ~= nil,
+			hb and ("respons " .. #hb .. " byte") or tostring(he))
+
 		local ok7, r7 = callAny(hum, { "ApplyDescriptionAsync", "ApplyDescription" }, appliedDesc(hum))
 		res("ApplyDescription ke karakter sendiri (biasanya DITOLAK di klien)", ok7, ok7 and "tidak error" or tostring(r7))
 
@@ -2267,6 +2310,30 @@ local SORTS = {
 	{ name = "Termahal", enum = "PriceHighToLow" },
 }
 
+for _, c in ipairs(CATEGORIES) do
+	if c.id == "b_body" then
+		c.httpCat = 4
+	elseif c.id == "b_anim" then
+		c.httpCat = 12
+	elseif c.id == "b_shoes" then
+		c.httpCat = 3
+	end
+end
+
+-- tipe aset -> Category katalog web (dipakai jalur HTTP v1 sebagai cadangan)
+local function httpCategoryFor(tid)
+	if tid == 8 or (tid and tid >= 41 and tid <= 47) or tid == 76 or tid == 77 then
+		return 11
+	elseif tid == 11 or tid == 12 or tid == 2 or (tid and tid >= 64 and tid <= 72) then
+		return 3
+	elseif tid == 18 or tid == 17 or (tid and tid >= 27 and tid <= 31) then
+		return 4
+	elseif tid and (tid >= 48 and tid <= 55 or tid == 78) then
+		return 12
+	end
+	return 1
+end
+
 local function fetchDetails(ids, itemType)
 	local out = {}
 	if #ids == 0 then
@@ -2285,7 +2352,12 @@ local Query = {}
 Query.__index = Query
 
 local function newQuery(cat, keyword, sortIdx, freeOnly)
-	local params = CatalogSearchParams.new()
+	local okP, params = pcall(function()
+		return CatalogSearchParams.new()
+	end)
+	if not okP then
+		params = nil
+	end
 	setProp(params, "SearchKeyword", keyword or "")
 	local se = safeEnum(Enum.CatalogSortType, SORTS[sortIdx].enum)
 	if se then
@@ -2315,12 +2387,16 @@ local function newQuery(cat, keyword, sortIdx, freeOnly)
 	end
 	setProp(params, "Limit", PAGE_SIZE)
 	local tid = (cat.kind == "asset" and cat.list and #cat.list == 1) and NAME2TID[cat.list[1]] or nil
-	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid }, Query)
+	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid, cat = cat,
+		keyword = keyword or "", sortNum = (sortIdx or 1) - 1, freeOnly = freeOnly }, Query)
 end
 
-function Query:nextPage()
+function Query:aesPage()
 	if self.finished then
 		return {}
+	end
+	if not self.params then
+		return nil, "CatalogSearchParams tidak tersedia di lingkungan ini"
 	end
 	local ok, res = pcall(function()
 		if not self.pages then
@@ -2376,6 +2452,110 @@ function Query:nextPage()
 		end
 	end
 	return items
+end
+
+function Query:httpPage()
+	local cat = self.cat
+	local common = "&Limit=" .. PAGE_SIZE .. "&SortType=" .. tostring(self.sortNum or 0)
+	if self.keyword ~= "" then
+		common = common .. "&Keyword=" .. urlenc(self.keyword)
+	end
+	if self.freeOnly then
+		common = common .. "&MaxPrice=0"
+	end
+	if self.cursor then
+		common = common .. "&cursor=" .. urlenc(self.cursor)
+	end
+	local urls = {}
+	for _, host in ipairs({ "https://catalog.roblox.com", "https://catalog.roproxy.com" }) do
+		if cat.kind == "asset" and self.tid then
+			table.insert(urls, host .. "/v2/search/items/details?assetTypeIds=" .. self.tid .. common)
+			table.insert(urls, host .. "/v1/search/items/details?Category=" .. httpCategoryFor(self.tid) .. common)
+		else
+			table.insert(urls, host .. "/v1/search/items/details?Category=" .. tostring(cat.httpCat or 1) .. common)
+		end
+	end
+	local a, b = 1, #urls
+	if self.httpIdx then
+		a, b = self.httpIdx, self.httpIdx
+	end
+	local lastErr = "tidak ada URL"
+	for i = a, b do
+		local body, herr = httpGet(urls[i])
+		if body then
+			local okJ, data = pcall(function()
+				return HttpService:JSONDecode(body)
+			end)
+			if okJ and type(data) == "table" and type(data.data) == "table" then
+				local items = {}
+				for _, d in ipairs(data.data) do
+					local at = tonumber(d.assetType)
+					local isBundle = d.itemType == "Bundle"
+					local keep
+					if cat.kind == "bundle" then
+						keep = isBundle
+					else
+						keep = (not isBundle) and (at == nil or self.tid == nil or at == self.tid)
+					end
+					if keep and tonumber(d.id) then
+						self.total = self.total + 1
+						local price = d.price
+						if price == nil then
+							price = d.lowestPrice
+						end
+						table.insert(items, {
+							Id = tonumber(d.id), Type = isBundle and "Bundle" or "Asset", Name = tostring(d.name or ("Item #" .. d.id)),
+							Price = price, Order = self.total,
+						})
+						if not isBundle then
+							E.names[tonumber(d.id)] = E.names[tonumber(d.id)] or tostring(d.name)
+							E.types[tonumber(d.id)] = at or self.tid or E.types[tonumber(d.id)]
+						end
+					end
+				end
+				if #items > 0 or data.nextPageCursor or self.total > 0 or i == b then
+					self.httpIdx = i
+					self.cursor = data.nextPageCursor
+					if not self.cursor then
+						self.finished = true
+					end
+					return items
+				end
+				lastErr = "hasil kosong dari " .. urls[i]
+			else
+				lastErr = "JSON tidak valid dari " .. urls[i]
+			end
+		else
+			lastErr = tostring(herr)
+		end
+	end
+	return nil, lastErr
+end
+
+function Query:nextPage()
+	if self.finished then
+		return {}
+	end
+	local errs = {}
+	if self.backend ~= "http" then
+		local items, err = self:aesPage()
+		if items and not (#items == 0 and self.total == 0 and self.backend == nil) then
+			self.backend = "aes"
+			return items
+		end
+		if self.backend == "aes" then
+			return nil, err
+		end
+		table.insert(errs, "AvatarEditorService: " .. tostring(err or "hasil kosong"))
+		self.finished = false
+	end
+	local items2, err2 = self:httpPage()
+	if items2 then
+		self.backend = "http"
+		return items2
+	end
+	table.insert(errs, "Web: " .. tostring(err2))
+	return nil, table.concat(errs, "\n")
 end
 
 ----------------------------------------------------------------------------
@@ -2775,7 +2955,7 @@ UI.builders.catalog = function(page)
 			if q.total == 0 then
 				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
 			end
-			countL.Text = q.total .. " item" .. (q.finished and "" or "+")
+			countL.Text = q.total .. " item" .. (q.finished and "" or "+") .. (q.backend and ("  •  " .. q.backend) or "")
 		end)
 	end
 
