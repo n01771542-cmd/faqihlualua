@@ -1349,10 +1349,28 @@ function E.attachDirect(id, host)
 	return okA
 end
 
+-- apakah donor Roblox sanggup memuat aksesori ini sendirian? (false = aset dibuang diam-diam)
+local function donorHas(id, tid)
+	local d = Instance.new("HumanoidDescription")
+	if not addToDesc(d, id, tid) then
+		return false
+	end
+	local m = donorModel(d)
+	if not m then
+		return false
+	end
+	local has = m:FindFirstChildOfClass("Accessory") ~= nil
+	pcall(function()
+		m:Destroy()
+	end)
+	return has
+end
+
+-- donor kekurangan aksesori: cari yang hilang, coba muat langsung; kembalikan (jumlahDimuat, daftarGagal)
 local function directFallback(desc, added, model, nAcc)
 	local expected = #desc:GetAccessories(true)
 	if nAcc >= expected then
-		return 0
+		return 0, {}
 	end
 	local dset = collect(desc)
 	local cand = {}
@@ -1364,15 +1382,22 @@ local function directFallback(desc, added, model, nAcc)
 	for _, id in ipairs(added or {}) do
 		cand[id] = true
 	end
-	local n = 0
+	local n, failed = 0, {}
 	for id in pairs(cand) do
 		local tid = E.assetType(id)
-		if tid and ACC[tid] and E.attachDirect(id, model) then
-			E.directIds[id] = true
-			n = n + 1
+		if tid and ACC[tid] then
+			if not E.directIds[id] and donorHas(id, tid) then
+				logf("aksesori %s dimuat donor sendiri", tostring(id))
+			elseif E.attachDirect(id, model) then
+				E.directIds[id] = true
+				n = n + 1
+			else
+				logf("aksesori %s DITOLAK: donor membuangnya & muat langsung gagal", tostring(id))
+				table.insert(failed, id)
+			end
 		end
 	end
-	return n
+	return n, failed
 end
 
 -- SKIN BONEKA: rig donor utuh (sendi sendiri) dipasang di belakang HumanoidRootPart kita,
@@ -1482,7 +1507,8 @@ function E.renderSkinPuppet(desc, added)
 	E.skinAcc = nAcc
 	E.rendered = 0
 	E.lastRenderAt = os.clock()
-	local direct = directFallback(desc, added, model, nAcc)
+	local direct, bad = directFallback(desc, added, model, nAcc)
+	E.lastFailedIds = bad
 	E.skinAcc = nAcc + direct
 	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d dimuat langsung, offset tinggi %.2f", #links, nAcc, direct, offY)
 	task.delay(0.2, E.reapplyTweaks)
@@ -1490,6 +1516,7 @@ function E.renderSkinPuppet(desc, added)
 end
 
 function E.skinRender(desc, added)
+	E.lastFailedIds = {}
 	if E.skinMode == "weld" then
 		return E.renderSkinWeld(desc)
 	end
@@ -1636,6 +1663,10 @@ function E._commit(newLook, text, skipHist, force)
 		if okS then
 			how = "skin"
 			E.failed = {}
+			for _, bid in ipairs(E.lastFailedIds or {}) do
+				removeFromDesc(newLook, bid)
+				toast("\"" .. E.name(bid) .. "\" ditolak Roblox (sering: item off-sale/UGC terbatas di rig klien) dan muat langsung juga gagal. Coba item lain.", "warn")
+			end
 			local expected = #newLook:GetAccessories(true)
 			if (E.skinAcc or 0) < expected then
 				toast(string.format("Hanya %d dari %d aksesori yang berhasil dirender (sisanya diblokir Roblox/map).",
@@ -1755,7 +1786,7 @@ function E.toggleAsset(id, itemName)
 	if ok then
 		if worn then
 			toast("Dilepas: " .. tostring(itemName or id), "warn")
-		else
+		elseif E.isWorn(id) then
 			toast("Dipakai: " .. tostring(itemName or id) .. "  (" .. E.lastMethod .. ")", "ok")
 		end
 	end
