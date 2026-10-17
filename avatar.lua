@@ -411,7 +411,7 @@ local E = {
 	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true,
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {},
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -1171,6 +1171,10 @@ end
 -- SKIN OVERLAY: seluruh rig donor (badan, tangan, kaki, kepala, pakaian, aksesori) dilas ke
 -- bagian tubuh kita; bagian asli disembunyikan. Sendi/animasi karakter asli tidak disentuh.
 function E.removeSkin()
+	if E.skinConn then
+		E.skinConn:Disconnect()
+		E.skinConn = nil
+	end
 	local char = player.Character
 	if char then
 		local sk = char:FindFirstChild(SKIN_NAME)
@@ -1187,7 +1191,7 @@ function E.removeSkin()
 	E.skinActive = false
 end
 
-function E.renderSkin(desc)
+function E.renderSkinWeld(desc)
 	local hum, char = E.humanoid()
 	local model = donorModel(desc)
 	if not model then
@@ -1271,9 +1275,196 @@ function E.renderSkin(desc)
 	return true
 end
 
+-- muat aksesori langsung (GetObjects/LoadAsset) lalu las ke rig skin: cadangan kalau donor menolak aset
+function E.attachDirect(id, host)
+	if not host then
+		return false
+	end
+	local objs
+	local ok, o = pcall(function()
+		return game:GetObjects("rbxassetid://" .. tostring(id))
+	end)
+	if ok and type(o) == "table" and #o > 0 then
+		objs = o
+	else
+		local ok2, m = pcall(function()
+			return InsertService:LoadAsset(id)
+		end)
+		if ok2 and m then
+			objs = { m }
+		end
+	end
+	if not objs then
+		logf("muat langsung %s gagal (GetObjects & LoadAsset ditolak)", tostring(id))
+		return false
+	end
+	local acc = findIn(objs, "Accessory")
+	if not acc then
+		logf("muat langsung %s: aset bukan Accessory", tostring(id))
+		return false
+	end
+	local c = acc:Clone()
+	c.Name = "AS_" .. tostring(id)
+	local okA, how = attachAccessory(c, host)
+	logf("muat langsung %s -> %s (%s)", tostring(id), tostring(okA), tostring(how))
+	return okA
+end
+
+local function directFallback(desc, added, model, nAcc)
+	local expected = #desc:GetAccessories(true)
+	if nAcc >= expected then
+		return 0
+	end
+	local dset = collect(desc)
+	local cand = {}
+	for id in pairs(E.directIds) do
+		if dset[id] then
+			cand[id] = true
+		end
+	end
+	for _, id in ipairs(added or {}) do
+		cand[id] = true
+	end
+	local n = 0
+	for id in pairs(cand) do
+		local tid = E.assetType(id)
+		if tid and ACC[tid] and E.attachDirect(id, model) then
+			E.directIds[id] = true
+			n = n + 1
+		end
+	end
+	return n
+end
+
+-- SKIN BONEKA: rig donor utuh (sendi sendiri) dipasang di belakang HumanoidRootPart kita,
+-- lalu Motor6D.Transform disalin tiap frame -> bentuk tubuh donor + gerakan karaktermu.
+function E.renderSkinPuppet(desc, added)
+	local hum, char = E.humanoid()
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return false, "karakter tanpa HumanoidRootPart"
+	end
+	local model = donorModel(desc)
+	if not model then
+		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
+	end
+	local dhrp = model:FindFirstChild("HumanoidRootPart")
+	if not dhrp then
+		model:Destroy()
+		return false, "donor tanpa HumanoidRootPart"
+	end
+	copyAnimations(model, char, hum, desc)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("LuaSourceContainer") then
+			d:Destroy()
+		end
+	end
+	local nAcc = 0
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			nAcc = nAcc + 1
+		end
+	end
+	local dh = model:FindFirstChildOfClass("Humanoid")
+	if dh then
+		pcall(function()
+			dh.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			dh.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			dh.BreakJointsOnDeath = false
+			dh.EvaluateStateMachine = false
+		end)
+		pcall(function()
+			dh:ChangeState(Enum.HumanoidStateType.Physics)
+		end)
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+			d.Massless = true
+		end
+	end
+	-- samakan tinggi telapak kaki dengan karakter kita
+	local offY = 0
+	if hum.RigType == Enum.HumanoidRigType.R15 and dh then
+		local okH, v = pcall(function()
+			return (dh.HipHeight + dhrp.Size.Y / 2) - (hum.HipHeight + hrp.Size.Y / 2)
+		end)
+		if okH and type(v) == "number" and math.abs(v) <= 6 then
+			offY = v
+		end
+	end
+	E.removeSkin()
+	if not model.PrimaryPart then
+		model.PrimaryPart = dhrp
+	end
+	model:PivotTo(hrp.CFrame * CFrame.new(0, offY, 0))
+	local w = Instance.new("Weld")
+	w.Name = "AS_SkinWeld"
+	w.Part0 = hrp
+	w.Part1 = dhrp
+	w.C0 = CFrame.new(0, offY, 0)
+	w.C1 = CFrame.new()
+	w.Parent = dhrp
+	-- peta sendi: Motor6D karakter kita -> Motor6D donor (nama sama)
+	local ours = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("Motor6D") and not ours[d.Name] then
+			ours[d.Name] = d
+		end
+	end
+	local links = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Motor6D") and ours[d.Name] then
+			table.insert(links, { ours[d.Name], d })
+		end
+	end
+	if #links == 0 then
+		model:Destroy()
+		return false, "tidak ada sendi (Motor6D) yang cocok antara karakter dan donor"
+	end
+	E.hidden = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and not d:FindFirstAncestorOfClass("Tool") then
+			E.hidden[d] = d.Transparency
+			d.Transparency = 1
+		end
+	end
+	model.Name = SKIN_NAME
+	model.Parent = char
+	E.skinConn = RunService.RenderStepped:Connect(function()
+		for _, l in ipairs(links) do
+			l[2].Transform = l[1].Transform
+		end
+	end)
+	E.skinActive = true
+	E.skinAcc = nAcc
+	E.rendered = 0
+	E.lastRenderAt = os.clock()
+	local direct = directFallback(desc, added, model, nAcc)
+	E.skinAcc = nAcc + direct
+	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d dimuat langsung, offset tinggi %.2f", #links, nAcc, direct, offY)
+	task.delay(0.2, E.reapplyTweaks)
+	return true
+end
+
+function E.skinRender(desc, added)
+	if E.skinMode == "weld" then
+		return E.renderSkinWeld(desc)
+	end
+	local ok, err = E.renderSkinPuppet(desc, added)
+	if ok then
+		return true
+	end
+	logf("skin boneka gagal: %s -> coba las per-bagian", tostring(err))
+	return E.renderSkinWeld(desc)
+end
+
 function E.apply(desc)
 	if E.useSkin and E.cap.donor ~= false then
-		local ok, err = E.renderSkin(desc)
+		local ok, err = E.skinRender(desc)
 		if ok then
 			return true
 		end
@@ -1402,7 +1593,7 @@ function E._commit(newLook, text, skipHist, force)
 	end
 
 	if not how and E.useSkin and E.cap.donor ~= false then
-		local okS, errS = E.renderSkin(newLook)
+		local okS, errS = E.skinRender(newLook, added)
 		if okS then
 			how = "skin"
 			E.failed = {}
@@ -3043,6 +3234,13 @@ UI.builders.info = function(page)
 	txt.Size = UDim2.new(1, 0, 0, 90)
 	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
 		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
+	local mb
+	mb = button(scroll, { text = "Gaya skin: BONEKA (bentuk tubuh donor utuh)", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function()
+			E.skinMode = (E.skinMode == "puppet") and "weld" or "puppet"
+			mb.Text = "Gaya skin: " .. (E.skinMode == "puppet" and "BONEKA (bentuk tubuh donor utuh)" or "LAS PER-BAGIAN")
+			task.spawn(E.rerender)
+		end })
 	local sb
 	sb = button(scroll, { text = "Mode kulit overlay (badan ikut berubah): HIDUP", size = UDim2.new(1, 0, 0, 36), order = 3,
 		onClick = function()
