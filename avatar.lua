@@ -43,6 +43,12 @@ if old then
 	old:Destroy()
 end
 
+local GEN = (tonumber(playerGui:GetAttribute("leon_gen")) or 0) + 1
+playerGui:SetAttribute("leon_gen", GEN)
+local function stale()
+	return playerGui:GetAttribute("leon_gen") ~= GEN
+end
+
 local REMOTE_NAME = "AvatarStudioApply"
 local PAGE_SIZE = 30
 local TOGGLE_KEY = Enum.KeyCode.K
@@ -1027,6 +1033,9 @@ function E.hookChar(char)
 end
 
 function E.guard()
+	if stale() then
+		return
+	end
 	local char = player.Character
 	if E.busy or not char or not char:FindFirstChildOfClass("Humanoid") or not E.look then
 		return
@@ -1226,6 +1235,17 @@ function E.removeSkin()
 			part.Transparency = tr
 		end)
 	end
+	if char then
+		for _, d in ipairs(char:GetDescendants()) do
+			local ot = d:GetAttribute("AS_OT")
+			if ot ~= nil then
+				pcall(function()
+					d.Transparency = ot
+				end)
+				d:SetAttribute("AS_OT", nil)
+			end
+		end
+	end
 	E.hidden = {}
 	E.skinActive = false
 end
@@ -1299,7 +1319,12 @@ function E.renderSkinWeld(desc)
 	E.hidden = {}
 	for _, d in ipairs(char:GetDescendants()) do
 		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and not d:FindFirstAncestorOfClass("Tool") then
-			E.hidden[d] = d.Transparency
+			local ot = d:GetAttribute("AS_OT")
+			if ot == nil then
+				ot = d.Transparency
+				d:SetAttribute("AS_OT", ot)
+			end
+			E.hidden[d] = ot
 			d.Transparency = 1
 		end
 	end
@@ -1492,7 +1517,12 @@ function E.renderSkinPuppet(desc, added)
 	E.hidden = {}
 	for _, d in ipairs(char:GetDescendants()) do
 		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and not d:FindFirstAncestorOfClass("Tool") then
-			E.hidden[d] = d.Transparency
+			local ot = d:GetAttribute("AS_OT")
+			if ot == nil then
+				ot = d.Transparency
+				d:SetAttribute("AS_OT", ot)
+			end
+			E.hidden[d] = ot
 			d.Transparency = 1
 		end
 	end
@@ -2253,6 +2283,9 @@ function E.init()
 	end
 	player.CharacterAdded:Connect(function(newChar)
 		newChar:WaitForChild("Humanoid")
+		if stale() then
+			return
+		end
 		E.hookChar(newChar)
 		E.skinActive = false
 		E.hidden = {}
@@ -2273,6 +2306,9 @@ function E.init()
 	end)
 	task.spawn(function()
 		while task.wait(0.75) do
+			if stale() then
+				break
+			end
 			if E.injectFirst and not E.remote and not E.busy then
 				pcall(E.guard)
 			end
@@ -2649,7 +2685,8 @@ UI.undoBtn = button(tbBtns, { text = "↶", size = UDim2.fromOffset(40, 34), tex
 	onClick = function() task.spawn(E.undo) end })
 UI.redoBtn = button(tbBtns, { text = "↷", size = UDim2.fromOffset(40, 34), textSize = 18, order = 2,
 	onClick = function() task.spawn(E.doRedo) end })
-UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(40, 34), bg = T.Danger, order = 3 })
+UI.destroyBtn = button(tbBtns, { text = "💥", size = UDim2.fromOffset(40, 34), textSize = 16, bg = rgb(120, 40, 56), order = 3 })
+UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(40, 34), bg = T.Danger, order = 4 })
 
 -- drag
 do
@@ -3471,7 +3508,7 @@ UI.builders.info = function(page)
 		onClick = function() task.spawn(E.rerender) end })
 	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), order = 4, onClick = function() UI.setOpen(false) end })
 	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 36), bg = T.Danger, order = 5,
-		onClick = function() UI.gui:Destroy() end })
+		onClick = function() UI.destroyUI() end })
 end
 
 ----------------------------------------------------------------------------
@@ -3482,40 +3519,121 @@ UI.fab = mk("TextButton", {
 	TextSize = 26, AutoButtonColor = false, BackgroundColor3 = T.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 20, Parent = UI.gui,
 })
 corner(UI.fab, 27)
--- tombol 👗 bisa digeser; sentuh/klik tanpa geser = buka UI
+-- tombol 👗 bisa digeser BEBAS ke mana saja, termasuk keluar layar (disisakan 12px agar masih bisa dipegang)
 do
 	local fab = UI.fab
-	local dragging, moved, startPos, startAbs = false, false, nil, nil
+	fab.Active = true
+	local KEEP = 12
+	local p0, moved = nil, false
+
+	local function settle()
+		local cam2 = Workspace.CurrentCamera
+		local vp = cam2 and cam2.ViewportSize or Vector2.new(1280, 720)
+		local ap, sz = fab.AbsolutePosition, fab.AbsoluteSize
+		local x = math.clamp(ap.X, -(sz.X - KEEP), vp.X - KEEP)
+		local y = math.clamp(ap.Y, -(sz.Y - KEEP), vp.Y - KEEP)
+		fab.AnchorPoint = Vector2.zero
+		fab.Position = UDim2.fromOffset(x, y)
+	end
+
 	fab.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging, moved = true, false
-			startPos = input.Position
-			startAbs = fab.AbsolutePosition
+			p0 = fab.AbsolutePosition
+			moved = false
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local dx, dy = input.Position.X - startPos.X, input.Position.Y - startPos.Y
-			if math.abs(dx) + math.abs(dy) > 8 then
+	-- klik / sentuh tanpa geser = buka UI
+	fab.Activated:Connect(function()
+		if not moved then
+			UI.setOpen(true)
+		end
+	end)
+
+	local okDD, dd = pcall(function()
+		local d = Instance.new("UIDragDetector")
+		d.ResponseStyle = Enum.UIDragDetectorResponseStyle.Offset
+		d.Parent = fab
+		return d
+	end)
+	if okDD and dd then
+		dd.DragStart:Connect(function()
+			p0 = fab.AbsolutePosition
+			moved = false
+		end)
+		dd.DragContinue:Connect(function()
+			if p0 and (fab.AbsolutePosition - p0).Magnitude > 8 then
 				moved = true
 			end
+		end)
+		dd.DragEnd:Connect(function()
 			if moved then
-				local cam2 = Workspace.CurrentCamera
-				local vp = cam2 and cam2.ViewportSize or Vector2.new(1280, 720)
-				local x = math.clamp(startAbs.X + dx, 0, vp.X - fab.AbsoluteSize.X)
-				local y = math.clamp(startAbs.Y + dy, 0, vp.Y - fab.AbsoluteSize.Y)
-				fab.AnchorPoint = Vector2.zero
-				fab.Position = UDim2.fromOffset(x, y)
+				settle()
 			end
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-			dragging = false
-			if not moved then
-				UI.setOpen(true)
+		end)
+		logf("tombol 👗: geser bebas aktif (UIDragDetector)")
+	else
+		local dragging, dragInput, dragStart, startAbs = false, nil, nil, nil
+		fab.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				dragStart = input.Position
+				startAbs = fab.AbsolutePosition
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragging = false
+						if moved then
+							settle()
+						end
+					end
+				end)
 			end
+		end)
+		fab.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				dragInput = input
+			end
+		end)
+		UserInputService.InputChanged:Connect(function(input)
+			if dragging and input == dragInput and startAbs then
+				local dx, dy = input.Position.X - dragStart.X, input.Position.Y - dragStart.Y
+				if math.abs(dx) + math.abs(dy) > 8 then
+					moved = true
+				end
+				if moved then
+					fab.AnchorPoint = Vector2.zero
+					fab.Position = UDim2.fromOffset(startAbs.X + dx, startAbs.Y + dy)
+				end
+			end
+		end)
+		logf("tombol 👗: geser bebas aktif (cara manual, UIDragDetector tidak tersedia)")
+	end
+end
+
+-- hapus UI + tombol 👗; avatar (skin) di tubuh TETAP: skin menempel di karakter, bukan di UI
+function UI.destroyUI()
+	E.uiDestroyed = true
+	toastHolder = nil
+	logf("UI dihapus. Avatar tetap dipakai.")
+	if UI.gui then
+		UI.gui:Destroy()
+	end
+end
+
+do
+	local confirmAt = 0
+	UI.destroyBtn.Activated:Connect(function()
+		if os.clock() - confirmAt < 3 then
+			UI.destroyUI()
+			return
 		end
+		confirmAt = os.clock()
+		UI.destroyBtn.Text = "❓"
+		toast("Tekan 💥 sekali lagi untuk menghapus UI. Avatar di tubuhmu tetap dipakai.", "warn")
+		task.delay(3, function()
+			if UI.destroyBtn.Parent then
+				UI.destroyBtn.Text = "💥"
+			end
+		end)
 	end)
 end
 
@@ -3529,7 +3647,7 @@ UI.closeBtn.Activated:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then
+	if gp or E.uiDestroyed then
 		return
 	end
 	if input.KeyCode == TOGGLE_KEY then
