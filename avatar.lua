@@ -1,5 +1,5 @@
 --[[ =============================================================================
-  AVATAR STUDIO v2  -  script.lua   (LocalScript / StarterPlayerScripts)
+  leon4951hub  -  script.lua   (LocalScript / StarterPlayerScripts)
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
@@ -37,7 +37,7 @@ local InsertService = game:GetService("InsertService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local old = playerGui:FindFirstChild("AvatarStudioUI")
+local old = playerGui:FindFirstChild("leon4951hub")
 if old then
 	old:Destroy()
 end
@@ -108,6 +108,21 @@ local SCALE_DESC = {
 	Height = "HeightScale", Width = "WidthScale", Depth = "DepthScale",
 	Head = "HeadScale", Proportion = "ProportionScale", BodyType = "BodyTypeScale",
 }
+local SKIN_NAME = "AS_Skin"
+local LIMBS = { "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+	"RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", "Torso",
+	"Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+local function isBodyPart(name)
+	if name == "Head" then
+		return true
+	end
+	for _, n in ipairs(LIMBS) do
+		if n == name then
+			return true
+		end
+	end
+	return false
+end
 local BODY_COLOR_PROPS = {
 	"HeadColor3", "TorsoColor3", "LeftArmColor3", "RightArmColor3", "LeftLegColor3", "RightLegColor3",
 }
@@ -353,7 +368,7 @@ local function logf(fmt, ...)
 	while #LOG > 500 do
 		table.remove(LOG, 1)
 	end
-	print("[AvatarStudio] " .. line)
+	print("[leon4951hub] " .. line)
 	if logHook then
 		pcall(logHook)
 	end
@@ -396,7 +411,7 @@ local E = {
 	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {},
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true,
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -1004,6 +1019,10 @@ function E.guard()
 			end
 		end
 	end
+	if not E.remote and E.skinActive and not char:FindFirstChild(SKIN_NAME) and os.clock() - (E.lastRenderAt or 0) > 6 then
+		E.lastRenderAt = os.clock()
+		task.spawn(E.rerender)
+	end
 	-- aksesori hasil render donor dihapus map? render ulang (maks 1x / 6 detik)
 	if not E.remote and (E.rendered or 0) > 0 and os.clock() - (E.lastRenderAt or 0) > 6 then
 		local have = 0
@@ -1057,6 +1076,223 @@ local function serverApply(desc)
 	return false, okI and (type(r) == "table" and r.err or tostring(r)) or tostring(r)
 end
 
+local function matchAttachment(cp, dp)
+	for _, da in ipairs(dp:GetChildren()) do
+		if da:IsA("Attachment") and string.sub(da.Name, -13) == "RigAttachment" then
+			local ca = cp:FindFirstChild(da.Name)
+			if ca and ca:IsA("Attachment") then
+				return ca, da
+			end
+		end
+	end
+	for _, da in ipairs(dp:GetChildren()) do
+		if da:IsA("Attachment") then
+			local ca = cp:FindFirstChild(da.Name)
+			if ca and ca:IsA("Attachment") then
+				return ca, da
+			end
+		end
+	end
+	return nil
+end
+
+function E.snapAnim(char)
+	E.animOrig = {}
+	local an = char:FindFirstChild("Animate")
+	if not an then
+		return
+	end
+	for _, slot in pairs(ANIM_SLOT) do
+		local f = an:FindFirstChild(slot[1])
+		if f then
+			for _, name in ipairs(slot[2]) do
+				local a = f:FindFirstChild(name)
+				if a and a:IsA("Animation") then
+					E.animOrig[slot[1] .. "/" .. name] = a.AnimationId
+				end
+			end
+		end
+	end
+end
+
+-- salin animasi dari donor (slot yang dipilih); slot yang dilepas dikembalikan ke aslinya
+local function copyAnimations(model, char, hum, desc)
+	local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
+	if not (dan and can) then
+		return
+	end
+	E.animChanged = E.animChanged or {}
+	local changed = false
+	for tid, slot in pairs(ANIM_SLOT) do
+		local prop = CLASSIC[tid]
+		local v = prop and getProp(desc, prop)
+		local cf = can:FindFirstChild(slot[1])
+		if cf then
+			if type(v) == "number" and v > 0 then
+				local df = dan:FindFirstChild(slot[1])
+				if df then
+					local srcList = {}
+					for _, a in ipairs(df:GetChildren()) do
+						if a:IsA("Animation") then
+							table.insert(srcList, a)
+						end
+					end
+					for i, name in ipairs(slot[2]) do
+						local b = cf:FindFirstChild(name)
+						local a = df:FindFirstChild(name)
+						if not (a and a:IsA("Animation")) then
+							a = srcList[i] or srcList[1]
+						end
+						if a and b and b:IsA("Animation") then
+							b.AnimationId = a.AnimationId
+							changed = true
+						end
+					end
+					E.animChanged[slot[1]] = true
+				end
+			elseif E.animChanged[slot[1]] then
+				for _, name in ipairs(slot[2]) do
+					local b = cf:FindFirstChild(name)
+					local orig = E.animOrig and E.animOrig[slot[1] .. "/" .. name]
+					if b and orig and b:IsA("Animation") then
+						b.AnimationId = orig
+						changed = true
+					end
+				end
+				E.animChanged[slot[1]] = nil
+			end
+		end
+	end
+	if changed then
+		restartAnimate(char, hum)
+	end
+end
+
+-- SKIN OVERLAY: seluruh rig donor (badan, tangan, kaki, kepala, pakaian, aksesori) dilas ke
+-- bagian tubuh kita; bagian asli disembunyikan. Sendi/animasi karakter asli tidak disentuh.
+function E.removeSkin()
+	local char = player.Character
+	if char then
+		local sk = char:FindFirstChild(SKIN_NAME)
+		if sk then
+			sk:Destroy()
+		end
+	end
+	for part, tr in pairs(E.hidden or {}) do
+		pcall(function()
+			part.Transparency = tr
+		end)
+	end
+	E.hidden = {}
+	E.skinActive = false
+end
+
+function E.renderSkin(desc)
+	local hum, char = E.humanoid()
+	local model = donorModel(desc)
+	if not model then
+		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
+	end
+	copyAnimations(model, char, hum, desc)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Motor6D") or d:IsA("LuaSourceContainer") then
+			d:Destroy()
+		end
+	end
+	local nAcc = 0
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			nAcc = nAcc + 1
+		end
+	end
+	local dh = model:FindFirstChildOfClass("Humanoid")
+	if dh then
+		pcall(function()
+			dh.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			dh.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			dh.RequiresNeck = false
+			dh.BreakJointsOnDeath = false
+			dh.EvaluateStateMachine = false
+		end)
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+			d.Massless = true
+		end
+	end
+	E.removeSkin()
+	local welded = 0
+	for _, dp in ipairs(model:GetChildren()) do
+		if dp:IsA("BasePart") then
+			local cp = char:FindFirstChild(dp.Name)
+			if cp and cp:IsA("BasePart") then
+				local c0, c1 = CFrame.new(), CFrame.new()
+				local ca, da = matchAttachment(cp, dp)
+				if ca then
+					c0, c1 = ca.CFrame, da.CFrame
+				end
+				dp.CFrame = cp.CFrame * c0 * c1:Inverse()
+				local w = Instance.new("Weld")
+				w.Name = "AS_SkinWeld"
+				w.Part0 = cp
+				w.Part1 = dp
+				w.C0 = c0
+				w.C1 = c1
+				w.Parent = dp
+				welded = welded + 1
+			else
+				dp.Transparency = 1
+			end
+		end
+	end
+	if welded == 0 then
+		model:Destroy()
+		return false, "tidak ada bagian tubuh yang cocok untuk dilas (rig berbeda?)"
+	end
+	E.hidden = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and not d:FindFirstAncestorOfClass("Tool") then
+			E.hidden[d] = d.Transparency
+			d.Transparency = 1
+		end
+	end
+	model.Name = SKIN_NAME
+	model.Parent = char
+	E.skinActive = true
+	E.skinAcc = nAcc
+	E.rendered = 0
+	E.lastRenderAt = os.clock()
+	logf("skin overlay: %d bagian dilas, %d aksesori", welded, nAcc)
+	task.delay(0.2, E.reapplyTweaks)
+	return true
+end
+
+function E.apply(desc)
+	if E.useSkin and E.cap.donor ~= false then
+		local ok, err = E.renderSkin(desc)
+		if ok then
+			return true
+		end
+		logf("skin gagal: %s -> pakai render donor biasa", tostring(err))
+	end
+	E.removeSkin()
+	return E.renderLook(desc)
+end
+
+function E.scheduleRerender()
+	E.rrToken = (E.rrToken or 0) + 1
+	local t = E.rrToken
+	task.delay(0.7, function()
+		if t == E.rrToken then
+			E.rerender()
+		end
+	end)
+end
+
 -- RENDER DONOR: bangun rig donor dari description (diizinkan di klien untuk rig buatan sendiri),
 -- lalu pindahkan aksesori / pakaian / wajah / animasi / warna ke karakter kita.
 function E.renderLook(desc)
@@ -1095,29 +1331,7 @@ function E.renderLook(desc)
 			f.Texture = mf.Texture
 		end
 	end
-	local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
-	local animChanged = false
-	if dan and can then
-		for tid, slot in pairs(ANIM_SLOT) do
-			local prop = CLASSIC[tid]
-			local v = prop and getProp(desc, prop)
-			if type(v) == "number" and v > 0 then
-				local df, cf = dan:FindFirstChild(slot[1]), can:FindFirstChild(slot[1])
-				if df and cf then
-					for _, name in ipairs(slot[2]) do
-						local a, b = df:FindFirstChild(name), cf:FindFirstChild(name)
-						if a and b and a:IsA("Animation") then
-							b.AnimationId = a.AnimationId
-							animChanged = true
-						end
-					end
-				end
-			end
-		end
-	end
-	if animChanged then
-		restartAnimate(char, hum)
-	end
+	copyAnimations(model, char, hum, desc)
 	if E.copyBody then
 		copyBodyParts(model, char)
 	end
@@ -1134,7 +1348,7 @@ function E.rerender()
 	end
 	E.busy = true
 	local ok, err = pcall(function()
-		local r, e = E.renderLook(E.look)
+		local r, e = E.apply(E.look)
 		if not r then
 			logf("render ulang gagal: %s", tostring(e))
 		end
@@ -1184,6 +1398,21 @@ function E._commit(newLook, text, skipHist, force)
 			end
 		else
 			logf("server menolak (%s) -> jalur klien", tostring(err))
+		end
+	end
+
+	if not how and E.useSkin and E.cap.donor ~= false then
+		local okS, errS = E.renderSkin(newLook)
+		if okS then
+			how = "skin"
+			E.failed = {}
+			local expected = #newLook:GetAccessories(true)
+			if (E.skinAcc or 0) < expected then
+				toast(string.format("Hanya %d dari %d aksesori yang berhasil dirender (sisanya diblokir Roblox/map).",
+					E.skinAcc or 0, expected), "warn")
+			end
+		else
+			logf("skin gagal: %s (pakai jalur cadangan)", tostring(errS))
 		end
 	end
 
@@ -1342,7 +1571,7 @@ function E.applyUserVisual(userId, displayName, keepLook)
 		logf("ambil avatar %s gagal: %s", tostring(userId), tostring(derr))
 		return false, "gagal mengambil avatar: " .. tostring(derr)
 	end
-	local ok, err = E.renderLook(desc)
+	local ok, err = E.apply(desc)
 	if not ok then
 		logf("render avatar %s gagal: %s", tostring(userId), tostring(err))
 		return false, err
@@ -1418,6 +1647,18 @@ function E.doRedo()
 end
 
 function E.reset()
+	if E.skinActive then
+		E.removeSkin()
+		E.userVisual = nil
+		E.failed = {}
+		E.resetScales()
+		E.resetSkin()
+		E.look = E.original:Clone()
+		E.history, E.redo = {}, {}
+		fire()
+		toast("Avatar dikembalikan seperti semula", "ok")
+		return
+	end
 	pcall(E.restoreBody)
 	E.userVisual = nil
 	E.failed = {}
@@ -1428,12 +1669,16 @@ function E.reset()
 end
 
 -- ukuran tubuh & warna kulit (langsung, tanpa ApplyDescription)
-function E.setScale(key, value)
+function E.setScale(key, value, noRender)
 	E.scales[key] = value
 	local hum = E.humanoid()
 	local nv = hum:FindFirstChild(SCALE_VALUES[key])
 	if nv and nv:IsA("NumberValue") then
 		nv.Value = value
+	end
+	if E.skinActive and E.look and not noRender then
+		setProp(E.look, SCALE_DESC[key], value)
+		E.scheduleRerender()
 	end
 end
 
@@ -1447,6 +1692,12 @@ function E.resetScales()
 			if v and nv and nv:IsA("NumberValue") then
 				nv.Value = v
 			end
+			if E.skinActive and E.look and v then
+				setProp(E.look, prop, v)
+			end
+		end
+		if E.skinActive then
+			E.scheduleRerender()
 		end
 	end
 end
@@ -1460,10 +1711,21 @@ function E.setSkin(color)
 			bc[prop] = color
 		end
 	end
+	local sk = char:FindFirstChild(SKIN_NAME)
+	if sk then
+		for _, p in ipairs(sk:GetChildren()) do
+			if p:IsA("BasePart") and isBodyPart(p.Name) then
+				p.Color = color
+			end
+		end
+	end
 end
 
 function E.resetSkin()
 	E.skin = nil
+	if E.skinActive then
+		E.scheduleRerender()
+	end
 	if E.origColors then
 		local _, char = E.humanoid()
 		local bc = char:FindFirstChildOfClass("BodyColors")
@@ -1477,7 +1739,7 @@ end
 
 function E.reapplyTweaks()
 	for k, v in pairs(E.scales) do
-		E.setScale(k, v)
+		E.setScale(k, v, true)
 	end
 	if E.skin then
 		E.setSkin(E.skin)
@@ -1663,10 +1925,6 @@ function E.fullTest()
 	E.testing = false
 end
 
-local LIMBS = { "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
-	"RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", "Torso",
-	"Left Arm", "Right Arm", "Left Leg", "Right Leg" }
-
 function E.snapBody(char)
 	E.bodySnap = {}
 	for _, n in ipairs(LIMBS) do
@@ -1714,6 +1972,7 @@ end
 function E.init()
 	local hum, char = E.humanoid()
 	E.snapBody(char)
+	E.snapAnim(char)
 	E.hookChar(char)
 	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
 	E.probe()
@@ -1730,6 +1989,8 @@ function E.init()
 	player.CharacterAdded:Connect(function(newChar)
 		newChar:WaitForChild("Humanoid")
 		E.hookChar(newChar)
+		E.skinActive = false
+		E.hidden = {}
 		task.wait(1)
 		if E.look then
 			if E.remote then
@@ -1737,7 +1998,7 @@ function E.init()
 			elseif not E.busy then
 				E.busy = true
 				pcall(function()
-					E.renderLook(E.look)
+					E.apply(E.look)
 					E.failed = {}
 				end)
 				E.busy = false
@@ -1935,7 +2196,7 @@ local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly 
 	favorites = {}, favOrder = {}, recent = {}, token = 0 }
 
 UI.gui = mk("ScreenGui", {
-	Name = "AvatarStudioUI", ResetOnSpawn = false, IgnoreGuiInset = true,
+	Name = "leon4951hub", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 50, Parent = playerGui,
 })
 
@@ -1966,7 +2227,7 @@ UI.scale.Scale = computeScale()
 -- titlebar
 local TITLE_H = 52
 local titlebar = mk("Frame", { Size = UDim2.new(1, 0, 0, TITLE_H), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = UI.window })
-local tl = label(titlebar, "Avatar Studio", 18, T.Text, Enum.Font.GothamBold)
+local tl = label(titlebar, "leon4951hub", 18, T.Text, Enum.Font.GothamBold)
 tl.Position = UDim2.fromOffset(16, 6)
 tl.Size = UDim2.new(0, 260, 0, 22)
 UI.subtitle = label(titlebar, "Memuat karakter...", 12, T.Dim, Enum.Font.Gotham)
@@ -2519,9 +2780,7 @@ local function userCard(parent, userId, name, order)
 		hint.Text = "memuat..."
 		task.spawn(function()
 			if userId == player.UserId then
-				E.failed = {}
-				E.commit(E.original:Clone(), "avatar asli")
-				toast("Avatar asli dipakai", "ok")
+				E.reset()
 			else
 				E.applyUser(userId, name)
 			end
@@ -2784,6 +3043,13 @@ UI.builders.info = function(page)
 	txt.Size = UDim2.new(1, 0, 0, 90)
 	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
 		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
+	local sb
+	sb = button(scroll, { text = "Mode kulit overlay (badan ikut berubah): HIDUP", size = UDim2.new(1, 0, 0, 36), order = 3,
+		onClick = function()
+			E.useSkin = not E.useSkin
+			sb.Text = "Mode kulit overlay (badan ikut berubah): " .. (E.useSkin and "HIDUP" or "MATI")
+			task.spawn(E.rerender)
+		end })
 	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 36), order = 3,
 		onClick = function() task.spawn(E.restoreBody) end })
 	local cb
@@ -2870,5 +3136,5 @@ task.spawn(function()
 		toast("Gagal menyiapkan karakter: " .. tostring(err), "danger")
 		return
 	end
-	toast("Avatar Studio siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or (E.injectFirst and "INJECTOR (visual klien)" or "native")), "ok")
+	toast("leon4951hub siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or (E.injectFirst and "INJECTOR (visual klien)" or "native")), "ok")
 end)
