@@ -3482,9 +3482,42 @@ UI.fab = mk("TextButton", {
 	TextSize = 26, AutoButtonColor = false, BackgroundColor3 = T.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 20, Parent = UI.gui,
 })
 corner(UI.fab, 27)
-UI.fab.Activated:Connect(function()
-	UI.setOpen(true)
-end)
+-- tombol 👗 bisa digeser; sentuh/klik tanpa geser = buka UI
+do
+	local fab = UI.fab
+	local dragging, moved, startPos, startAbs = false, false, nil, nil
+	fab.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging, moved = true, false
+			startPos = input.Position
+			startAbs = fab.AbsolutePosition
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local dx, dy = input.Position.X - startPos.X, input.Position.Y - startPos.Y
+			if math.abs(dx) + math.abs(dy) > 8 then
+				moved = true
+			end
+			if moved then
+				local cam2 = Workspace.CurrentCamera
+				local vp = cam2 and cam2.ViewportSize or Vector2.new(1280, 720)
+				local x = math.clamp(startAbs.X + dx, 0, vp.X - fab.AbsoluteSize.X)
+				local y = math.clamp(startAbs.Y + dy, 0, vp.Y - fab.AbsoluteSize.Y)
+				fab.AnchorPoint = Vector2.zero
+				fab.Position = UDim2.fromOffset(x, y)
+			end
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+			dragging = false
+			if not moved then
+				UI.setOpen(true)
+			end
+		end
+	end)
+end
 
 function UI.setOpen(open)
 	State.open = open
