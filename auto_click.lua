@@ -1,6 +1,6 @@
 --[[ =============================================================================
-  leon4951hub AutoClicker - Compact UI 45x180
-  Versi diperbaiki (bisa di-execute)
+  leon4951hub AutoClicker - Compact 45x180 (fixed fit)
+  language: Luau, file: autoclicker.lua, target: Roblox LocalScript / executor
 ============================================================================= ]]
 
 local Players = game:GetService("Players")
@@ -12,21 +12,18 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Hapus UI lama
 local GUI_NAME = "leon4951hub_ac"
 local old = playerGui:FindFirstChild(GUI_NAME)
 if old then old:Destroy() end
 
 local GEN = (tonumber(playerGui:GetAttribute("leon_ac_gen")) or 0) + 1
 playerGui:SetAttribute("leon_ac_gen", GEN)
-
 local function stale()
 	return playerGui:GetAttribute("leon_ac_gen") \~= GEN
 end
 
 local CPS_MAX = 25
 
--- STATE
 local S = {
 	running = false,
 	cps = 10,
@@ -44,11 +41,7 @@ local S = {
 	settingsOpen = false,
 }
 
--- WARNA
-local function rgb(r, g, b)
-	return Color3.fromRGB(r, g, b)
-end
-
+local function rgb(r, g, b) return Color3.fromRGB(r, g, b) end
 local T = {
 	Bg = rgb(18, 20, 28),
 	Surface = rgb(28, 30, 42),
@@ -61,25 +54,14 @@ local T = {
 	Danger = rgb(230, 70, 90),
 }
 
--- HELPER
 local function mk(class, props, kids)
 	local o = Instance.new(class)
 	local parent
 	for k, v in pairs(props or {}) do
-		if k == "Parent" then
-			parent = v
-		else
-			o[k] = v
-		end
+		if k == "Parent" then parent = v else o[k] = v end
 	end
-	if kids then
-		for _, c in ipairs(kids) do
-			c.Parent = o
-		end
-	end
-	if parent then
-		o.Parent = parent
-	end
+	if kids then for _, c in ipairs(kids) do c.Parent = o end end
+	if parent then o.Parent = parent end
 	return o
 end
 
@@ -96,11 +78,9 @@ local function stroke(o, color, th)
 	})
 end
 
--- METODE KLIK
+-- klik
 local VIM
-pcall(function()
-	VIM = game:GetService("VirtualInputManager")
-end)
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
 local function sendClick(x, y, right)
 	local order = S.method and {S.method} or {"vim", "exec", "vu"}
@@ -144,9 +124,8 @@ local function sendClick(x, y, right)
 	return nil
 end
 
--- ===================== UI UTAMA (45 x 180) =====================
+-- UI 45x180
 local W, H = 45, 180
-
 local gui = mk("ScreenGui", {
 	Name = GUI_NAME,
 	ResetOnSpawn = false,
@@ -163,30 +142,29 @@ local bar = mk("Frame", {
 	BorderSizePixel = 0,
 	Parent = gui,
 })
-corner(bar, 14)
+corner(bar, 12)
 stroke(bar, T.Stroke, 1.5)
 
 mk("UIListLayout", {
 	FillDirection = Enum.FillDirection.Vertical,
 	HorizontalAlignment = Enum.HorizontalAlignment.Center,
 	VerticalAlignment = Enum.VerticalAlignment.Top,
-	Padding = UDim.new(0, 6),
+	Padding = UDim.new(0, 5),
 	SortOrder = Enum.SortOrder.LayoutOrder,
 	Parent = bar,
 })
-
 mk("UIPadding", {
-	PaddingTop = UDim.new(0, 10),
+	PaddingTop = UDim.new(0, 8),
 	PaddingBottom = UDim.new(0, 8),
 	Parent = bar,
 })
 
 local function makeBtn(text, bg, order)
 	local b = mk("TextButton", {
-		Size = UDim2.fromOffset(33, 33),
+		Size = UDim2.fromOffset(29, 29),
 		BackgroundColor3 = bg or T.Surface2,
 		Text = text,
-		TextSize = 15,
+		TextSize = 14,
 		Font = Enum.Font.GothamBold,
 		TextColor3 = T.Text,
 		AutoButtonColor = false,
@@ -194,7 +172,7 @@ local function makeBtn(text, bg, order)
 		LayoutOrder = order,
 		Parent = bar,
 	})
-	corner(b, 9)
+	corner(b, 8)
 	return b
 end
 
@@ -202,36 +180,33 @@ local startBtn   = makeBtn("▶", T.Ok, 1)
 local plusBtn    = makeBtn("+", T.Surface2, 2)
 local minusBtn   = makeBtn("−", T.Surface2, 3)
 local setBtn     = makeBtn("⚙", T.Surface2, 4)
-local expandBtn  = makeBtn("▣", T.Accent, 5)
-local destroyBtn = makeBtn("✕", rgb(120, 40, 56), 6)
+local destroyBtn = makeBtn("✕", rgb(120, 40, 56), 5)
 
--- Status kecil di bawah
 local statusL = mk("TextLabel", {
-	Size = UDim2.fromOffset(45, 16),
-	Position = UDim2.new(0, 0, 1, 2),
+	Size = UDim2.fromOffset(45, 14),
+	Position = UDim2.new(0, 0, 1, 1),
 	BackgroundTransparency = 1,
 	Text = "OFF",
-	TextSize = 11,
+	TextSize = 10,
 	Font = Enum.Font.GothamBold,
 	TextColor3 = T.Danger,
 	Parent = bar,
 })
-
 local cpsL = mk("TextLabel", {
-	Size = UDim2.fromOffset(45, 14),
-	Position = UDim2.new(0, 0, 1, 16),
+	Size = UDim2.fromOffset(45, 12),
+	Position = UDim2.new(0, 0, 1, 13),
 	BackgroundTransparency = 1,
 	Text = "10/s",
-	TextSize = 10,
+	TextSize = 9,
 	Font = Enum.Font.Gotham,
 	TextColor3 = T.Dim,
 	Parent = bar,
 })
 
--- ===================== PANEL SETTING =====================
+-- Setting panel
 local setFrame = mk("Frame", {
-	Size = UDim2.fromOffset(250, 320),
-	Position = UDim2.new(0, 65, 0.5, -160),
+	Size = UDim2.fromOffset(240, 300),
+	Position = UDim2.new(0, 60, 0.5, -150),
 	BackgroundColor3 = T.Bg,
 	BorderSizePixel = 0,
 	Visible = false,
@@ -241,11 +216,11 @@ corner(setFrame, 12)
 stroke(setFrame, T.Stroke, 1.5)
 
 mk("TextLabel", {
-	Size = UDim2.new(1, -40, 0, 28),
-	Position = UDim2.fromOffset(12, 6),
+	Size = UDim2.new(1, -36, 0, 26),
+	Position = UDim2.fromOffset(10, 6),
 	BackgroundTransparency = 1,
 	Text = "Setting",
-	TextSize = 15,
+	TextSize = 14,
 	Font = Enum.Font.GothamBold,
 	TextColor3 = T.Text,
 	TextXAlignment = Enum.TextXAlignment.Left,
@@ -253,21 +228,21 @@ mk("TextLabel", {
 })
 
 local closeSet = mk("TextButton", {
-	Size = UDim2.fromOffset(26, 26),
-	Position = UDim2.new(1, -34, 0, 7),
+	Size = UDim2.fromOffset(24, 24),
+	Position = UDim2.new(1, -32, 0, 7),
 	BackgroundColor3 = T.Surface2,
 	Text = "✕",
-	TextSize = 13,
+	TextSize = 12,
 	Font = Enum.Font.GothamBold,
 	TextColor3 = T.Text,
 	AutoButtonColor = false,
 	Parent = setFrame,
 })
-corner(closeSet, 7)
+corner(closeSet, 6)
 
 local setContent = mk("ScrollingFrame", {
-	Position = UDim2.fromOffset(0, 38),
-	Size = UDim2.new(1, 0, 1, -46),
+	Position = UDim2.fromOffset(0, 34),
+	Size = UDim2.new(1, 0, 1, -40),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ScrollBarThickness = 3,
@@ -275,24 +250,22 @@ local setContent = mk("ScrollingFrame", {
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	Parent = setFrame,
 })
-
 mk("UIPadding", {
-	PaddingLeft = UDim.new(0, 12),
-	PaddingRight = UDim.new(0, 12),
+	PaddingLeft = UDim.new(0, 10),
+	PaddingRight = UDim.new(0, 10),
 	PaddingTop = UDim.new(0, 4),
-	PaddingBottom = UDim.new(0, 10),
+	PaddingBottom = UDim.new(0, 8),
 	Parent = setContent,
 })
-
 mk("UIListLayout", {
-	Padding = UDim.new(0, 7),
+	Padding = UDim.new(0, 6),
 	SortOrder = Enum.SortOrder.LayoutOrder,
 	Parent = setContent,
 })
 
 local function addLabel(txt)
 	return mk("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 16),
+		Size = UDim2.new(1, 0, 0, 14),
 		BackgroundTransparency = 1,
 		Text = txt,
 		TextSize = 11,
@@ -305,21 +278,20 @@ end
 
 addLabel("KECEPATAN (1-25)")
 local cpsBox = mk("TextBox", {
-	Size = UDim2.new(1, 0, 0, 30),
+	Size = UDim2.new(1, 0, 0, 28),
 	BackgroundColor3 = T.Surface,
 	Text = "10",
 	TextColor3 = T.Text,
 	Font = Enum.Font.GothamBold,
-	TextSize = 14,
+	TextSize = 13,
 	ClearTextOnFocus = false,
 	Parent = setContent,
 })
-corner(cpsBox, 7)
+corner(cpsBox, 6)
 
 addLabel("TOMBOL MOUSE")
-local mouseRow = mk("Frame", {Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = setContent})
-mk("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = mouseRow})
-
+local mouseRow = mk("Frame", {Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = setContent})
+mk("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 5), Parent = mouseRow})
 local leftBtn = mk("TextButton", {
 	Size = UDim2.new(0.5, -3, 1, 0),
 	BackgroundColor3 = T.Accent,
@@ -330,8 +302,7 @@ local leftBtn = mk("TextButton", {
 	AutoButtonColor = false,
 	Parent = mouseRow,
 })
-corner(leftBtn, 7)
-
+corner(leftBtn, 6)
 local rightBtn = mk("TextButton", {
 	Size = UDim2.new(0.5, -3, 1, 0),
 	BackgroundColor3 = T.Surface2,
@@ -342,12 +313,11 @@ local rightBtn = mk("TextButton", {
 	AutoButtonColor = false,
 	Parent = mouseRow,
 })
-corner(rightBtn, 7)
+corner(rightBtn, 6)
 
 addLabel("POSISI KLIK")
-local modeRow = mk("Frame", {Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = setContent})
-mk("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = modeRow})
-
+local modeRow = mk("Frame", {Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = setContent})
+mk("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 5), Parent = modeRow})
 local cursorBtn = mk("TextButton", {
 	Size = UDim2.new(0.5, -3, 1, 0),
 	BackgroundColor3 = T.Accent,
@@ -358,8 +328,7 @@ local cursorBtn = mk("TextButton", {
 	AutoButtonColor = false,
 	Parent = modeRow,
 })
-corner(cursorBtn, 7)
-
+corner(cursorBtn, 6)
 local fixedBtn = mk("TextButton", {
 	Size = UDim2.new(0.5, -3, 1, 0),
 	BackgroundColor3 = T.Surface2,
@@ -370,10 +339,10 @@ local fixedBtn = mk("TextButton", {
 	AutoButtonColor = false,
 	Parent = modeRow,
 })
-corner(fixedBtn, 7)
+corner(fixedBtn, 6)
 
 local pointInfo = mk("TextLabel", {
-	Size = UDim2.new(1, 0, 0, 15),
+	Size = UDim2.new(1, 0, 0, 14),
 	BackgroundTransparency = 1,
 	Text = "Mengikuti kursor",
 	TextSize = 11,
@@ -384,7 +353,7 @@ local pointInfo = mk("TextLabel", {
 })
 
 local setPointBtn = mk("TextButton", {
-	Size = UDim2.new(1, 0, 0, 28),
+	Size = UDim2.new(1, 0, 0, 26),
 	BackgroundColor3 = T.Surface2,
 	Text = "🎯 Atur Titik",
 	TextSize = 12,
@@ -394,11 +363,11 @@ local setPointBtn = mk("TextButton", {
 	Visible = false,
 	Parent = setContent,
 })
-corner(setPointBtn, 7)
+corner(setPointBtn, 6)
 
 addLabel("BATAS KLIK (0 = unlimited)")
 local limitBox = mk("TextBox", {
-	Size = UDim2.new(1, 0, 0, 30),
+	Size = UDim2.new(1, 0, 0, 28),
 	BackgroundColor3 = T.Surface,
 	Text = "0",
 	TextColor3 = T.Text,
@@ -407,11 +376,11 @@ local limitBox = mk("TextBox", {
 	ClearTextOnFocus = false,
 	Parent = setContent,
 })
-corner(limitBox, 7)
+corner(limitBox, 6)
 
 addLabel("HOTKEY")
 local keyBtn = mk("TextButton", {
-	Size = UDim2.new(1, 0, 0, 30),
+	Size = UDim2.new(1, 0, 0, 28),
 	BackgroundColor3 = T.Surface2,
 	Text = "F6",
 	TextSize = 13,
@@ -420,21 +389,21 @@ local keyBtn = mk("TextButton", {
 	AutoButtonColor = false,
 	Parent = setContent,
 })
-corner(keyBtn, 7)
+corner(keyBtn, 6)
 
--- Marker titik
+-- marker
 local marker = mk("Frame", {
-	Size = UDim2.fromOffset(18, 18),
+	Size = UDim2.fromOffset(16, 16),
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	BackgroundTransparency = 1,
 	Visible = false,
 	ZIndex = 100,
 	Parent = gui,
 })
-corner(marker, 9)
+corner(marker, 8)
 stroke(marker, T.Danger, 2)
 mk("Frame", {
-	Size = UDim2.fromOffset(4, 4),
+	Size = UDim2.fromOffset(3, 3),
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	BackgroundColor3 = T.Danger,
@@ -442,7 +411,7 @@ mk("Frame", {
 	Parent = marker,
 })
 
--- ===================== FUNGSI =====================
+-- logic
 local function paintMouse()
 	leftBtn.BackgroundColor3 = (not S.right) and T.Accent or T.Surface2
 	rightBtn.BackgroundColor3 = S.right and T.Accent or T.Surface2
@@ -491,46 +460,33 @@ function S.toggle()
 	S.setRunning(not S.running)
 end
 
--- Event tombol
-startBtn.Activated:Connect(function()
-	S.toggle()
-end)
-
+startBtn.Activated:Connect(function() S.toggle() end)
 plusBtn.Activated:Connect(function()
 	S.cps = math.min(S.cps + 1, CPS_MAX)
 	refreshStatus()
 end)
-
 minusBtn.Activated:Connect(function()
 	S.cps = math.max(S.cps - 1, 1)
 	refreshStatus()
 end)
-
 setBtn.Activated:Connect(function()
 	S.settingsOpen = not S.settingsOpen
 	setFrame.Visible = S.settingsOpen
 end)
-
-expandBtn.Activated:Connect(function()
-	S.settingsOpen = true
-	setFrame.Visible = true
-end)
-
 closeSet.Activated:Connect(function()
 	S.settingsOpen = false
 	setFrame.Visible = false
 end)
 
--- Hapus UI (klik 2 kali)
 do
-	local lastClick = 0
+	local last = 0
 	destroyBtn.Activated:Connect(function()
-		if os.clock() - lastClick < 2 then
+		if os.clock() - last < 2 then
 			S.running = false
 			S.destroyed = true
 			gui:Destroy()
 		else
-			lastClick = os.clock()
+			last = os.clock()
 			destroyBtn.Text = "?"
 			task.delay(2, function()
 				if destroyBtn and destroyBtn.Parent then
@@ -541,49 +497,29 @@ do
 	end)
 end
 
--- Setting events
 cpsBox.FocusLost:Connect(function()
 	local v = tonumber(cpsBox.Text)
-	if v then
-		S.cps = math.clamp(math.floor(v), 1, CPS_MAX)
-	end
+	if v then S.cps = math.clamp(math.floor(v), 1, CPS_MAX) end
 	refreshStatus()
 end)
-
-leftBtn.Activated:Connect(function()
-	S.right = false
-	paintMouse()
-end)
-rightBtn.Activated:Connect(function()
-	S.right = true
-	paintMouse()
-end)
-
-cursorBtn.Activated:Connect(function()
-	S.mode = "cursor"
-	paintMode()
-end)
-fixedBtn.Activated:Connect(function()
-	S.mode = "fixed"
-	paintMode()
-end)
-
+leftBtn.Activated:Connect(function() S.right = false paintMouse() end)
+rightBtn.Activated:Connect(function() S.right = true paintMouse() end)
+cursorBtn.Activated:Connect(function() S.mode = "cursor" paintMode() end)
+fixedBtn.Activated:Connect(function() S.mode = "fixed" paintMode() end)
 setPointBtn.Activated:Connect(function()
 	S.settingPoint = true
 	pointInfo.Text = "Klik di layar sekarang..."
 end)
-
 limitBox.FocusLost:Connect(function()
 	S.limit = math.max(math.floor(tonumber(limitBox.Text) or 0), 0)
 	limitBox.Text = tostring(S.limit)
 end)
-
 keyBtn.Activated:Connect(function()
 	S.binding = true
-	keyBtn.Text = "Tekan tombol..."
+	keyBtn.Text = "Tekan..."
 end)
 
--- Drag bar
+-- drag
 do
 	local dragging, dragStart, startPos
 	bar.InputBegan:Connect(function(input)
@@ -592,32 +528,27 @@ do
 			dragStart = input.Position
 			startPos = bar.Position
 			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
 			end)
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
 		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			bar.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			local d = input.Position - dragStart
+			bar.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
 		end
 	end)
 end
 
--- Cek apakah klik di UI sendiri
 local function overOwnUI(pos)
-	local function inside(guiObj)
-		if not guiObj or not guiObj.Visible then return false end
-		local ap = guiObj.AbsolutePosition
-		local sz = guiObj.AbsoluteSize
+	local function inside(o)
+		if not o or not o.Visible then return false end
+		local ap, sz = o.AbsolutePosition, o.AbsoluteSize
 		return pos.X >= ap.X and pos.X <= ap.X + sz.X and pos.Y >= ap.Y and pos.Y <= ap.Y + sz.Y
 	end
 	return inside(bar) or inside(setFrame)
 end
 
--- Loop klik
 local acc = 0
 RunService.Heartbeat:Connect(function(dt)
 	if stale() or S.destroyed then return end
@@ -627,7 +558,6 @@ RunService.Heartbeat:Connect(function(dt)
 		S.setRunning(false)
 		return
 	end
-
 	local interval = 1 / S.cps
 	acc = acc + dt
 	local n = 0
@@ -649,10 +579,8 @@ RunService.Heartbeat:Connect(function(dt)
 	if acc > interval * 4 then acc = 0 end
 end)
 
--- Input
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+UserInputService.InputBegan:Connect(function(input, gp)
 	if stale() or S.destroyed then return end
-
 	if S.binding then
 		if input.UserInputType == Enum.UserInputType.Keyboard then
 			if input.KeyCode \~= Enum.KeyCode.Escape then
@@ -663,7 +591,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		end
 		return
 	end
-
 	if S.settingPoint and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 		local pos
 		if input.UserInputType == Enum.UserInputType.Touch then
@@ -679,16 +606,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		end
 		return
 	end
-
-	if gameProcessed then return end
+	if gp then return end
 	if input.KeyCode == S.key then
 		S.toggle()
 	end
 end)
 
--- Init
 paintMouse()
 paintMode()
 refreshStatus()
-
-print("[leon4951hub] AutoClicker loaded - UI Compact 45x180")
+print("[leon4951hub] AutoClicker 45x180 loaded")
