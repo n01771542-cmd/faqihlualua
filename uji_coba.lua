@@ -408,7 +408,7 @@ pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 -- [ ONE-TIME NEW SCRIPT NOTIFICATION ]
-local NotifConfigName = "leon4951hub_newscript_notif_v15.json"
+local NotifConfigName = "leon4951hub_newscript_notif_v16.json"
 local NEW_SCRIPTS = {
     {name = "SOURCES HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
     {name = "DHII'S HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
@@ -438,7 +438,7 @@ end
 local function MarkNewScriptNotifSeen()
     if writefile then
         pcall(function()
-            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 15}))
+            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 16}))
         end)
     end
 end
@@ -516,12 +516,12 @@ local function ShowNewScriptNotification()
     listLayout.Parent = listScroll
 
     local function runScript(entry)
-        if not entry.url or entry.url == "" then return end
+        if not entry or not entry.url or entry.url == "" then return end
         MarkNewScriptNotifSeen()
         if NotifFrame and NotifFrame.Parent then
             NotifFrame:Destroy()
         end
-        -- same as pressing X: close hub UI instantly, execute in background
+        -- close hub UI instantly (same as X)
         if ToggleMainUI then
             ToggleMainUI(false)
         else
@@ -529,12 +529,20 @@ local function ShowNewScriptNotification()
             MainScale.Scale = 0
             if FloatingBtn then FloatingBtn.Visible = true FloatingScale.Scale = 1 end
         end
+        -- execute: extract pure URL if wrapped in loadstring(...), then run
         task.spawn(function()
+            local raw = entry.url
+            local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
+                or raw:match('HttpGet%s*%(%s*%[%=*%[(.-)%]%=*%]%s*%)')
             local ok, err = pcall(function()
-                if string.sub(entry.url, 1, 10) == "loadstring" or string.find(entry.url, "script_key") then
-                    loadstring(entry.url)()
+                if pureUrl and pureUrl ~= "" then
+                    loadstring(game:HttpGet(pureUrl))()
+                elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+                    local fn, compileErr = loadstring(raw)
+                    if not fn then error(compileErr or "loadstring compile failed") end
+                    fn()
                 else
-                    loadstring(game:HttpGet(entry.url))()
+                    loadstring(game:HttpGet(raw))()
                 end
             end)
             if not ok then
@@ -1607,11 +1615,17 @@ RunAndClose = function(scriptEntry)
     if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
     AddToHistory(scriptEntry)
     task.spawn(function()
+        local raw = scriptEntry.url
+        local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
         local ok, err = pcall(function()
-            if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
-                loadstring(scriptEntry.url)()
+            if pureUrl and pureUrl ~= "" then
+                loadstring(game:HttpGet(pureUrl))()
+            elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+                local fn, compileErr = loadstring(raw)
+                if not fn then error(compileErr or "loadstring compile failed") end
+                fn()
             else
-                loadstring(game:HttpGet(scriptEntry.url))()
+                loadstring(game:HttpGet(raw))()
             end
         end)
         if not ok then
