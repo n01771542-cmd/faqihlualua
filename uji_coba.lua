@@ -517,23 +517,30 @@ local function ShowNewScriptNotification()
 
     local function runScript(entry)
         if not entry.url or entry.url == "" then return end
-        local ok, err = pcall(function()
-            if string.sub(entry.url, 1, 10) == "loadstring" or string.find(entry.url, "script_key") then
-                loadstring(entry.url)()
-            else
-                loadstring(game:HttpGet(entry.url))()
-            end
-        end)
-        if not ok then
-            warn("[LEON4951] Gagal menjalankan " .. tostring(entry.name) .. ": " .. tostring(err))
-        end
         MarkNewScriptNotifSeen()
         if NotifFrame and NotifFrame.Parent then
             NotifFrame:Destroy()
         end
+        -- same as pressing X: close hub UI instantly, execute in background
         if ToggleMainUI then
             ToggleMainUI(false)
+        else
+            MainFrame.Visible = false
+            MainScale.Scale = 0
+            if FloatingBtn then FloatingBtn.Visible = true FloatingScale.Scale = 1 end
         end
+        task.spawn(function()
+            local ok, err = pcall(function()
+                if string.sub(entry.url, 1, 10) == "loadstring" or string.find(entry.url, "script_key") then
+                    loadstring(entry.url)()
+                else
+                    loadstring(game:HttpGet(entry.url))()
+                end
+            end)
+            if not ok then
+                warn("[LEON4951] Gagal menjalankan " .. tostring(entry.name) .. ": " .. tostring(err))
+            end
+        end)
     end
 
     for i = 1, #NEW_SCRIPTS, 2 do
@@ -676,6 +683,7 @@ local function CreateFLogo(size, rotation)
 end
 
 local ToggleMainUI
+local RunAndClose
 
 -- [ 6. HEADER ]
 local Header = Instance.new("Frame")
@@ -1108,22 +1116,7 @@ RenderContent = function(categoryIndex)
             end)
 
             runBtn.MouseButton1Click:Connect(function()
-                if scriptEntry.url and scriptEntry.url ~= "" then
-                    AddToHistory(scriptEntry)
-                    local ok, err = pcall(function()
-                        if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
-                            loadstring(scriptEntry.url)()
-                        else
-                            loadstring(game:HttpGet(scriptEntry.url))()
-                        end
-                    end)
-                    if not ok then
-                        warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
-                    end
-                    if ToggleMainUI then
-                        ToggleMainUI(false)
-                    end
-                end
+                RunAndClose(scriptEntry)
             end)
         end
 
@@ -1246,22 +1239,7 @@ RenderContent = function(categoryIndex)
         end)
 
         runBtn.MouseButton1Click:Connect(function()
-            if scriptEntry.url and scriptEntry.url ~= "" then
-                AddToHistory(scriptEntry)
-                local ok, err = pcall(function()
-                    if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
-                        loadstring(scriptEntry.url)()
-                    else
-                        loadstring(game:HttpGet(scriptEntry.url))()
-                    end
-                end)
-                if not ok then
-                    warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
-                end
-                if ToggleMainUI then
-                    ToggleMainUI(false)
-                end
-            end
+            RunAndClose(scriptEntry)
         end)
 
         local favBtn = Instance.new("TextButton")
@@ -1598,33 +1576,48 @@ ToggleMainUI = function(show)
         MainFrame.Size = UDim2.fromOffset(560, 340)
         MainFrame.Visible = true
         MainScale.Scale = 0
-
-        TweenService:Create(FloatingScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Scale = 0
-        }):Play()
+        FloatingBtn.Visible = false
 
         TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
             Scale = 1
         }):Play()
-
-        task.delay(0.12, function()
-            FloatingBtn.Visible = false
-        end)
     else
-        TweenService:Create(MainScale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Scale = 0
-        }):Play()
-
-        task.delay(0.16, function()
-            MainFrame.Visible = false
-            FloatingBtn.Visible = true
-            FloatingScale.Scale = 0
-
-            TweenService:Create(FloatingScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Scale = 1
-            }):Play()
-        end)
+        -- INSTANT close to floating toggle (same as X button)
+        MainScale.Scale = 0
+        MainFrame.Visible = false
+        FloatingBtn.Visible = true
+        FloatingScale.Scale = 1
     end
+end
+
+
+RunAndClose = function(scriptEntry)
+    -- 1) close UI instantly (same as pressing X)
+    if ToggleMainUI then
+        ToggleMainUI(false)
+    else
+        MainFrame.Visible = false
+        MainScale.Scale = 0
+        if FloatingBtn then
+            FloatingBtn.Visible = true
+            FloatingScale.Scale = 1
+        end
+    end
+    -- 2) execute in background so UI never waits
+    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
+    AddToHistory(scriptEntry)
+    task.spawn(function()
+        local ok, err = pcall(function()
+            if string.sub(scriptEntry.url, 1, 10) == "loadstring" or string.find(scriptEntry.url, "script_key") then
+                loadstring(scriptEntry.url)()
+            else
+                loadstring(game:HttpGet(scriptEntry.url))()
+            end
+        end)
+        if not ok then
+            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+        end
+    end)
 end
 
 FloatingBtn.MouseButton1Click:Connect(function()
