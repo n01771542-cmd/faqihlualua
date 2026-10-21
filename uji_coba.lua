@@ -338,11 +338,18 @@ local MonthShortNames = {
 local RenderContent
 local Categories
 
+local DayNames = {
+    [1] = "Minggu", [2] = "Senin", [3] = "Selasa", [4] = "Rabu",
+    [5] = "Kamis", [6] = "Jumat", [7] = "Sabtu"
+}
+
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
     local monthStr = MonthShortNames[t.month] or tostring(t.month)
+    local dayStr = DayNames[t.wday] or ""
 
-    local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
+    -- Tahun Bulan Tanggal Hari Jam
+    local timeStr = string.format("%04d %s %02d %s %02d:%02d", t.year, monthStr, t.day, dayStr, t.hour, t.min)
 
     for i = #HistoryList, 1, -1 do
         if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
@@ -436,8 +443,7 @@ local function HasSeenNewScriptNotif()
     return dok and type(data) == "table" and data.seen == true
 end
 
-local function MarkNewScriptNotifSeen()
-    if writefile then
+local function     if writefile then
         pcall(function()
             writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 17}))
         end)
@@ -445,7 +451,7 @@ local function MarkNewScriptNotifSeen()
 end
 
 local function ShowNewScriptNotification()
-    if HasSeenNewScriptNotif() then return end
+    -- always show every execute
 
     local NotifFrame = Instance.new("Frame")
     NotifFrame.Name = "NewScriptNotif"
@@ -464,7 +470,7 @@ local function ShowNewScriptNotification()
     nStroke.Parent = NotifFrame
 
     local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 30)
+    titleBar.Size = UDim2.new(1, 0, 0, 36)
     titleBar.BackgroundColor3 = Theme.CardBg
     titleBar.BorderSizePixel = 0
     titleBar.Parent = NotifFrame
@@ -489,20 +495,25 @@ local function ShowNewScriptNotification()
     titleLbl.Parent = titleBar
 
     local closeX = Instance.new("TextButton")
-    closeX.Size = UDim2.fromOffset(24, 24)
-    closeX.Position = UDim2.new(1, -28, 0, 3)
+    closeX.Size = UDim2.fromOffset(34, 34)
+    closeX.Position = UDim2.new(1, -40, 0, -2)
     closeX.BackgroundColor3 = Theme.CardBg
     closeX.Text = "X"
     closeX.Font = Enum.Font.GothamBold
-    closeX.TextSize = 12
+    closeX.TextSize = 18
     closeX.TextColor3 = Theme.TextPrimary
     closeX.AutoButtonColor = false
+    closeX.ZIndex = 220
     closeX.Parent = titleBar
-    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 8)
+    local closeXStroke = Instance.new("UIStroke")
+    closeXStroke.Color = Theme.CardBorder
+    closeXStroke.Thickness = 1.5
+    closeXStroke.Parent = closeX
 
     local listScroll = Instance.new("ScrollingFrame")
-    listScroll.Size = UDim2.new(1, -12, 1, -38)
-    listScroll.Position = UDim2.new(0, 6, 0, 34)
+    listScroll.Size = UDim2.new(1, -12, 1, -44)
+    listScroll.Position = UDim2.new(0, 6, 0, 40)
     listScroll.BackgroundTransparency = 1
     listScroll.BorderSizePixel = 0
     listScroll.ScrollBarThickness = 2
@@ -521,8 +532,7 @@ local function ShowNewScriptNotification()
             warn("[LEON4951] Notif: entry kosong")
             return
         end
-        MarkNewScriptNotifSeen()
-        pcall(function()
+                pcall(function()
             if NotifFrame and NotifFrame.Parent then NotifFrame:Destroy() end
         end)
         pcall(function()
@@ -614,8 +624,7 @@ local function ShowNewScriptNotification()
     end
 
     local function closeNotif()
-        MarkNewScriptNotifSeen()
-        TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
         task.delay(0.16, function()
             if NotifFrame then NotifFrame:Destroy() end
         end)
