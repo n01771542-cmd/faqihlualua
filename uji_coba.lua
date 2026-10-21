@@ -58,6 +58,21 @@ local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
 -- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
 local RawScriptDataStealAnEgg = {
+    {"! SOURCES HUB","No Key",true,"loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
+    {"! DHII'S HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
+    {"! Lych x putra hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
+    {"! VIREX HUB","No Key",true,"loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
+    {"! TEDDY HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
+    {"! GOHA HUB","No Key",true,"loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
+    {"! Night Hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
+    {"! REALKID HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
+    {"! CODIUM HUB","No Key",true,"loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
+    {"! NO-LAG X HUB","No Key",true,"loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
+    {"! LINKHIVE HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
+    {"! Chilli hub v5","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
+    {"! VENYX HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
+    {"! LUKZ HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
+    {"! SENA EXCLUSIVE","Key",true,"loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
     {"PET SPAWNER TERBAGUS","No Key",true,"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner"},
     {"YANTO HUB KEY : YANTOHUB","Key",true,"https://raw.githubusercontent.com/YantoRoblox/Script-Free-YantoHUB/refs/heads/main/YantoHUB"},
     {"FYY HUB","No Key",true,"https://FyyCommunity.my.id"},
@@ -113,7 +128,7 @@ local RawScriptDataStealAnEgg = {
     {"JINHUB","Key",false,"https://jinhub.my.id/scripts/Universal.lua"},
     {"OVERFLOW","Key",false,"https://overflow.cx/loader.lua"},
     {"BLYXO HUB","No Key",true,"https://flowauth.net/v1/loaders/69d3463240384f3a73fbe32c178093a2.lua"},
-    {"SENA V5 beta","No Key",true,"https://senahub.xyz/raw/loader"},
+    {"SENA beta","No Key",true,"https://senahub.xyz/raw/loader"},
     {"TOOLBOX","No Key",false,"https://raw.githubusercontent.com/Abdullahking20/loader-lua/main/loader"},
     {"SOLVEXGUI HUB","Key",false,"https://raw.githubusercontent.com/Solvexxxx/Scripts/refs/heads/main/SolvexGUI_SAE.lua"},
     {"SPEED BYPASS","No Key",false,"https://pastefy.app/iedWaiQX/raw"},
@@ -153,7 +168,7 @@ local RawScriptDataStealAnEgg = {
     {"POTATO HUB","Key",false,"https://raw.githubusercontent.com/potatohub67/potatoscripts/refs/heads/main/stealaegg.lua"},
     {"JANE HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
     {"WIS HUB","No Key",true,"https://api.wishub.cloud/files/loader.lua"},
-    {"SENA V6 NEW","Key",true,"https://senahub.xyz/senav6"},
+    {"SENA V7 NEW","Key",true,"https://senahub.xyz/senaloader"},
     {"VOIDHUB","No Key",false,"loadstring(game:HttpGet(\"https://voidon.top/api/loader/main\"))()"},
     {"LIMBO HUB","No Key",false,"loadstring(game:HttpGet(\"https://limbohub.my.id/loader.lua\"))()"},
     {"OXIDE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua\"))()"},
@@ -241,9 +256,10 @@ local function NormalizeScriptData(raw)
 end
 
 local ScriptDataStealAnEgg = NormalizeScriptData(RawScriptDataStealAnEgg)
-local NewScriptsData = NormalizeScriptData(RawNewScriptsData)
-for _, newScript in ipairs(NewScriptsData) do
-    table.insert(ScriptDataStealAnEgg, newScript)
+-- permanently fold previous "new scripts" into main list
+local _prevNew = NormalizeScriptData(RawNewScriptsData)
+for _, s in ipairs(_prevNew) do
+    table.insert(ScriptDataStealAnEgg, s)
 end
 
 local CleanedScripts = ScriptDataStealAnEgg
@@ -311,14 +327,9 @@ end
 
 LoadHistory()
 
--- FORMAT WAKTU BARU: (Tahun) (Bulan) (Tanggal) (Hari) (Jam)
-local MonthNames = {
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-}
-
-local DayNames = {
-    "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"
+local MonthShortNames = {
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
 }
 
 local RenderContent
@@ -326,10 +337,9 @@ local Categories
 
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
-    local monthStr = MonthNames[t.month] or tostring(t.month)
-    local dayStr = DayNames[t.wday] or tostring(t.wday)
+    local monthStr = MonthShortNames[t.month] or tostring(t.month)
 
-    local timeStr = string.format("%04d %s %02d %s %02d:%02d", t.year, monthStr, t.day, dayStr, t.hour, t.min)
+    local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
 
     for i = #HistoryList, 1, -1 do
         if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
@@ -380,13 +390,6 @@ Categories = {
         type = "info",
         scripts = CleanedScripts,
     },
-    {
-        key = "NewScript",
-        name = "new script",
-        type = "new_script",
-        scripts = NewScriptsData,
-        hasNotification = true,
-    },
 }
 
 local activeCategoryIndex = 1
@@ -400,6 +403,127 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+-- [ ONE-TIME NEW SCRIPT NOTIFICATION ]
+local NotifConfigName = "leon4951hub_newscript_notif_v15.json"
+local NEW_SCRIPT_NAMES = {
+    "SOURCES HUB", "DHII'S HUB", "Lych x putra hub", "VIREX HUB", "TEDDY HUB",
+    "GOHA HUB", "Night Hub", "REALKID HUB", "CODIUM HUB", "NO-LAG X HUB",
+    "LINKHIVE HUB", "Chilli hub v5", "VENYX HUB", "LUKZ HUB", "SENA EXCLUSIVE"
+}
+
+local function HasSeenNewScriptNotif()
+    if not readfile then return false end
+    local ok, raw = pcall(readfile, NotifConfigName)
+    if not ok or type(raw) ~= "string" or raw == "" then return false end
+    local dok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    return dok and type(data) == "table" and data.seen == true
+end
+
+local function MarkNewScriptNotifSeen()
+    if writefile then
+        pcall(function()
+            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 15}))
+        end)
+    end
+end
+
+local function ShowNewScriptNotification()
+    if HasSeenNewScriptNotif() then return end
+
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Name = "NewScriptNotif"
+    NotifFrame.Size = UDim2.fromOffset(320, 280)
+    NotifFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    NotifFrame.Position = UDim2.fromScale(0.5, 0.5)
+    NotifFrame.BackgroundColor3 = Theme.Background
+    NotifFrame.BorderSizePixel = 0
+    NotifFrame.ZIndex = 200
+    NotifFrame.Parent = ScreenGui
+    Instance.new("UICorner", NotifFrame).CornerRadius = UDim.new(0, 14)
+
+    local nStroke = Instance.new("UIStroke")
+    nStroke.Color = Theme.Accent
+    nStroke.Thickness = 2
+    nStroke.Parent = NotifFrame
+
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 36)
+    titleBar.BackgroundColor3 = Theme.CardBg
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = NotifFrame
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 14)
+
+    local titleFix = Instance.new("Frame")
+    titleFix.Size = UDim2.new(1, 0, 0, 14)
+    titleFix.Position = UDim2.new(0, 0, 1, -14)
+    titleFix.BackgroundColor3 = Theme.CardBg
+    titleFix.BorderSizePixel = 0
+    titleFix.Parent = titleBar
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 14
+    titleLbl.TextColor3 = Theme.Accent
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Size = UDim2.new(1, -50, 1, 0)
+    titleLbl.Position = UDim2.new(0, 14, 0, 0)
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Text = "New Script"
+    titleLbl.Parent = titleBar
+
+    local closeX = Instance.new("TextButton")
+    closeX.Size = UDim2.fromOffset(28, 28)
+    closeX.Position = UDim2.new(1, -34, 0, 4)
+    closeX.BackgroundColor3 = Theme.CardBg
+    closeX.Text = "X"
+    closeX.Font = Enum.Font.GothamBold
+    closeX.TextSize = 14
+    closeX.TextColor3 = Theme.TextPrimary
+    closeX.AutoButtonColor = false
+    closeX.Parent = titleBar
+    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 8)
+
+    local listScroll = Instance.new("ScrollingFrame")
+    listScroll.Size = UDim2.new(1, -20, 1, -50)
+    listScroll.Position = UDim2.new(0, 10, 0, 42)
+    listScroll.BackgroundTransparency = 1
+    listScroll.BorderSizePixel = 0
+    listScroll.ScrollBarThickness = 3
+    listScroll.ScrollBarImageColor3 = Theme.Accent
+    listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    listScroll.Parent = NotifFrame
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = listScroll
+
+    for i, name in ipairs(NEW_SCRIPT_NAMES) do
+        local row = Instance.new("TextLabel")
+        row.Font = Enum.Font.GothamBold
+        row.TextSize = 11
+        row.TextColor3 = Theme.TextPrimary
+        row.BackgroundColor3 = Theme.CardBg
+        row.Size = UDim2.new(1, 0, 0, 24)
+        row.TextXAlignment = Enum.TextXAlignment.Left
+        row.Text = "  !  " .. name
+        row.LayoutOrder = i
+        row.Parent = listScroll
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+    end
+
+    local function closeNotif()
+        MarkNewScriptNotifSeen()
+        TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+        task.delay(0.16, function()
+            if NotifFrame then NotifFrame:Destroy() end
+        end)
+    end
+
+    closeX.MouseButton1Click:Connect(closeNotif)
+end
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -855,10 +979,10 @@ RenderContent = function(categoryIndex)
 
             local timeLbl = Instance.new("TextLabel")
             timeLbl.Font = Enum.Font.GothamBold
-            timeLbl.TextSize = 9
+            timeLbl.TextSize = 10
             timeLbl.TextColor3 = Theme.AccentLight
             timeLbl.BackgroundTransparency = 1
-            timeLbl.Size = UDim2.new(1, -125, 0, 16)
+            timeLbl.Size = UDim2.new(1, -135, 0, 16)
             timeLbl.Position = UDim2.new(0, 68, 0, 28)
             timeLbl.TextXAlignment = Enum.TextXAlignment.Left
             timeLbl.TextTruncate = Enum.TextTruncate.None
@@ -1521,6 +1645,9 @@ bootConn = RunService.Heartbeat:Connect(function()
                 TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
                     Scale = 1
                 }):Play()
+                task.delay(0.4, function()
+                    pcall(ShowNewScriptNotification)
+                end)
             end)
         end)
     end
