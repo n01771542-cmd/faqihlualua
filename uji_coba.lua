@@ -408,24 +408,25 @@ pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 -- [ ONE-TIME NEW SCRIPT NOTIFICATION ]
-local NotifConfigName = "leon4951hub_newscript_notif_v16.json"
+local NotifConfigName = "leon4951hub_newscript_notif_v17.json"
 local NEW_SCRIPTS = {
-    {name = "SOURCES HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
-    {name = "DHII'S HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
-    {name = "Lych x putra hub", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
-    {name = "VIREX HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
-    {name = "TEDDY HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
-    {name = "GOHA HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
-    {name = "Night Hub", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
-    {name = "REALKID HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
-    {name = "CODIUM HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
-    {name = "NO-LAG X HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
-    {name = "LINKHIVE HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
-    {name = "Chilli hub v5", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
-    {name = "VENYX HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
-    {name = "LUKZ HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
-    {name = "SENA EXCLUSIVE", status = "Key", url = "loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
+    {name = "SOURCES HUB", status = "No Key", url = "https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew"},
+    {name = "DHII'S HUB", status = "No Key", url = "https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua"},
+    {name = "Lych x putra hub", status = "No Key", url = "https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua"},
+    {name = "VIREX HUB", status = "No Key", url = "https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD"},
+    {name = "TEDDY HUB", status = "No Key", url = "https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua"},
+    {name = "GOHA HUB", status = "No Key", url = "https://api.goha.dev/loader"},
+    {name = "Night Hub", status = "No Key", url = "https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau"},
+    {name = "REALKID HUB", status = "No Key", url = "https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua"},
+    {name = "CODIUM HUB", status = "No Key", url = "https://getcodium.xyz/loader.luau"},
+    {name = "NO-LAG X HUB", status = "No Key", url = "https://nolag.wtf/script.lua"},
+    {name = "LINKHIVE HUB", status = "No Key", url = "https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua"},
+    {name = "Chilli hub v5", status = "No Key", url = "https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua"},
+    {name = "VENYX HUB", status = "No Key", url = "https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub"},
+    {name = "LUKZ HUB", status = "No Key", url = "https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua"},
+    {name = "SENA EXCLUSIVE", status = "Key", url = "https://senahub.xyz/senaexclusive"},
 }
+
 
 local function HasSeenNewScriptNotif()
     if not readfile then return false end
@@ -438,7 +439,7 @@ end
 local function MarkNewScriptNotifSeen()
     if writefile then
         pcall(function()
-            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 16}))
+            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 17}))
         end)
     end
 end
@@ -516,37 +517,27 @@ local function ShowNewScriptNotification()
     listLayout.Parent = listScroll
 
     local function runScript(entry)
-        if not entry or not entry.url or entry.url == "" then return end
+        if not entry or not entry.url or entry.url == "" then
+            warn("[LEON4951] Notif: entry kosong")
+            return
+        end
         MarkNewScriptNotifSeen()
-        if NotifFrame and NotifFrame.Parent then
-            NotifFrame:Destroy()
-        end
-        -- close hub UI instantly (same as X)
-        if ToggleMainUI then
-            ToggleMainUI(false)
-        else
-            MainFrame.Visible = false
-            MainScale.Scale = 0
-            if FloatingBtn then FloatingBtn.Visible = true FloatingScale.Scale = 1 end
-        end
-        -- execute: extract pure URL if wrapped in loadstring(...), then run
-        task.spawn(function()
-            local raw = entry.url
-            local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
-                or raw:match('HttpGet%s*%(%s*%[%=*%[(.-)%]%=*%]%s*%)')
+        pcall(function()
+            if NotifFrame and NotifFrame.Parent then NotifFrame:Destroy() end
+        end)
+        pcall(function()
+            if ToggleMainUI then ToggleMainUI(false) end
+        end)
+        local targetUrl = entry.url
+        task.defer(function()
             local ok, err = pcall(function()
-                if pureUrl and pureUrl ~= "" then
-                    loadstring(game:HttpGet(pureUrl))()
-                elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
-                    local fn, compileErr = loadstring(raw)
-                    if not fn then error(compileErr or "loadstring compile failed") end
-                    fn()
-                else
-                    loadstring(game:HttpGet(raw))()
-                end
+                local src = game:HttpGet(targetUrl)
+                local fn, cerr = loadstring(src)
+                if not fn then error(cerr or "compile fail") end
+                fn()
             end)
             if not ok then
-                warn("[LEON4951] Gagal menjalankan " .. tostring(entry.name) .. ": " .. tostring(err))
+                warn("[LEON4951] Notif gagal: " .. tostring(entry.name) .. " | " .. tostring(err))
             end
         end)
     end
@@ -600,19 +591,20 @@ local function ShowNewScriptNotification()
             execBtn.Font = Enum.Font.GothamBold
             execBtn.TextSize = 10
             execBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            execBtn.AutoButtonColor = false
+            execBtn.AutoButtonColor = true
+            execBtn.Active = true
+            execBtn.ZIndex = 210
             execBtn.Parent = card
             Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 5)
 
-            execBtn.MouseEnter:Connect(function()
-                TweenService:Create(execBtn, TweenInfo.new(0.1), {BackgroundColor3 = Theme.Accent}):Play()
-            end)
-            execBtn.MouseLeave:Connect(function()
-                TweenService:Create(execBtn, TweenInfo.new(0.1), {BackgroundColor3 = Theme.RunPillBg}):Play()
-            end)
-            execBtn.MouseButton1Click:Connect(function()
+            local fired = false
+            local function doRun()
+                if fired then return end
+                fired = true
                 runScript(entry)
-            end)
+            end
+            execBtn.MouseButton1Click:Connect(doRun)
+            execBtn.Activated:Connect(doRun)
         end
 
         makeCard(row, left, 0)
