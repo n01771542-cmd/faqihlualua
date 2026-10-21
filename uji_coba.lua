@@ -58,21 +58,21 @@ local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
 -- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
 local RawScriptDataStealAnEgg = {
-    {"! SOURCES HUB","No Key",true,"loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
-    {"! DHII'S HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
-    {"! Lych x putra hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
-    {"! VIREX HUB","No Key",true,"loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
-    {"! TEDDY HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
-    {"! GOHA HUB","No Key",true,"loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
-    {"! Night Hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
-    {"! REALKID HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
-    {"! CODIUM HUB","No Key",true,"loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
-    {"! NO-LAG X HUB","No Key",true,"loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
-    {"! LINKHIVE HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
-    {"! Chilli hub v5","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
-    {"! VENYX HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
-    {"! LUKZ HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
-    {"! SENA EXCLUSIVE","Key",true,"loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
+    {"SOURCES HUB","No Key",true,"loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
+    {"DHII'S HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
+    {"Lych x putra hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
+    {"VIREX HUB","No Key",true,"loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
+    {"TEDDY HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
+    {"GOHA HUB","No Key",true,"loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
+    {"Night Hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
+    {"REALKID HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
+    {"CODIUM HUB","No Key",true,"loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
+    {"NO-LAG X HUB","No Key",true,"loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
+    {"LINKHIVE HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
+    {"Chilli hub v5","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
+    {"VENYX HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
+    {"LUKZ HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
+    {"SENA EXCLUSIVE","Key",true,"loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
     {"PET SPAWNER TERBAGUS","No Key",true,"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner"},
     {"YANTO HUB KEY : YANTOHUB","Key",true,"https://raw.githubusercontent.com/YantoRoblox/Script-Free-YantoHUB/refs/heads/main/YantoHUB"},
     {"FYY HUB","No Key",true,"https://FyyCommunity.my.id"},
@@ -242,8 +242,11 @@ local function NormalizeScriptData(raw)
     for i, entry in ipairs(raw) do
         local name = entry[1]
         local isRec = entry[3]
+        -- strip any leading "! " we may have put in raw data
+        name = name:gsub("^!%s*", "")
         if isRec and not string.find(name, "REC") then
-            name = name .. ' <font color="rgb(255, 185, 0)"><b>REC</b></font> 🔥'
+            -- red ! on the RIGHT + gold REC badge
+            name = name .. ' <font color="rgb(255, 50, 50)"><b>!</b></font> <font color="rgb(255, 185, 0)"><b>REC</b></font> 🔥'
         end
         result[i] = {
             name = name,
@@ -406,10 +409,22 @@ if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("Player
 
 -- [ ONE-TIME NEW SCRIPT NOTIFICATION ]
 local NotifConfigName = "leon4951hub_newscript_notif_v15.json"
-local NEW_SCRIPT_NAMES = {
-    "SOURCES HUB", "DHII'S HUB", "Lych x putra hub", "VIREX HUB", "TEDDY HUB",
-    "GOHA HUB", "Night Hub", "REALKID HUB", "CODIUM HUB", "NO-LAG X HUB",
-    "LINKHIVE HUB", "Chilli hub v5", "VENYX HUB", "LUKZ HUB", "SENA EXCLUSIVE"
+local NEW_SCRIPTS = {
+    {name = "SOURCES HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
+    {name = "DHII'S HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
+    {name = "Lych x putra hub", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
+    {name = "VIREX HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
+    {name = "TEDDY HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
+    {name = "GOHA HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
+    {name = "Night Hub", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
+    {name = "REALKID HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
+    {name = "CODIUM HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
+    {name = "NO-LAG X HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
+    {name = "LINKHIVE HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
+    {name = "Chilli hub v5", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
+    {name = "VENYX HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
+    {name = "LUKZ HUB", status = "No Key", url = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
+    {name = "SENA EXCLUSIVE", status = "Key", url = "loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
 }
 
 local function HasSeenNewScriptNotif()
@@ -433,7 +448,7 @@ local function ShowNewScriptNotification()
 
     local NotifFrame = Instance.new("Frame")
     NotifFrame.Name = "NewScriptNotif"
-    NotifFrame.Size = UDim2.fromOffset(320, 280)
+    NotifFrame.Size = UDim2.fromOffset(420, 360)
     NotifFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     NotifFrame.Position = UDim2.fromScale(0.5, 0.5)
     NotifFrame.BackgroundColor3 = Theme.Background
@@ -485,8 +500,8 @@ local function ShowNewScriptNotification()
     Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 8)
 
     local listScroll = Instance.new("ScrollingFrame")
-    listScroll.Size = UDim2.new(1, -20, 1, -50)
-    listScroll.Position = UDim2.new(0, 10, 0, 42)
+    listScroll.Size = UDim2.new(1, -16, 1, -48)
+    listScroll.Position = UDim2.new(0, 8, 0, 42)
     listScroll.BackgroundTransparency = 1
     listScroll.BorderSizePixel = 0
     listScroll.ScrollBarThickness = 3
@@ -496,22 +511,110 @@ local function ShowNewScriptNotification()
     listScroll.Parent = NotifFrame
 
     local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 4)
+    listLayout.Padding = UDim.new(0, 6)
     listLayout.SortOrder = Enum.SortOrder.LayoutOrder
     listLayout.Parent = listScroll
 
-    for i, name in ipairs(NEW_SCRIPT_NAMES) do
-        local row = Instance.new("TextLabel")
-        row.Font = Enum.Font.GothamBold
-        row.TextSize = 11
-        row.TextColor3 = Theme.TextPrimary
-        row.BackgroundColor3 = Theme.CardBg
-        row.Size = UDim2.new(1, 0, 0, 24)
-        row.TextXAlignment = Enum.TextXAlignment.Left
-        row.Text = "  !  " .. name
+    local function runScript(entry)
+        if not entry.url or entry.url == "" then return end
+        local ok, err = pcall(function()
+            if string.sub(entry.url, 1, 10) == "loadstring" or string.find(entry.url, "script_key") then
+                loadstring(entry.url)()
+            else
+                loadstring(game:HttpGet(entry.url))()
+            end
+        end)
+        if not ok then
+            warn("[LEON4951] Gagal menjalankan " .. tostring(entry.name) .. ": " .. tostring(err))
+        end
+        -- close main UI to floating toggle
+        if ToggleMainUI then
+            ToggleMainUI(false)
+        end
+        -- also close notif
+        MarkNewScriptNotifSeen()
+        if NotifFrame and NotifFrame.Parent then
+            NotifFrame:Destroy()
+        end
+    end
+
+    -- pair them: 2 per row
+    for i = 1, #NEW_SCRIPTS, 2 do
+        local left = NEW_SCRIPTS[i]
+        local right = NEW_SCRIPTS[i + 1]
+
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 58)
+        row.BackgroundTransparency = 1
         row.LayoutOrder = i
         row.Parent = listScroll
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+        local function makeCard(parent, entry, xScale)
+            if not entry then return end
+            local card = Instance.new("Frame")
+            card.Size = UDim2.new(0.485, 0, 1, 0)
+            card.Position = UDim2.new(xScale, 0, 0, 0)
+            card.BackgroundColor3 = Theme.CardBg
+            card.Parent = parent
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+
+            local cStroke = Instance.new("UIStroke")
+            cStroke.Color = Theme.CardBorder
+            cStroke.Thickness = 1
+            cStroke.Parent = card
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.TextSize = 10
+            nameLbl.TextColor3 = Theme.TextPrimary
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Size = UDim2.new(1, -10, 0, 16)
+            nameLbl.Position = UDim2.new(0, 6, 0, 4)
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.RichText = true
+            nameLbl.Text = entry.name .. ' <font color="rgb(255, 50, 50)"><b>!</b></font>'
+            nameLbl.Parent = card
+
+            local isKey = (entry.status == "Key")
+            local statusLbl = Instance.new("TextLabel")
+            statusLbl.Font = Enum.Font.GothamBold
+            statusLbl.TextSize = 9
+            statusLbl.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+            statusLbl.BackgroundTransparency = 1
+            statusLbl.Size = UDim2.new(1, -10, 0, 12)
+            statusLbl.Position = UDim2.new(0, 6, 0, 20)
+            statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+            statusLbl.Text = string.upper(entry.status)
+            statusLbl.Parent = card
+
+            local execBtn = Instance.new("TextButton")
+            execBtn.Size = UDim2.new(1, -12, 0, 18)
+            execBtn.Position = UDim2.new(0, 6, 1, -22)
+            execBtn.BackgroundColor3 = Theme.RunPillBg
+            execBtn.Text = "EXECUTE"
+            execBtn.Font = Enum.Font.GothamBold
+            execBtn.TextSize = 10
+            execBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            execBtn.AutoButtonColor = false
+            execBtn.Parent = card
+            Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 5)
+
+            execBtn.MouseEnter:Connect(function()
+                TweenService:Create(execBtn, TweenInfo.new(0.1), {BackgroundColor3 = Theme.Accent}):Play()
+            end)
+            execBtn.MouseLeave:Connect(function()
+                TweenService:Create(execBtn, TweenInfo.new(0.1), {BackgroundColor3 = Theme.RunPillBg}):Play()
+            end)
+            execBtn.MouseButton1Click:Connect(function()
+                runScript(entry)
+            end)
+        end
+
+        makeCard(row, left, 0)
+        if right then
+            makeCard(row, right, 0.515)
+        end
     end
 
     local function closeNotif()
@@ -524,6 +627,7 @@ local function ShowNewScriptNotification()
 
     closeX.MouseButton1Click:Connect(closeNotif)
 end
+
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -1027,6 +1131,9 @@ RenderContent = function(categoryIndex)
                     if not ok then
                         warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
                     end
+                    if ToggleMainUI then
+                        ToggleMainUI(false)
+                    end
                 end
             end)
         end
@@ -1161,6 +1268,9 @@ RenderContent = function(categoryIndex)
                 end)
                 if not ok then
                     warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+                end
+                if ToggleMainUI then
+                    ToggleMainUI(false)
                 end
             end
         end)
@@ -1608,7 +1718,7 @@ local BootStatuses = {
     { 0.85, "Finalizing UI..." },
 }
 
-local bootDuration = 1.8
+local bootDuration = 0.6
 local bootStartTime = os.clock()
 local bootConn
 
