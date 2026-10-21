@@ -22,6 +22,9 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
+-- forward decls so early functions can close over the locals
+local MainFrame, MainScale, FloatingBtn, FloatingScale, ToggleMainUI, ScreenGui
+
 -- [ 2. CONFIGURASI & THEME ]
 local Theme = {
     Background = Color3.fromRGB(7, 10, 17),
@@ -405,8 +408,38 @@ Categories = {
 local activeCategoryIndex = 1
 local activeFilter = "ALL"
 
+RunAndClose = function(scriptEntry)
+    -- close UI (works even if ToggleMainUI not fully ready)
+    pcall(function()
+        if MainScale then MainScale.Scale = 0 end
+        if MainFrame then MainFrame.Visible = false end
+        if FloatingBtn then
+            FloatingBtn.Visible = true
+            if FloatingScale then FloatingScale.Scale = 1 end
+        end
+    end)
+    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
+    pcall(function() AddToHistory(scriptEntry) end)
+    local raw = scriptEntry.url
+    task.spawn(function()
+        local ok, err = pcall(function()
+            if type(raw) ~= "string" then error("url not string") end
+            if string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+                loadstring(raw)()
+            else
+                loadstring(game:HttpGet(raw))()
+            end
+        end)
+        if not ok then
+            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry and scriptEntry.name) .. ": " .. tostring(err))
+        end
+    end)
+end
+
+
+
 -- [ 4. ROOT UI ]
-local ScreenGui = Instance.new("ScreenGui")
+ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "leon4951HubGuiV2"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -528,23 +561,19 @@ local function ShowNewScriptNotification()
     listLayout.Parent = listScroll
 
     local function runScript(entry)
-        if not entry or not entry.url or entry.url == "" then
-            warn("[LEON4951] Notif: entry kosong")
-            return
-        end
-                pcall(function()
+        if not entry or not entry.url or entry.url == "" then return end
+        pcall(function()
             if NotifFrame and NotifFrame.Parent then NotifFrame:Destroy() end
         end)
-        pcall(function()
-            if ToggleMainUI then ToggleMainUI(false) end
-        end)
-        local targetUrl = entry.url
-        task.defer(function()
+        if ToggleMainUI then ToggleMainUI(false) end
+        local raw = entry.url
+        task.spawn(function()
             local ok, err = pcall(function()
-                local src = game:HttpGet(targetUrl)
-                local fn, cerr = loadstring(src)
-                if not fn then error(cerr or "compile fail") end
-                fn()
+                if string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+                    loadstring(raw)()
+                else
+                    loadstring(game:HttpGet(raw))()
+                end
             end)
             if not ok then
                 warn("[LEON4951] Notif gagal: " .. tostring(entry.name) .. " | " .. tostring(err))
@@ -624,17 +653,14 @@ local function ShowNewScriptNotification()
     end
 
     local function closeNotif()
-                TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
-        task.delay(0.16, function()
-            if NotifFrame then NotifFrame:Destroy() end
-        end)
+        if NotifFrame then NotifFrame:Destroy() end
     end
 
     closeX.MouseButton1Click:Connect(closeNotif)
 end
 
 
-local MainFrame = Instance.new("Frame")
+MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(560, 340)
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -654,7 +680,7 @@ MainStroke.Color = Theme.BorderColor
 MainStroke.Thickness = 6
 MainStroke.Parent = MainFrame
 
-local MainScale = Instance.new("UIScale")
+MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
@@ -691,8 +717,6 @@ local function CreateFLogo(size, rotation)
     return container
 end
 
-local ToggleMainUI
-local RunAndClose
 
 -- [ 6. HEADER ]
 local Header = Instance.new("Frame")
@@ -1519,7 +1543,7 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- [ 12. FLOATING TOGGLE BUTTON BARU ]
-local FloatingBtn = Instance.new("TextButton")
+FloatingBtn = Instance.new("TextButton")
 FloatingBtn.Name = "FloatingToggleBtn"
 FloatingBtn.Size = UDim2.fromOffset(44, 44)
 FloatingBtn.AnchorPoint = Vector2.new(0, 0.5)
@@ -1542,7 +1566,7 @@ local FloatingLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
 FloatingLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
 FloatingLogo.Parent = FloatingBtn
 
-local FloatingScale = Instance.new("UIScale")
+FloatingScale = Instance.new("UIScale")
 FloatingScale.Scale = 1
 FloatingScale.Parent = FloatingBtn
 
@@ -1600,40 +1624,6 @@ ToggleMainUI = function(show)
 end
 
 
-RunAndClose = function(scriptEntry)
-    -- 1) close UI instantly (same as pressing X)
-    if ToggleMainUI then
-        ToggleMainUI(false)
-    else
-        MainFrame.Visible = false
-        MainScale.Scale = 0
-        if FloatingBtn then
-            FloatingBtn.Visible = true
-            FloatingScale.Scale = 1
-        end
-    end
-    -- 2) execute in background so UI never waits
-    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
-    AddToHistory(scriptEntry)
-    task.spawn(function()
-        local raw = scriptEntry.url
-        local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
-        local ok, err = pcall(function()
-            if pureUrl and pureUrl ~= "" then
-                loadstring(game:HttpGet(pureUrl))()
-            elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
-                local fn, compileErr = loadstring(raw)
-                if not fn then error(compileErr or "loadstring compile failed") end
-                fn()
-            else
-                loadstring(game:HttpGet(raw))()
-            end
-        end)
-        if not ok then
-            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
-        end
-    end)
-end
 
 FloatingBtn.MouseButton1Click:Connect(function()
     ToggleMainUI(true)
