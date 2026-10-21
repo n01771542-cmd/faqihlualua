@@ -448,14 +448,14 @@ local function ShowNewScriptNotification()
 
     local NotifFrame = Instance.new("Frame")
     NotifFrame.Name = "NewScriptNotif"
-    NotifFrame.Size = UDim2.fromOffset(420, 360)
+    NotifFrame.Size = UDim2.fromOffset(340, 260)
     NotifFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     NotifFrame.Position = UDim2.fromScale(0.5, 0.5)
     NotifFrame.BackgroundColor3 = Theme.Background
     NotifFrame.BorderSizePixel = 0
     NotifFrame.ZIndex = 200
     NotifFrame.Parent = ScreenGui
-    Instance.new("UICorner", NotifFrame).CornerRadius = UDim.new(0, 14)
+    Instance.new("UICorner", NotifFrame).CornerRadius = UDim.new(0, 12)
 
     local nStroke = Instance.new("UIStroke")
     nStroke.Color = Theme.Accent
@@ -463,55 +463,55 @@ local function ShowNewScriptNotification()
     nStroke.Parent = NotifFrame
 
     local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 36)
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
     titleBar.BackgroundColor3 = Theme.CardBg
     titleBar.BorderSizePixel = 0
     titleBar.Parent = NotifFrame
-    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 14)
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
 
     local titleFix = Instance.new("Frame")
-    titleFix.Size = UDim2.new(1, 0, 0, 14)
-    titleFix.Position = UDim2.new(0, 0, 1, -14)
+    titleFix.Size = UDim2.new(1, 0, 0, 12)
+    titleFix.Position = UDim2.new(0, 0, 1, -12)
     titleFix.BackgroundColor3 = Theme.CardBg
     titleFix.BorderSizePixel = 0
     titleFix.Parent = titleBar
 
     local titleLbl = Instance.new("TextLabel")
     titleLbl.Font = Enum.Font.GothamBold
-    titleLbl.TextSize = 14
+    titleLbl.TextSize = 13
     titleLbl.TextColor3 = Theme.Accent
     titleLbl.BackgroundTransparency = 1
-    titleLbl.Size = UDim2.new(1, -50, 1, 0)
-    titleLbl.Position = UDim2.new(0, 14, 0, 0)
+    titleLbl.Size = UDim2.new(1, -40, 1, 0)
+    titleLbl.Position = UDim2.new(0, 12, 0, 0)
     titleLbl.TextXAlignment = Enum.TextXAlignment.Left
     titleLbl.Text = "New Script"
     titleLbl.Parent = titleBar
 
     local closeX = Instance.new("TextButton")
-    closeX.Size = UDim2.fromOffset(28, 28)
-    closeX.Position = UDim2.new(1, -34, 0, 4)
+    closeX.Size = UDim2.fromOffset(24, 24)
+    closeX.Position = UDim2.new(1, -28, 0, 3)
     closeX.BackgroundColor3 = Theme.CardBg
     closeX.Text = "X"
     closeX.Font = Enum.Font.GothamBold
-    closeX.TextSize = 14
+    closeX.TextSize = 12
     closeX.TextColor3 = Theme.TextPrimary
     closeX.AutoButtonColor = false
     closeX.Parent = titleBar
-    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 6)
 
     local listScroll = Instance.new("ScrollingFrame")
-    listScroll.Size = UDim2.new(1, -16, 1, -48)
-    listScroll.Position = UDim2.new(0, 8, 0, 42)
+    listScroll.Size = UDim2.new(1, -12, 1, -38)
+    listScroll.Position = UDim2.new(0, 6, 0, 34)
     listScroll.BackgroundTransparency = 1
     listScroll.BorderSizePixel = 0
-    listScroll.ScrollBarThickness = 3
+    listScroll.ScrollBarThickness = 2
     listScroll.ScrollBarImageColor3 = Theme.Accent
     listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     listScroll.Parent = NotifFrame
 
     local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 6)
+    listLayout.Padding = UDim.new(0, 4)
     listLayout.SortOrder = Enum.SortOrder.LayoutOrder
     listLayout.Parent = listScroll
 
@@ -527,24 +527,21 @@ local function ShowNewScriptNotification()
         if not ok then
             warn("[LEON4951] Gagal menjalankan " .. tostring(entry.name) .. ": " .. tostring(err))
         end
-        -- close main UI to floating toggle
-        if ToggleMainUI then
-            ToggleMainUI(false)
-        end
-        -- also close notif
         MarkNewScriptNotifSeen()
         if NotifFrame and NotifFrame.Parent then
             NotifFrame:Destroy()
         end
+        if ToggleMainUI then
+            ToggleMainUI(false)
+        end
     end
 
-    -- pair them: 2 per row
     for i = 1, #NEW_SCRIPTS, 2 do
         local left = NEW_SCRIPTS[i]
         local right = NEW_SCRIPTS[i + 1]
 
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 58)
+        row.Size = UDim2.new(1, 0, 0, 46)
         row.BackgroundTransparency = 1
         row.LayoutOrder = i
         row.Parent = listScroll
@@ -556,43 +553,35 @@ local function ShowNewScriptNotification()
             card.Position = UDim2.new(xScale, 0, 0, 0)
             card.BackgroundColor3 = Theme.CardBg
             card.Parent = parent
-            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 7)
 
             local cStroke = Instance.new("UIStroke")
             cStroke.Color = Theme.CardBorder
             cStroke.Thickness = 1
             cStroke.Parent = card
 
+            local isKey = (entry.status == "Key")
+            local statusColor = isKey and "rgb(255, 75, 90)" or "rgb(46, 146, 116)"
+
             local nameLbl = Instance.new("TextLabel")
             nameLbl.Font = Enum.Font.GothamBold
-            nameLbl.TextSize = 10
+            nameLbl.TextSize = 9
             nameLbl.TextColor3 = Theme.TextPrimary
             nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(1, -10, 0, 16)
-            nameLbl.Position = UDim2.new(0, 6, 0, 4)
+            nameLbl.Size = UDim2.new(1, -8, 0, 14)
+            nameLbl.Position = UDim2.new(0, 5, 0, 3)
             nameLbl.TextXAlignment = Enum.TextXAlignment.Left
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
             nameLbl.RichText = true
-            nameLbl.Text = entry.name .. ' <font color="rgb(255, 50, 50)"><b>!</b></font>'
+            -- name + status side by side + red !
+            nameLbl.Text = entry.name .. ' <font color="' .. statusColor .. '">(' .. entry.status .. ')</font> <font color="rgb(255, 50, 50)"><b>!</b></font>'
             nameLbl.Parent = card
 
-            local isKey = (entry.status == "Key")
-            local statusLbl = Instance.new("TextLabel")
-            statusLbl.Font = Enum.Font.GothamBold
-            statusLbl.TextSize = 9
-            statusLbl.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
-            statusLbl.BackgroundTransparency = 1
-            statusLbl.Size = UDim2.new(1, -10, 0, 12)
-            statusLbl.Position = UDim2.new(0, 6, 0, 20)
-            statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-            statusLbl.Text = string.upper(entry.status)
-            statusLbl.Parent = card
-
             local execBtn = Instance.new("TextButton")
-            execBtn.Size = UDim2.new(1, -12, 0, 18)
-            execBtn.Position = UDim2.new(0, 6, 1, -22)
+            execBtn.Size = UDim2.new(1, -10, 0, 18)
+            execBtn.Position = UDim2.new(0, 5, 1, -22)
             execBtn.BackgroundColor3 = Theme.RunPillBg
-            execBtn.Text = "EXECUTE"
+            execBtn.Text = "Run"
             execBtn.Font = Enum.Font.GothamBold
             execBtn.TextSize = 10
             execBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
