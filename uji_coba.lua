@@ -22,9 +22,6 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
--- forward decls so early functions can close over the locals
-local MainFrame, MainScale, FloatingBtn, FloatingScale, ToggleMainUI, ScreenGui
-
 -- [ 2. CONFIGURASI & THEME ]
 local Theme = {
     Background = Color3.fromRGB(7, 10, 17),
@@ -341,18 +338,11 @@ local MonthShortNames = {
 local RenderContent
 local Categories
 
-local DayNames = {
-    [1] = "Minggu", [2] = "Senin", [3] = "Selasa", [4] = "Rabu",
-    [5] = "Kamis", [6] = "Jumat", [7] = "Sabtu"
-}
-
 local function AddToHistory(scriptEntry)
     local t = os.date("*t")
     local monthStr = MonthShortNames[t.month] or tostring(t.month)
-    local dayStr = DayNames[t.wday] or ""
 
-    -- Tahun Bulan Tanggal Hari Jam
-    local timeStr = string.format("%04d %s %02d %s %02d:%02d", t.year, monthStr, t.day, dayStr, t.hour, t.min)
+    local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
 
     for i = #HistoryList, 1, -1 do
         if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
@@ -408,38 +398,8 @@ Categories = {
 local activeCategoryIndex = 1
 local activeFilter = "ALL"
 
-RunAndClose = function(scriptEntry)
-    -- close UI (works even if ToggleMainUI not fully ready)
-    pcall(function()
-        if MainScale then MainScale.Scale = 0 end
-        if MainFrame then MainFrame.Visible = false end
-        if FloatingBtn then
-            FloatingBtn.Visible = true
-            if FloatingScale then FloatingScale.Scale = 1 end
-        end
-    end)
-    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
-    pcall(function() AddToHistory(scriptEntry) end)
-    local raw = scriptEntry.url
-    task.spawn(function()
-        local ok, err = pcall(function()
-            if type(raw) ~= "string" then error("url not string") end
-            if string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
-                loadstring(raw)()
-            else
-                loadstring(game:HttpGet(raw))()
-            end
-        end)
-        if not ok then
-            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry and scriptEntry.name) .. ": " .. tostring(err))
-        end
-    end)
-end
-
-
-
 -- [ 4. ROOT UI ]
-ScreenGui = Instance.new("ScreenGui")
+local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "leon4951HubGuiV2"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -476,7 +436,8 @@ local function HasSeenNewScriptNotif()
     return dok and type(data) == "table" and data.seen == true
 end
 
-local function     if writefile then
+local function MarkNewScriptNotifSeen()
+    if writefile then
         pcall(function()
             writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 17}))
         end)
@@ -484,7 +445,7 @@ local function     if writefile then
 end
 
 local function ShowNewScriptNotification()
-    -- always show every execute
+    if HasSeenNewScriptNotif() then return end
 
     local NotifFrame = Instance.new("Frame")
     NotifFrame.Name = "NewScriptNotif"
@@ -503,7 +464,7 @@ local function ShowNewScriptNotification()
     nStroke.Parent = NotifFrame
 
     local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 36)
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
     titleBar.BackgroundColor3 = Theme.CardBg
     titleBar.BorderSizePixel = 0
     titleBar.Parent = NotifFrame
@@ -528,25 +489,20 @@ local function ShowNewScriptNotification()
     titleLbl.Parent = titleBar
 
     local closeX = Instance.new("TextButton")
-    closeX.Size = UDim2.fromOffset(34, 34)
-    closeX.Position = UDim2.new(1, -40, 0, -2)
+    closeX.Size = UDim2.fromOffset(24, 24)
+    closeX.Position = UDim2.new(1, -28, 0, 3)
     closeX.BackgroundColor3 = Theme.CardBg
     closeX.Text = "X"
     closeX.Font = Enum.Font.GothamBold
-    closeX.TextSize = 18
+    closeX.TextSize = 12
     closeX.TextColor3 = Theme.TextPrimary
     closeX.AutoButtonColor = false
-    closeX.ZIndex = 220
     closeX.Parent = titleBar
-    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 8)
-    local closeXStroke = Instance.new("UIStroke")
-    closeXStroke.Color = Theme.CardBorder
-    closeXStroke.Thickness = 1.5
-    closeXStroke.Parent = closeX
+    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 6)
 
     local listScroll = Instance.new("ScrollingFrame")
-    listScroll.Size = UDim2.new(1, -12, 1, -44)
-    listScroll.Position = UDim2.new(0, 6, 0, 40)
+    listScroll.Size = UDim2.new(1, -12, 1, -38)
+    listScroll.Position = UDim2.new(0, 6, 0, 34)
     listScroll.BackgroundTransparency = 1
     listScroll.BorderSizePixel = 0
     listScroll.ScrollBarThickness = 2
@@ -561,19 +517,24 @@ local function ShowNewScriptNotification()
     listLayout.Parent = listScroll
 
     local function runScript(entry)
-        if not entry or not entry.url or entry.url == "" then return end
+        if not entry or not entry.url or entry.url == "" then
+            warn("[LEON4951] Notif: entry kosong")
+            return
+        end
+        MarkNewScriptNotifSeen()
         pcall(function()
             if NotifFrame and NotifFrame.Parent then NotifFrame:Destroy() end
         end)
-        if ToggleMainUI then ToggleMainUI(false) end
-        local raw = entry.url
-        task.spawn(function()
+        pcall(function()
+            if ToggleMainUI then ToggleMainUI(false) end
+        end)
+        local targetUrl = entry.url
+        task.defer(function()
             local ok, err = pcall(function()
-                if string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
-                    loadstring(raw)()
-                else
-                    loadstring(game:HttpGet(raw))()
-                end
+                local src = game:HttpGet(targetUrl)
+                local fn, cerr = loadstring(src)
+                if not fn then error(cerr or "compile fail") end
+                fn()
             end)
             if not ok then
                 warn("[LEON4951] Notif gagal: " .. tostring(entry.name) .. " | " .. tostring(err))
@@ -653,14 +614,18 @@ local function ShowNewScriptNotification()
     end
 
     local function closeNotif()
-        if NotifFrame then NotifFrame:Destroy() end
+        MarkNewScriptNotifSeen()
+        TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+        task.delay(0.16, function()
+            if NotifFrame then NotifFrame:Destroy() end
+        end)
     end
 
     closeX.MouseButton1Click:Connect(closeNotif)
 end
 
 
-MainFrame = Instance.new("Frame")
+local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.fromOffset(560, 340)
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -680,7 +645,7 @@ MainStroke.Color = Theme.BorderColor
 MainStroke.Thickness = 6
 MainStroke.Parent = MainFrame
 
-MainScale = Instance.new("UIScale")
+local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
@@ -717,6 +682,8 @@ local function CreateFLogo(size, rotation)
     return container
 end
 
+local ToggleMainUI
+local RunAndClose
 
 -- [ 6. HEADER ]
 local Header = Instance.new("Frame")
@@ -1543,7 +1510,7 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- [ 12. FLOATING TOGGLE BUTTON BARU ]
-FloatingBtn = Instance.new("TextButton")
+local FloatingBtn = Instance.new("TextButton")
 FloatingBtn.Name = "FloatingToggleBtn"
 FloatingBtn.Size = UDim2.fromOffset(44, 44)
 FloatingBtn.AnchorPoint = Vector2.new(0, 0.5)
@@ -1566,7 +1533,7 @@ local FloatingLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
 FloatingLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
 FloatingLogo.Parent = FloatingBtn
 
-FloatingScale = Instance.new("UIScale")
+local FloatingScale = Instance.new("UIScale")
 FloatingScale.Scale = 1
 FloatingScale.Parent = FloatingBtn
 
@@ -1624,6 +1591,40 @@ ToggleMainUI = function(show)
 end
 
 
+RunAndClose = function(scriptEntry)
+    -- 1) close UI instantly (same as pressing X)
+    if ToggleMainUI then
+        ToggleMainUI(false)
+    else
+        MainFrame.Visible = false
+        MainScale.Scale = 0
+        if FloatingBtn then
+            FloatingBtn.Visible = true
+            FloatingScale.Scale = 1
+        end
+    end
+    -- 2) execute in background so UI never waits
+    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
+    AddToHistory(scriptEntry)
+    task.spawn(function()
+        local raw = scriptEntry.url
+        local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
+        local ok, err = pcall(function()
+            if pureUrl and pureUrl ~= "" then
+                loadstring(game:HttpGet(pureUrl))()
+            elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+                local fn, compileErr = loadstring(raw)
+                if not fn then error(compileErr or "loadstring compile failed") end
+                fn()
+            else
+                loadstring(game:HttpGet(raw))()
+            end
+        end)
+        if not ok then
+            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+        end
+    end)
+end
 
 FloatingBtn.MouseButton1Click:Connect(function()
     ToggleMainUI(true)
