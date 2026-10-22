@@ -1,7 +1,7 @@
 --[[ =============================================================================
   leon4951hub  -  script.lua   (LocalScript / StarterPlayerScripts)
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
-  karakter kamu.   UI: 380 x 300
+  karakter kamu.   UI: 450 x 300
 
   CARA PAKAI (Roblox Studio, game milikmu sendiri):
     1. Taruh file ini sebagai LocalScript di StarterPlayer > StarterPlayerScripts
@@ -11,9 +11,9 @@
 
   CARA KERJA PEMASANGAN (otomatis, urut):
     A. Server  : kalau AvatarStudioServer ada -> server yang memasang.
-    B. Skin    : tiap item (aksesori, kemeja/celana/kaos klasik, wajah) dirender
-                 SENDIRIAN lewat donor Roblox lalu dilas ke skin (jalur seperti sepatu).
-                 Kalau donor menolak -> muat langsung (GetObjects / LoadAsset).
+    B. Skin    : SEMUA item dimasukkan ke deskripsi avatar lalu dirender donor Roblox
+                 (jalur yang sama dengan tab Avatar). Kalau ada aksesori yang hilang
+                 -> dimuat langsung (GetObjects / LoadAsset) dan dilas ke skin.
     C. Donor   : avatar/banyak item -> Roblox membangun rig donor dari
                  HumanoidDescription, lalu aksesori/pakaian/animasinya dipindah ke karakter kamu.
   (ApplyDescription ke karakter sendiri dari klien DITOLAK Roblox, jadi tidak dipakai.)
@@ -459,7 +459,7 @@ local E = {
 	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {}, extraIds = {}, extraCache = {},
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {}, extraIds = {}, extraCache = {}, useExtras = false,
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -1518,17 +1518,21 @@ function E.renderSkinPuppet(desc, added)
 	end
 	local dset = collect(desc)
 	local extras = {}
-	for id in pairs(E.extraIds) do
-		if dset[id] then
-			extras[id] = true
+	if E.useExtras then
+		for id in pairs(E.extraIds) do
+			if dset[id] then
+				extras[id] = true
+			end
 		end
-	end
-	for _, id in ipairs(added or {}) do
-		local t = E.assetType(id)
-		if t and (ACC[t] or ISOLATED[t]) then
-			extras[id] = true
-			E.extraIds[id] = true
+		for _, id in ipairs(added or {}) do
+			local t = E.assetType(id)
+			if t and (ACC[t] or ISOLATED[t]) then
+				extras[id] = true
+				E.extraIds[id] = true
+			end
 		end
+	else
+		E.extraIds = {}
 	end
 	local baseDesc = desc
 	if next(extras) then
@@ -1686,9 +1690,24 @@ function E.renderSkinPuppet(desc, added)
 			E.extraIds[id] = nil
 		end
 	end
+	-- jalur utama: semua item ada di deskripsi penuh (sama seperti tab Avatar).
+	-- kalau donor membuang sebagian aksesori, coba muat langsung item yang baru ditambahkan.
+	local expectedAcc = #desc:GetAccessories(true)
+	if not E.useExtras and nAcc < expectedAcc then
+		logf("donor hanya merender %d dari %d aksesori -> muat langsung item baru", nAcc, expectedAcc)
+		for _, id in ipairs(added or {}) do
+			local t = E.assetType(id)
+			if t and ACC[t] then
+				if E.attachDirect(id, model) then
+					extraOk = extraOk + 1
+				end
+			end
+		end
+	end
 	E.lastFailedIds = bad
 	E.skinAcc = nAcc + extraOk
-	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d item terpisah, offset tinggi %.2f", #links, nAcc, extraOk, offY)
+	logf("skin boneka: %d sendi disalin, aksesori %d/%d (donor %d + langsung/terpisah %d), offset tinggi %.2f",
+		#links, E.skinAcc, expectedAcc, nAcc, extraOk, offY)
 	task.delay(0.2, E.reapplyTweaks)
 	return true
 end
@@ -2779,9 +2798,9 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
--- [7] WINDOW  (380 x 300)
+-- [7] WINDOW  (450 x 300)
 ----------------------------------------------------------------------------
-local W, H = 380, 300
+local W, H = 450, 300
 local UI = {}
 local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, open = true,
 	favorites = {}, favOrder = {}, recent = {}, token = 0 }
@@ -2823,7 +2842,7 @@ tl.Position = UDim2.fromOffset(12, 3)
 tl.Size = UDim2.new(0, 120, 0, 20)
 UI.subtitle = label(titlebar, "Memuat karakter...", 11, T.Dim, Enum.Font.Gotham)
 UI.subtitle.Position = UDim2.fromOffset(12, 22)
-UI.subtitle.Size = UDim2.new(0, 200, 0, 14)
+UI.subtitle.Size = UDim2.new(0, 260, 0, 14)
 UI.subtitle.TextTruncate = Enum.TextTruncate.AtEnd
 
 local tbBtns = mk("Frame", {
@@ -2964,17 +2983,17 @@ local function makeCard(parent, item, onFav)
 	corner(card, 10)
 	local st = stroke(card, T.Stroke, 1.5, 0.3)
 	local img = mk("ImageLabel", {
-		Size = UDim2.new(1, -10, 0, 76), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
+		Size = UDim2.new(1, -10, 0, 68), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
 		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
 	})
 	corner(img, 8)
 	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
-	nm.Position = UDim2.fromOffset(6, 84)
+	nm.Position = UDim2.fromOffset(6, 76)
 	nm.Size = UDim2.new(1, -12, 0, 15)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
 	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
-	pr.Position = UDim2.fromOffset(6, 100)
+	pr.Position = UDim2.fromOffset(6, 92)
 	pr.Size = UDim2.new(1, -12, 0, 13)
 
 	local badge = mk("TextLabel", {
@@ -3066,28 +3085,28 @@ UI.builders.catalog = function(page)
 	-- baris 2: kategori (dropdown), sort, gratis, jumlah
 	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = main })
 	local drop
-	local catBtn = button(row2, { text = "☰ Kategori", size = UDim2.fromOffset(118, 26), textSize = 11, radius = 8,
+	local catBtn = button(row2, { text = "☰ Kategori", size = UDim2.fromOffset(130, 26), textSize = 11, radius = 8,
 		onClick = function() drop.Visible = not drop.Visible end })
 	catBtn.TextTruncate = Enum.TextTruncate.AtEnd
-	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(84, 26), position = UDim2.fromOffset(124, 0),
+	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(96, 26), position = UDim2.fromOffset(136, 0),
 		textSize = 11, radius = 8, onClick = function()
 			State.sortIdx = State.sortIdx % #SORTS + 1
 			startQuery()
 		end })
 	local freeBtn
-	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(60, 26), position = UDim2.fromOffset(214, 0),
+	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(70, 26), position = UDim2.fromOffset(238, 0),
 		textSize = 11, radius = 8, onClick = function()
 			State.freeOnly = not State.freeOnly
 			startQuery()
 		end })
 	local countL = label(row2, "", 10, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
-	countL.Size = UDim2.fromOffset(42, 26)
-	countL.Position = UDim2.fromOffset(278, 0)
+	countL.Size = UDim2.fromOffset(70, 26)
+	countL.Position = UDim2.fromOffset(314, 0)
 
 	-- grid item
 	local grid = makeScroll(main, UDim2.new(1, 0, 1, -66), UDim2.fromOffset(0, 66))
 	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(98, 118), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		CellSize = UDim2.fromOffset(90, 112), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
 	})
 	pad(grid, 0, 2, 0, 10)
@@ -3656,6 +3675,14 @@ UI.builders.info = function(page)
 		onClick = function()
 			E.useSkin = not E.useSkin
 			sb.Text = "Mode kulit overlay (badan ikut berubah): " .. (E.useSkin and "HIDUP" or "MATI")
+			task.spawn(E.rerender)
+		end })
+	local xb
+	xb = button(scroll, { text = "Item terpisah (eksperimen): MATI", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
+		onClick = function()
+			E.useExtras = not E.useExtras
+			xb.Text = "Item terpisah (eksperimen): " .. (E.useExtras and "HIDUP" or "MATI")
+			E.extraIds = {}
 			task.spawn(E.rerender)
 		end })
 	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
