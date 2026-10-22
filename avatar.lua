@@ -456,7 +456,7 @@ local E = {
 	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {},
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {}, extraIds = {}, extraCache = {},
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -795,8 +795,9 @@ local function harvestAccessory(donorAcc, char)
 	if dh and ch then
 		local dw = dh:FindFirstChild("AccessoryWeld") or dh:FindFirstChildWhichIsA("Weld")
 		local cw = ch:FindFirstChild("AccessoryWeld") or ch:FindFirstChildWhichIsA("Weld")
-		if dw and cw and dw.Part1 then
-			local tgt = char:FindFirstChild(dw.Part1.Name) or char:FindFirstChild(dw.Part1.Name, true)
+		local p1name = (dw and dw.Part1 and dw.Part1.Name) or donorAcc:GetAttribute("AS_P1")
+		if dw and cw and p1name then
+			local tgt = char:FindFirstChild(p1name) or char:FindFirstChild(p1name, true)
 			if tgt and tgt:IsA("BasePart") then
 				cw.Part0 = ch
 				cw.Part1 = tgt
@@ -1425,6 +1426,43 @@ local function directFallback(desc, added, model, nAcc)
 	return n, failed
 end
 
+-- ITEM TERPISAH: tiap aksesori yang dipilih dirender sendirian lewat donor Roblox (cara yang sama
+-- dengan avatar), lalu disimpan (cache) dan dilas ke skin. Batas jumlah/slot aksesori dan item lain
+-- yang gagal tidak bisa lagi membuat item ini hilang.
+local function cacheExtra(id, tid)
+	if E.extraCache[id] then
+		return E.extraCache[id]
+	end
+	local d = Instance.new("HumanoidDescription")
+	if not addToDesc(d, id, tid) then
+		return nil
+	end
+	local m = donorModel(d)
+	if not m then
+		return nil
+	end
+	local list = {}
+	for _, a in ipairs(m:GetChildren()) do
+		if a:IsA("Accessory") then
+			local h = a:FindFirstChild("Handle")
+			local w = h and (h:FindFirstChild("AccessoryWeld") or h:FindFirstChildWhichIsA("Weld"))
+			local c = a:Clone()
+			if w and w.Part1 then
+				c:SetAttribute("AS_P1", w.Part1.Name)
+			end
+			table.insert(list, c)
+		end
+	end
+	pcall(function()
+		m:Destroy()
+	end)
+	if #list > 0 then
+		E.extraCache[id] = list
+		return list
+	end
+	return nil
+end
+
 -- SKIN BONEKA: rig donor utuh (sendi sendiri) dipasang di belakang HumanoidRootPart kita,
 -- lalu Motor6D.Transform disalin tiap frame -> bentuk tubuh donor + gerakan karaktermu.
 function E.renderSkinPuppet(desc, added)
@@ -1433,7 +1471,28 @@ function E.renderSkinPuppet(desc, added)
 	if not hrp then
 		return false, "karakter tanpa HumanoidRootPart"
 	end
-	local model = donorModel(desc)
+	local dset = collect(desc)
+	local extras = {}
+	for id in pairs(E.extraIds) do
+		if dset[id] then
+			extras[id] = true
+		end
+	end
+	for _, id in ipairs(added or {}) do
+		local t = E.assetType(id)
+		if t and ACC[t] then
+			extras[id] = true
+			E.extraIds[id] = true
+		end
+	end
+	local baseDesc = desc
+	if next(extras) then
+		baseDesc = desc:Clone()
+		for id in pairs(extras) do
+			removeFromDesc(baseDesc, id)
+		end
+	end
+	local model = donorModel(baseDesc)
 	if not model then
 		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
 	end
@@ -1537,10 +1596,31 @@ function E.renderSkinPuppet(desc, added)
 	E.skinAcc = nAcc
 	E.rendered = 0
 	E.lastRenderAt = os.clock()
-	local direct, bad = directFallback(desc, added, model, nAcc)
+	local extraOk, bad = 0, {}
+	for id in pairs(extras) do
+		local tid = E.types[id] or E.assetType(id)
+		local ok = false
+		local list = tid and cacheExtra(id, tid)
+		if list then
+			for _, a in ipairs(list) do
+				harvestAccessory(a, model)
+				ok = true
+			end
+		end
+		if not ok and E.attachDirect(id, model) then
+			ok = true
+		end
+		logf("item terpisah %s -> %s", tostring(id), ok and "TAMPIL" or "DITOLAK")
+		if ok then
+			extraOk = extraOk + 1
+		else
+			table.insert(bad, id)
+			E.extraIds[id] = nil
+		end
+	end
 	E.lastFailedIds = bad
-	E.skinAcc = nAcc + direct
-	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d dimuat langsung, offset tinggi %.2f", #links, nAcc, direct, offY)
+	E.skinAcc = nAcc + extraOk
+	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d item terpisah, offset tinggi %.2f", #links, nAcc, extraOk, offY)
 	task.delay(0.2, E.reapplyTweaks)
 	return true
 end
@@ -1763,6 +1843,9 @@ function E._commit(newLook, text, skipHist, force)
 		end
 	end
 
+	for _, rid in ipairs(removed) do
+		E.extraIds[rid] = nil
+	end
 	E.lastMethod = how
 	if not skipHist and E.look then
 		table.insert(E.history, E.look)
@@ -1874,6 +1957,7 @@ function E.applyUserVisual(userId, displayName, keepLook)
 		end
 		E.look = desc
 		E.failed = {}
+		E.extraIds = {}
 		E.userVisual = userId
 		fire()
 	end
@@ -1938,6 +2022,7 @@ function E.doRedo()
 end
 
 function E.reset()
+	E.extraIds = {}
 	if E.skinActive then
 		E.removeSkin()
 		E.userVisual = nil
