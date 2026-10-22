@@ -1,7 +1,7 @@
 --[[ =============================================================================
   leon4951hub  -  script.lua   (LocalScript / StarterPlayerScripts)
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
-  karakter kamu.
+  karakter kamu.   UI: 380 x 300
 
   CARA PAKAI (Roblox Studio, game milikmu sendiri):
     1. Taruh file ini sebagai LocalScript di StarterPlayer > StarterPlayerScripts
@@ -11,11 +11,11 @@
 
   CARA KERJA PEMASANGAN (otomatis, urut):
     A. Server  : kalau AvatarStudioServer ada -> server yang memasang.
-    B. Injector: 1 item -> dimuat (GetObjects / LoadAsset / donor rig) lalu
-                 ditempel + DILAS manual ke karakter.
+    B. Skin    : tiap item (aksesori, kemeja/celana/kaos klasik, wajah) dirender
+                 SENDIRIAN lewat donor Roblox lalu dilas ke skin (jalur seperti sepatu).
+                 Kalau donor menolak -> muat langsung (GetObjects / LoadAsset).
     C. Donor   : avatar/banyak item -> Roblox membangun rig donor dari
-                 HumanoidDescription (klien boleh untuk rig buatan sendiri),
-                 lalu aksesori/pakaian/animasinya dipindah ke karakter kamu.
+                 HumanoidDescription, lalu aksesori/pakaian/animasinya dipindah ke karakter kamu.
   (ApplyDescription ke karakter sendiri dari klien DITOLAK Roblox, jadi tidak dipakai.)
   Hasilnya diverifikasi (jumlah aksesori dihitung ulang). Kalau item benar-benar
   tidak bisa ditampilkan, kamu diberi tahu dan item tidak ditandai "dipakai".
@@ -76,6 +76,9 @@ local ACC = {
 	[70] = { "LeftShoe", true }, [71] = { "RightShoe", true }, [72] = { "DressSkirt", true },
 	[76] = { "Eyebrow", false }, [77] = { "Eyelash", false },
 }
+
+-- tipe non-aksesori yang juga dirender sendirian (pakaian klasik + wajah)
+local ISOLATED = { [11] = true, [12] = true, [2] = true, [18] = true }
 
 -- slot animasi di script "Animate" bawaan Roblox
 local ANIM_SLOT = {
@@ -1375,6 +1378,39 @@ function E.attachDirect(id, host)
 	return okA
 end
 
+-- muat langsung untuk pakaian klasik (kemeja/celana/kaos) dan wajah
+function E.attachClassicDirect(id, tid, host)
+	local objs = loadAsset(id, nil)
+	if not objs then
+		return false
+	end
+	local class = (tid == 11 and "Shirt") or (tid == 12 and "Pants") or (tid == 2 and "ShirtGraphic") or nil
+	if class then
+		local inst = findIn(objs, class)
+		if not inst then
+			return false
+		end
+		for _, ch in ipairs(host:GetChildren()) do
+			if ch:IsA(class) then
+				ch:Destroy()
+			end
+		end
+		local c = inst:Clone()
+		c.Name = "AS_" .. tostring(id)
+		c.Parent = host
+		return true
+	elseif tid == 18 then
+		local decal = findIn(objs, "Decal")
+		local head = host:FindFirstChild("Head")
+		local face = head and head:FindFirstChildOfClass("Decal")
+		if decal and face then
+			face.Texture = decal.Texture
+			return true
+		end
+	end
+	return false
+end
+
 -- apakah donor Roblox sanggup memuat aksesori ini sendirian? (false = aset dibuang diam-diam)
 local function donorHas(id, tid)
 	local d = Instance.new("HumanoidDescription")
@@ -1426,9 +1462,9 @@ local function directFallback(desc, added, model, nAcc)
 	return n, failed
 end
 
--- ITEM TERPISAH: tiap aksesori yang dipilih dirender sendirian lewat donor Roblox (cara yang sama
--- dengan avatar), lalu disimpan (cache) dan dilas ke skin. Batas jumlah/slot aksesori dan item lain
--- yang gagal tidak bisa lagi membuat item ini hilang.
+-- ITEM TERPISAH: tiap item yang dipilih (aksesori, kemeja/celana/kaos klasik, wajah) dirender sendirian
+-- lewat donor Roblox (cara yang sama dengan avatar), lalu disimpan (cache) dan dipasang ke skin.
+-- Batas jumlah/slot aksesori dan item lain yang gagal tidak bisa lagi membuat item ini hilang.
 local function cacheExtra(id, tid)
 	if E.extraCache[id] then
 		return E.extraCache[id]
@@ -1450,7 +1486,16 @@ local function cacheExtra(id, tid)
 			if w and w.Part1 then
 				c:SetAttribute("AS_P1", w.Part1.Name)
 			end
-			table.insert(list, c)
+			table.insert(list, { kind = "acc", inst = c })
+		elseif (tid == 11 and a:IsA("Shirt")) or (tid == 12 and a:IsA("Pants")) or (tid == 2 and a:IsA("ShirtGraphic")) then
+			table.insert(list, { kind = "cloth", inst = a:Clone() })
+		end
+	end
+	if tid == 18 then
+		local head = m:FindFirstChild("Head")
+		local dec = head and head:FindFirstChildOfClass("Decal")
+		if dec and dec.Texture ~= "" then
+			table.insert(list, { kind = "face", texture = dec.Texture })
 		end
 	end
 	pcall(function()
@@ -1480,7 +1525,7 @@ function E.renderSkinPuppet(desc, added)
 	end
 	for _, id in ipairs(added or {}) do
 		local t = E.assetType(id)
-		if t and ACC[t] then
+		if t and (ACC[t] or ISOLATED[t]) then
 			extras[id] = true
 			E.extraIds[id] = true
 		end
@@ -1602,15 +1647,38 @@ function E.renderSkinPuppet(desc, added)
 		local ok = false
 		local list = tid and cacheExtra(id, tid)
 		if list then
-			for _, a in ipairs(list) do
-				harvestAccessory(a, model)
-				ok = true
+			for _, e in ipairs(list) do
+				if e.kind == "acc" then
+					harvestAccessory(e.inst, model)
+					ok = true
+				elseif e.kind == "cloth" then
+					for _, ch in ipairs(model:GetChildren()) do
+						if ch.ClassName == e.inst.ClassName then
+							ch:Destroy()
+						end
+					end
+					local c = e.inst:Clone()
+					c.Name = "AS_" .. tostring(id)
+					c.Parent = model
+					ok = true
+				elseif e.kind == "face" then
+					local head = model:FindFirstChild("Head")
+					local dec = head and head:FindFirstChildOfClass("Decal")
+					if dec then
+						dec.Texture = e.texture
+						ok = true
+					end
+				end
 			end
 		end
-		if not ok and E.attachDirect(id, model) then
-			ok = true
+		if not ok and tid then
+			if ACC[tid] then
+				ok = E.attachDirect(id, model)
+			else
+				ok = E.attachClassicDirect(id, tid, model)
+			end
 		end
-		logf("item terpisah %s -> %s", tostring(id), ok and "TAMPIL" or "DITOLAK")
+		logf("item terpisah %s (tipe %s) -> %s", tostring(id), tostring(tid), ok and "TAMPIL" or "DITOLAK")
 		if ok then
 			extraOk = extraOk + 1
 		else
@@ -2711,9 +2779,9 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
--- [7] WINDOW
+-- [7] WINDOW  (380 x 300)
 ----------------------------------------------------------------------------
-local W, H = 860, 520
+local W, H = 380, 300
 local UI = {}
 local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, open = true,
 	favorites = {}, favOrder = {}, recent = {}, token = 0 }
@@ -2736,7 +2804,7 @@ UI.window = mk("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.fromOffset(W, H),
 	BackgroundColor3 = T.Bg, BorderSizePixel = 0, ClipsDescendants = true, Parent = UI.gui,
 })
-corner(UI.window, 16)
+corner(UI.window, 14)
 stroke(UI.window, T.Stroke, 1.5)
 UI.scale = mk("UIScale", { Parent = UI.window })
 
@@ -2748,30 +2816,31 @@ end
 UI.scale.Scale = computeScale()
 
 -- titlebar
-local TITLE_H = 52
+local TITLE_H = 40
 local titlebar = mk("Frame", { Size = UDim2.new(1, 0, 0, TITLE_H), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = UI.window })
-local tl = label(titlebar, "leon4951hub", 18, T.Text, Enum.Font.GothamBold)
-tl.Position = UDim2.fromOffset(16, 6)
-tl.Size = UDim2.new(0, 260, 0, 22)
-UI.subtitle = label(titlebar, "Memuat karakter...", 12, T.Dim, Enum.Font.Gotham)
-UI.subtitle.Position = UDim2.fromOffset(16, 28)
-UI.subtitle.Size = UDim2.new(0, 420, 0, 16)
+local tl = label(titlebar, "leon4951hub", 16, T.Text, Enum.Font.GothamBold)
+tl.Position = UDim2.fromOffset(12, 3)
+tl.Size = UDim2.new(0, 120, 0, 20)
+UI.subtitle = label(titlebar, "Memuat karakter...", 11, T.Dim, Enum.Font.Gotham)
+UI.subtitle.Position = UDim2.fromOffset(12, 22)
+UI.subtitle.Size = UDim2.new(0, 200, 0, 14)
+UI.subtitle.TextTruncate = Enum.TextTruncate.AtEnd
 
 local tbBtns = mk("Frame", {
-	Size = UDim2.fromOffset(200, 36), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0),
+	Size = UDim2.fromOffset(150, 30), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
 	BackgroundTransparency = 1, Parent = titlebar,
 })
 mk("UIListLayout", {
-	FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+	FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
 	HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center,
 	Parent = tbBtns,
 })
-UI.undoBtn = button(tbBtns, { text = "↶", size = UDim2.fromOffset(40, 34), textSize = 18, order = 1,
+UI.undoBtn = button(tbBtns, { text = "↶", size = UDim2.fromOffset(32, 28), textSize = 15, radius = 8, order = 1,
 	onClick = function() task.spawn(E.undo) end })
-UI.redoBtn = button(tbBtns, { text = "↷", size = UDim2.fromOffset(40, 34), textSize = 18, order = 2,
+UI.redoBtn = button(tbBtns, { text = "↷", size = UDim2.fromOffset(32, 28), textSize = 15, radius = 8, order = 2,
 	onClick = function() task.spawn(E.doRedo) end })
-UI.destroyBtn = button(tbBtns, { text = "💥", size = UDim2.fromOffset(40, 34), textSize = 16, bg = rgb(120, 40, 56), order = 3 })
-UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(40, 34), bg = T.Danger, order = 4 })
+UI.destroyBtn = button(tbBtns, { text = "💥", size = UDim2.fromOffset(32, 28), textSize = 13, radius = 8, bg = rgb(120, 40, 56), order = 3 })
+UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(32, 28), textSize = 13, radius = 8, bg = T.Danger, order = 4 })
 
 -- drag
 do
@@ -2795,7 +2864,7 @@ do
 end
 
 -- body
-local RAIL_W = 80
+local RAIL_W = 44
 local body = mk("Frame", { Position = UDim2.fromOffset(0, TITLE_H), Size = UDim2.new(1, 0, 1, -TITLE_H), BackgroundTransparency = 1, Parent = UI.window })
 local rail = mk("Frame", { Size = UDim2.new(0, RAIL_W, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = body })
 local railList = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = rail })
@@ -2838,20 +2907,18 @@ end
 
 for i, tab in ipairs(TABS) do
 	local b = mk("TextButton", {
-		Size = UDim2.new(1, 0, 0, 58), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
 		AutoButtonColor = false, LayoutOrder = i, Parent = railList,
 	})
-	corner(b, 12)
-	mk("TextLabel", { BackgroundTransparency = 1, Text = tab.icon, TextSize = 21, Size = UDim2.new(1, 0, 0, 28), Position = UDim2.fromOffset(0, 6), Parent = b })
-	local tx = label(b, tab.name, 11, T.Dim, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
-	tx.Size = UDim2.new(1, 0, 0, 16)
-	tx.Position = UDim2.fromOffset(0, 36)
-	UI.railBtns[tab.key] = { btn = b, txt = tx }
+	corner(b, 9)
+	local ic = mk("TextLabel", { BackgroundTransparency = 1, Text = tab.icon, TextSize = 17, TextColor3 = T.Dim,
+		Size = UDim2.new(1, 0, 1, 0), Parent = b })
+	UI.railBtns[tab.key] = { btn = b, txt = ic }
 	b.Activated:Connect(function()
 		UI.showTab(tab.key)
 	end)
 	local p = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = UI.content })
-	pad(p, 14)
+	pad(p, 8)
 	UI.pages[tab.key] = p
 end
 
@@ -2894,39 +2961,39 @@ local function makeCard(parent, item, onFav)
 		AutoButtonColor = false, Text = "", BackgroundColor3 = T.Surface, BorderSizePixel = 0,
 		LayoutOrder = item.Order or 0, Parent = parent,
 	})
-	corner(card, 12)
+	corner(card, 10)
 	local st = stroke(card, T.Stroke, 1.5, 0.3)
 	local img = mk("ImageLabel", {
-		Size = UDim2.new(1, -12, 0, 100), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
+		Size = UDim2.new(1, -10, 0, 76), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
 		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
 	})
-	corner(img, 9)
-	local nm = label(card, item.Name, 12, T.Text, Enum.Font.GothamBold)
-	nm.Position = UDim2.fromOffset(8, 110)
-	nm.Size = UDim2.new(1, -16, 0, 16)
+	corner(img, 8)
+	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
+	nm.Position = UDim2.fromOffset(6, 84)
+	nm.Size = UDim2.new(1, -12, 0, 15)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
-	local pr = label(card, priceText(item.Price), 11, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
-	pr.Position = UDim2.fromOffset(8, 128)
-	pr.Size = UDim2.new(1, -16, 0, 14)
+	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
+	pr.Position = UDim2.fromOffset(6, 100)
+	pr.Size = UDim2.new(1, -12, 0, 13)
 
 	local badge = mk("TextLabel", {
-		Size = UDim2.fromOffset(22, 22), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 10),
-		BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 14, Font = Enum.Font.GothamBold,
+		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
+		BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
 		BorderSizePixel = 0, Visible = false, ZIndex = 3, Parent = card,
 	})
-	corner(badge, 11)
+	corner(badge, 9)
 	local fav = mk("TextButton", {
-		Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(10, 10), BackgroundTransparency = 0.35,
-		BackgroundColor3 = Color3.new(0, 0, 0), Text = "♡", TextSize = 16, Font = Enum.Font.GothamBold,
+		Size = UDim2.fromOffset(22, 22), Position = UDim2.fromOffset(8, 8), BackgroundTransparency = 0.35,
+		BackgroundColor3 = Color3.new(0, 0, 0), Text = "♡", TextSize = 13, Font = Enum.Font.GothamBold,
 		TextColor3 = Color3.new(1, 1, 1), AutoButtonColor = false, ZIndex = 3, Parent = card,
 	})
-	corner(fav, 13)
+	corner(fav, 11)
 	local overlay = mk("TextLabel", {
 		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45,
-		Text = "⏳", TextSize = 26, Visible = false, ZIndex = 6, Parent = card,
+		Text = "⏳", TextSize = 22, Visible = false, ZIndex = 6, Parent = card,
 	})
-	corner(overlay, 12)
+	corner(overlay, 10)
 
 	local obj = { card = card, item = item, loading = false }
 	function obj.update()
@@ -2973,27 +3040,17 @@ local function makeCard(parent, item, onFav)
 end
 
 UI.builders.catalog = function(page)
-	local CAT_W = 160
-	local catPanel = mk("Frame", { Size = UDim2.new(0, CAT_W, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = page })
-	corner(catPanel, 12)
-	local catScroll = makeScroll(catPanel)
-	pad(catScroll, 6, 6, 6, 6)
-	vlist(catScroll, 2)
-
-	local main = mk("Frame", {
-		Position = UDim2.fromOffset(CAT_W + 10, 0), Size = UDim2.new(1, -(CAT_W + 10), 1, 0),
-		BackgroundTransparency = 1, Parent = page,
-	})
+	local main = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = page })
 
 	-- baris 1: cari + refresh
-	local row1 = mk("Frame", { Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1, Parent = main })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -46, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row1 })
-	corner(sbFrame, 10)
+	local row1 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = main })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -36, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row1 })
+	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
-		Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Cari di kategori ini (Enter)...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 14, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Cari (Enter)...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = sbFrame,
 	})
 	local startQuery
@@ -3003,36 +3060,64 @@ UI.builders.catalog = function(page)
 			startQuery()
 		end
 	end)
-	button(row1, { text = "⟳", size = UDim2.fromOffset(38, 38), position = UDim2.new(1, -38, 0, 0), textSize = 20,
+	button(row1, { text = "⟳", size = UDim2.fromOffset(30, 30), position = UDim2.new(1, -30, 0, 0), textSize = 16, radius = 8,
 		onClick = function() startQuery() end })
 
-	-- baris 2: sort, gratis, jumlah
-	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 32), Position = UDim2.fromOffset(0, 44), BackgroundTransparency = 1, Parent = main })
-	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(150, 32), textSize = 13,
-		onClick = function()
+	-- baris 2: kategori (dropdown), sort, gratis, jumlah
+	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = main })
+	local drop
+	local catBtn = button(row2, { text = "☰ Kategori", size = UDim2.fromOffset(118, 26), textSize = 11, radius = 8,
+		onClick = function() drop.Visible = not drop.Visible end })
+	catBtn.TextTruncate = Enum.TextTruncate.AtEnd
+	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(84, 26), position = UDim2.fromOffset(124, 0),
+		textSize = 11, radius = 8, onClick = function()
 			State.sortIdx = State.sortIdx % #SORTS + 1
 			startQuery()
 		end })
 	local freeBtn
-	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(86, 32), position = UDim2.fromOffset(158, 0), textSize = 13,
-		onClick = function()
+	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(60, 26), position = UDim2.fromOffset(214, 0),
+		textSize = 11, radius = 8, onClick = function()
 			State.freeOnly = not State.freeOnly
 			startQuery()
 		end })
-	local countL = label(row2, "", 12, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
-	countL.Size = UDim2.new(1, -440, 1, 0)
-	countL.Position = UDim2.fromOffset(252, 0)
-	local idBox = mk("TextBox", { Size = UDim2.fromOffset(112, 32), Position = UDim2.new(1, -184, 0, 0), BackgroundColor3 = T.Surface,
-		BorderSizePixel = 0, Text = "", PlaceholderText = "ID item", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 13, Font = Enum.Font.GothamMedium, Parent = row2 })
+	local countL = label(row2, "", 10, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
+	countL.Size = UDim2.fromOffset(42, 26)
+	countL.Position = UDim2.fromOffset(278, 0)
+
+	-- grid item
+	local grid = makeScroll(main, UDim2.new(1, 0, 1, -66), UDim2.fromOffset(0, 66))
+	mk("UIGridLayout", {
+		CellSize = UDim2.fromOffset(98, 118), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
+	})
+	pad(grid, 0, 2, 0, 10)
+	local msg = mk("TextLabel", {
+		Size = UDim2.new(1, -20, 0, 80), Position = UDim2.fromOffset(10, 90), BackgroundTransparency = 1, Text = "",
+		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
+		ZIndex = 5, Parent = main,
+	})
+
+	-- dropdown kategori (+ pakai lewat ID)
+	drop = mk("Frame", {
+		Size = UDim2.new(1, 0, 1, -64), Position = UDim2.fromOffset(0, 62), BackgroundColor3 = T.Surface,
+		BorderSizePixel = 0, Visible = false, ZIndex = 30, Parent = main,
+	})
+	corner(drop, 10)
+	stroke(drop, T.Stroke, 1)
+	local idBox = mk("TextBox", {
+		Size = UDim2.new(1, -92, 0, 26), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
+		Text = "", PlaceholderText = "Pakai lewat ID item", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, Parent = drop,
+	})
 	corner(idBox, 8)
-	button(row2, { text = "Pakai", size = UDim2.fromOffset(64, 32), position = UDim2.new(1, -64, 0, 0), bg = T.Accent, textSize = 13,
-		onClick = function()
+	button(drop, { text = "Pakai", size = UDim2.fromOffset(72, 26), position = UDim2.new(1, -78, 0, 6), bg = T.Accent,
+		textSize = 12, radius = 8, onClick = function()
 			local id = tonumber(idBox.Text)
 			if not id then
 				toast("Isi ID angka dulu", "warn")
 				return
 			end
+			drop.Visible = false
 			task.spawn(function()
 				if not E.assetType(id) then
 					local t = State.cat and State.cat.list and NAME2TID[State.cat.list[1]]
@@ -3043,19 +3128,9 @@ UI.builders.catalog = function(page)
 				E.toggleAsset(id, "ID " .. id)
 			end)
 		end })
-
-	-- grid
-	local grid = makeScroll(main, UDim2.new(1, 0, 1, -84), UDim2.fromOffset(0, 84))
-	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(118, 150), CellPadding = UDim2.fromOffset(7, 8), SortOrder = Enum.SortOrder.LayoutOrder,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
-	})
-	pad(grid, 0, 2, 0, 12)
-	local msg = mk("TextLabel", {
-		Size = UDim2.new(1, -20, 0, 80), Position = UDim2.fromOffset(10, 110), BackgroundTransparency = 1, Text = "",
-		TextColor3 = T.Dim, TextSize = 14, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
-		ZIndex = 5, Parent = main,
-	})
+	local catScroll = makeScroll(drop, UDim2.new(1, -8, 1, -40), UDim2.fromOffset(4, 36))
+	pad(catScroll, 4, 2, 4, 6)
+	vlist(catScroll, 2)
 
 	local currentQuery, loading = nil, false
 
@@ -3097,7 +3172,7 @@ UI.builders.catalog = function(page)
 			loading = false
 			if not items then
 				logf("katalog gagal: %s", tostring(err))
-				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err) .. "\n(Di Studio: pakai Play Solo & game harus punya akses API)")
+				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
 				countL.Text = ""
 				return
 			end
@@ -3108,7 +3183,7 @@ UI.builders.catalog = function(page)
 			if q.total == 0 then
 				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
 			end
-			countL.Text = q.total .. " item" .. (q.finished and "" or "+") .. (q.backend and ("  •  " .. q.backend) or "")
+			countL.Text = q.total .. (q.finished and "" or "+")
 		end)
 	end
 
@@ -3146,19 +3221,19 @@ UI.builders.catalog = function(page)
 					addCard(copy)
 				end
 			end
-			countL.Text = n .. " item"
+			countL.Text = tostring(n)
 			if n == 0 then
 				showMsg(cat.kind == "fav" and "★ Belum ada favorit. Tekan ♡ pada item." or "🕘 Belum ada riwayat pemakaian.")
 			end
 			return
 		end
-		countL.Text = "memuat..."
+		countL.Text = "…"
 		currentQuery = newQuery(cat, State.keyword, State.sortIdx, State.freeOnly)
 		loadPage(token)
 	end
 
 	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 260 then
+		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
 			loadPage(State.token)
 		end
 	end)
@@ -3176,6 +3251,8 @@ UI.builders.catalog = function(page)
 		State.cat = cat
 		State.keyword = ""
 		sbBox.Text = ""
+		catBtn.Text = "☰ " .. cat.name
+		drop.Visible = false
 		markCat()
 		startQuery()
 	end
@@ -3185,18 +3262,18 @@ UI.builders.catalog = function(page)
 		if cat.group ~= lastGroup then
 			lastGroup = cat.group
 			order = order + 1
-			local h = label(catScroll, cat.group, 11, T.Dim, Enum.Font.GothamBold)
+			local h = label(catScroll, cat.group, 10, T.Dim, Enum.Font.GothamBold)
 			h.LayoutOrder = order
-			h.Size = UDim2.new(1, 0, 0, 24)
+			h.Size = UDim2.new(1, 0, 0, 20)
 			h.TextYAlignment = Enum.TextYAlignment.Bottom
 		end
 		order = order + 1
 		local b = mk("TextButton", {
-			Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
+			Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
 			AutoButtonColor = false, LayoutOrder = order, Parent = catScroll,
 		})
-		corner(b, 8)
-		local t = label(b, cat.name, 13, T.Text, Enum.Font.GothamMedium)
+		corner(b, 7)
+		local t = label(b, cat.name, 12, T.Text, Enum.Font.GothamMedium)
 		t.Size = UDim2.new(1, -16, 1, 0)
 		t.Position = UDim2.fromOffset(10, 0)
 		t.TextTruncate = Enum.TextTruncate.AtEnd
@@ -3226,15 +3303,15 @@ end
 ----------------------------------------------------------------------------
 UI.builders.worn = function(page)
 	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Parent = page })
-	label(head, "Sedang dipakai", 20, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.6, 0, 0, 26)
+	label(head, "Sedang dipakai", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.6, 0, 0, 22)
 	local sub = label(head, "", 12, T.Dim, Enum.Font.Gotham)
 	sub.Position = UDim2.fromOffset(0, 24)
 	sub.Size = UDim2.new(0.7, 0, 0, 16)
-	button(head, { text = "Lepas semua aksesori", size = UDim2.fromOffset(170, 32), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 13,
+	button(head, { text = "Lepas semua", size = UDim2.fromOffset(92, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12, radius = 8,
 		onClick = function() task.spawn(E.removeAll) end })
-	button(head, { text = "↺ Reset", size = UDim2.fromOffset(80, 32), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -178, 0, 2), textSize = 13, onClick = function() task.spawn(E.reset) end })
+	button(head, { text = "↺ Reset", size = UDim2.fromOffset(66, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -98, 0, 2), textSize = 12, radius = 8, onClick = function() task.spawn(E.reset) end })
 
 	local list = makeScroll(page, UDim2.new(1, 0, 1, -50), UDim2.fromOffset(0, 50))
 	vlist(list, 8)
@@ -3325,9 +3402,9 @@ UI.builders.avatars = function(page)
 	local scroll = makeScroll(page)
 	vlist(scroll, 8)
 	pad(scroll, 0, 0, 8, 12)
-	local t = label(scroll, "Coba avatar pemain lain", 20, T.Text, Enum.Font.GothamBold)
+	local t = label(scroll, "Coba avatar pemain lain", 16, T.Text, Enum.Font.GothamBold)
 	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 26)
+	t.Size = UDim2.new(1, 0, 0, 22)
 
 	local h1 = label(scroll, "PRESET", 12, T.Dim, Enum.Font.GothamBold)
 	h1.LayoutOrder = 3
@@ -3446,10 +3523,10 @@ UI.builders.body = function(page)
 	local scroll = makeScroll(page)
 	vlist(scroll, 6)
 	pad(scroll, 0, 0, 10, 12)
-	local t = label(scroll, "Ukuran tubuh", 20, T.Text, Enum.Font.GothamBold)
+	local t = label(scroll, "Ukuran tubuh", 16, T.Text, Enum.Font.GothamBold)
 	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 26)
-	local s = label(scroll, "Geser slider, perubahan langsung terlihat (hanya rig R15).", 12, T.Dim, Enum.Font.Gotham)
+	t.Size = UDim2.new(1, 0, 0, 22)
+	local s = label(scroll, "Geser slider, perubahan langsung terlihat (hanya rig R15).", 11, T.Dim, Enum.Font.Gotham)
 	s.LayoutOrder = 2
 	local defs = {
 		{ "Height", "Tinggi", 0.9, 1.05 }, { "Width", "Lebar", 0.7, 1.0 }, { "Depth", "Ketebalan", 0.7, 1.0 },
@@ -3489,14 +3566,14 @@ UI.builders.color = function(page)
 	local scroll = makeScroll(page)
 	vlist(scroll, 8)
 	pad(scroll, 0, 0, 10, 12)
-	local t = label(scroll, "Warna kulit", 20, T.Text, Enum.Font.GothamBold)
+	local t = label(scroll, "Warna kulit", 16, T.Text, Enum.Font.GothamBold)
 	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 26)
+	t.Size = UDim2.new(1, 0, 0, 22)
 	local grid = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 3, Parent = scroll })
-	mk("UIGridLayout", { CellSize = UDim2.fromOffset(52, 52), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = grid })
+	mk("UIGridLayout", { CellSize = UDim2.fromOffset(46, 46), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = grid })
 	for i, c in ipairs(PALETTE) do
 		local sw = mk("TextButton", { BackgroundColor3 = c, Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = i, Parent = grid })
-		corner(sw, 14)
+		corner(sw, 12)
 		stroke(sw, T.Stroke, 2, 0.3)
 		sw.Activated:Connect(function()
 			E.setSkin(c)
@@ -3509,24 +3586,24 @@ UI.builders.color = function(page)
 end
 
 ----------------------------------------------------------------------------
--- [12] HALAMAN SETELAN
+-- [12] HALAMAN LOG & SETELAN
 ----------------------------------------------------------------------------
 UI.builders.log = function(page)
 	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Parent = page })
-	label(head, "Log & Tes Penyebab", 20, T.Text, Enum.Font.GothamBold).Size = UDim2.new(1, 0, 0, 26)
-	local sub = label(head, "Jalankan tes, lalu salin log dan kirim ke pembuat script.", 12, T.Dim, Enum.Font.Gotham)
-	sub.Position = UDim2.fromOffset(0, 24)
-	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 34), Position = UDim2.fromOffset(0, 46), BackgroundTransparency = 1, Parent = page })
-	button(row, { text = "▶ Jalankan Tes Penyebab", size = UDim2.new(0.42, -4, 1, 0), bg = T.Accent, textSize = 13,
+	label(head, "Log & Tes Penyebab", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(1, 0, 0, 22)
+	local sub = label(head, "Jalankan tes, lalu salin log dan kirim ke pembuat script.", 11, T.Dim, Enum.Font.Gotham)
+	sub.Position = UDim2.fromOffset(0, 22)
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 44), BackgroundTransparency = 1, Parent = page })
+	button(row, { text = "▶ Tes Penyebab", size = UDim2.new(0.42, -4, 1, 0), bg = T.Accent, textSize = 12, radius = 8,
 		onClick = function() task.spawn(E.fullTest) end })
-	button(row, { text = "📋 Salin", size = UDim2.new(0.29, -4, 1, 0), position = UDim2.new(0.42, 0, 0, 0), textSize = 13,
+	button(row, { text = "📋 Salin", size = UDim2.new(0.29, -4, 1, 0), position = UDim2.new(0.42, 0, 0, 0), textSize = 12, radius = 8,
 		onClick = function()
 			local ok = pcall(function()
 				setclipboard(table.concat(LOG, "\n"))
 			end)
 			toast(ok and "Log disalin ke clipboard" or "setclipboard tidak ada di executor ini: blok lalu salin manual dari kotak log", ok and "ok" or "warn")
 		end })
-	button(row, { text = "Bersihkan", size = UDim2.new(0.29, 0, 1, 0), position = UDim2.new(0.71, 0, 0, 0), textSize = 13,
+	button(row, { text = "Bersihkan", size = UDim2.new(0.29, 0, 1, 0), position = UDim2.new(0.71, 0, 0, 0), textSize = 12, radius = 8,
 		onClick = function()
 			for i = #LOG, 1, -1 do
 				LOG[i] = nil
@@ -3535,10 +3612,10 @@ UI.builders.log = function(page)
 				logHook()
 			end
 		end })
-	local sc = makeScroll(page, UDim2.new(1, 0, 1, -88), UDim2.fromOffset(0, 88))
+	local sc = makeScroll(page, UDim2.new(1, 0, 1, -80), UDim2.fromOffset(0, 80))
 	local box = mk("TextBox", {
 		Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.Surface, BorderSizePixel = 0,
-		TextColor3 = T.Text, Font = Enum.Font.Code, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = T.Text, Font = Enum.Font.Code, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, MultiLine = true, TextEditable = false,
 		ClearTextOnFocus = false, Text = "", Parent = sc,
 	})
@@ -3555,44 +3632,44 @@ UI.builders.info = function(page)
 	local scroll = makeScroll(page)
 	vlist(scroll, 8)
 	pad(scroll, 0, 0, 10, 12)
-	local t = label(scroll, "Setelan & diagnostik", 20, T.Text, Enum.Font.GothamBold)
+	local t = label(scroll, "Setelan & diagnostik", 16, T.Text, Enum.Font.GothamBold)
 	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 26)
+	t.Size = UDim2.new(1, 0, 0, 22)
 	local txt = label(scroll,
-		"K  buka / tutup UI\nCtrl+Z  undo   •   Ctrl+Y  redo\n\nJika item tidak muncul: tekan Diagnostik, lalu pasang "
-		.. "AvatarStudioServer.lua di ServerScriptService (jalur paling pasti).", 13, T.Dim, Enum.Font.GothamMedium)
+		"K  buka / tutup UI\nCtrl+Z  undo   •   Ctrl+Y  redo\n\nJika item tidak muncul: tekan Tes Penyebab, lalu pasang "
+		.. "AvatarStudioServer.lua di ServerScriptService (jalur paling pasti).", 12, T.Dim, Enum.Font.GothamMedium)
 	txt.LayoutOrder = 2
 	txt.TextWrapped = true
 	txt.TextYAlignment = Enum.TextYAlignment.Top
-	txt.Size = UDim2.new(1, 0, 0, 90)
-	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 36), bg = T.Accent, order = 3,
+	txt.Size = UDim2.new(1, 0, 0, 110)
+	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 34), bg = T.Accent, order = 3,
 		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
 	local mb
-	mb = button(scroll, { text = "Gaya skin: BONEKA (bentuk tubuh donor utuh)", size = UDim2.new(1, 0, 0, 36), order = 3,
+	mb = button(scroll, { text = "Gaya skin: BONEKA (bentuk tubuh donor utuh)", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
 		onClick = function()
 			E.skinMode = (E.skinMode == "puppet") and "weld" or "puppet"
 			mb.Text = "Gaya skin: " .. (E.skinMode == "puppet" and "BONEKA (bentuk tubuh donor utuh)" or "LAS PER-BAGIAN")
 			task.spawn(E.rerender)
 		end })
 	local sb
-	sb = button(scroll, { text = "Mode kulit overlay (badan ikut berubah): HIDUP", size = UDim2.new(1, 0, 0, 36), order = 3,
+	sb = button(scroll, { text = "Mode kulit overlay (badan ikut berubah): HIDUP", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
 		onClick = function()
 			E.useSkin = not E.useSkin
 			sb.Text = "Mode kulit overlay (badan ikut berubah): " .. (E.useSkin and "HIDUP" or "MATI")
 			task.spawn(E.rerender)
 		end })
-	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 36), order = 3,
+	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
 		onClick = function() task.spawn(E.restoreBody) end })
 	local cb
-	cb = button(scroll, { text = "Salin bentuk tubuh donor: MATI", size = UDim2.new(1, 0, 0, 36), order = 3,
+	cb = button(scroll, { text = "Salin bentuk tubuh donor: MATI", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
 		onClick = function()
 			E.copyBody = not E.copyBody
 			cb.Text = "Salin bentuk tubuh donor: " .. (E.copyBody and "HIDUP (eksperimental)" or "MATI")
 		end })
-	button(scroll, { text = "↻ Render ulang avatar (jika item hilang)", size = UDim2.new(1, 0, 0, 36), order = 3,
+	button(scroll, { text = "↻ Render ulang avatar (jika item hilang)", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
 		onClick = function() task.spawn(E.rerender) end })
-	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 36), order = 4, onClick = function() UI.setOpen(false) end })
-	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 36), bg = T.Danger, order = 5,
+	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 34), order = 4, onClick = function() UI.setOpen(false) end })
+	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 34), bg = T.Danger, order = 5,
 		onClick = function() UI.destroyUI() end })
 end
 
