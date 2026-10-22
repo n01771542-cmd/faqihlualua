@@ -1,24 +1,14 @@
 --[[ =============================================================================
   leon4951hub  -  script.lua   (LocalScript / StarterPlayerScripts)
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
-  karakter kamu.   UI: 450 x 300
+  karakter kamu.
 
-  CARA PAKAI (Roblox Studio, game milikmu sendiri):
-    1. Taruh file ini sebagai LocalScript di StarterPlayer > StarterPlayerScripts
-    2. (DISARANKAN) Taruh AvatarStudioServer.lua sebagai Script di
-       ServerScriptService. Dengan ini item PASTI muncul (dipasang server).
-    3. Play. Tekan K untuk buka/tutup UI.
-
-  CARA KERJA PEMASANGAN (otomatis, urut):
-    A. Server  : kalau AvatarStudioServer ada -> server yang memasang.
-    B. Skin    : SEMUA item dimasukkan ke deskripsi avatar lalu dirender donor Roblox
-                 (jalur yang sama dengan tab Avatar). Kalau ada aksesori yang hilang
-                 -> dimuat langsung (GetObjects / LoadAsset) dan dilas ke skin.
-    C. Donor   : avatar/banyak item -> Roblox membangun rig donor dari
-                 HumanoidDescription, lalu aksesori/pakaian/animasinya dipindah ke karakter kamu.
-  (ApplyDescription ke karakter sendiri dari klien DITOLAK Roblox, jadi tidak dipakai.)
-  Hasilnya diverifikasi (jumlah aksesori dihitung ulang). Kalau item benar-benar
-  tidak bisa ditampilkan, kamu diberi tahu dan item tidak ditandai "dipakai".
+  VERSI INI: ENGINE ASLI UTUH (server, injector, donor, skin), hanya UI yang
+  dipangkas jadi 3 tab (500 x 300):
+    - Katalog : Karakter/Tubuh, Animasi, Sepatu
+    - Avatar  : cari SEMUA pemain Roblox + preset + server + teman
+    - Dipakai : daftar item aktif
+  Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
 
 ----------------------------------------------------------------------------
@@ -56,7 +46,6 @@ local TOGGLE_KEY = Enum.KeyCode.K
 ----------------------------------------------------------------------------
 -- [2] TABEL TIPE ITEM
 ----------------------------------------------------------------------------
--- AssetTypeId -> properti HumanoidDescription (pakaian klasik, bodypart, animasi)
 local CLASSIC = {
 	[11] = "Shirt", [12] = "Pants", [2] = "GraphicTShirt", [18] = "Face",
 	[17] = "Head", [27] = "Torso", [28] = "RightArm", [29] = "LeftArm",
@@ -66,7 +55,6 @@ local CLASSIC = {
 	[55] = "WalkAnimation", [78] = "MoodAnimation",
 }
 
--- AssetTypeId -> { AccessoryType, layered }
 local ACC = {
 	[8] = { "Hat", false }, [41] = { "Hair", false }, [42] = { "Face", false },
 	[43] = { "Neck", false }, [44] = { "Shoulder", false }, [45] = { "Front", false },
@@ -77,10 +65,6 @@ local ACC = {
 	[76] = { "Eyebrow", false }, [77] = { "Eyelash", false },
 }
 
--- tipe non-aksesori yang juga dirender sendirian (pakaian klasik + wajah)
-local ISOLATED = { [11] = true, [12] = true, [2] = true, [18] = true }
-
--- slot animasi di script "Animate" bawaan Roblox
 local ANIM_SLOT = {
 	[51] = { "idle", { "Animation1", "Animation2" } },
 	[55] = { "walk", { "WalkAnim" } },
@@ -289,7 +273,6 @@ end
 ----------------------------------------------------------------------------
 -- [3b] KOMPATIBILITAS API  (Roblox v702, Des 2025: banyak fungsi diganti *Async)
 ----------------------------------------------------------------------------
--- coba tiap nama metode berurutan (nama baru dulu); mengembalikan ok, hasil, namaYangDipakai
 local function callAny(obj, names, ...)
 	local lastErr = "metode tidak ditemukan"
 	local args = table.pack(...)
@@ -454,12 +437,12 @@ end
 -- [5] ENGINE AVATAR  (inti: membuat item benar-benar muncul di karakter)
 ----------------------------------------------------------------------------
 local E = {
-	look = nil,        -- HumanoidDescription "sumber kebenaran" (apa yang seharusnya dipakai)
+	look = nil,
 	original = nil,
-	failed = {},       -- [id]=true : item yang tidak bisa dipasang native -> dipasang injector
+	failed = {},
 	types = {}, names = {},
 	history = {}, redo = {},
-	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {}, extraIds = {}, extraCache = {}, useExtras = false,
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {},
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
 }
@@ -499,7 +482,6 @@ function E.name(id)
 	return E.names[id] or ("Item #" .. id)
 end
 
--- kumpulkan semua id yang ada di description
 local function collect(desc)
 	local set, list = {}, {}
 	if not desc then
@@ -563,7 +545,6 @@ local function addToDesc(desc, id, tid)
 		local out, order = {}, 1
 		for _, a in ipairs(desc:GetAccessories(true)) do
 			local drop = a.AssetId == id
-			-- pakaian layered / alis / bulu mata: 1 slot per jenis
 			if (layered or typeName == "Eyebrow" or typeName == "Eyelash") and a.AccessoryType == enumVal then
 				drop = true
 			end
@@ -636,7 +617,6 @@ local function serialize(desc)
 	return t
 end
 
--- deskripsi tanpa item yang diketahui gagal native
 function E.withoutFailed(desc)
 	local d = desc:Clone()
 	for id in pairs(E.failed) do
@@ -648,8 +628,6 @@ end
 ------------------------------------------------------------------------
 -- INJECTOR (jalur cadangan): muat aset lalu pasang langsung ke karakter
 ------------------------------------------------------------------------
--- "Donor rig": Roblox sendiri membangun model karakter dari HumanoidDescription.
--- Kita ambil aksesori/pakaian/animasinya dari model itu -> tidak butuh GetObjects/LoadAsset.
 local function donorModel(desc)
 	local hum = E.humanoid()
 	local rig = (hum.RigType == Enum.HumanoidRigType.R6) and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
@@ -661,7 +639,6 @@ local function donorModel(desc)
 	return nil
 end
 
--- mengembalikan (objs, metode)
 local function loadAsset(id, tid)
 	if E.cap.getObjects ~= false then
 		local ok, objs = pcall(function()
@@ -724,8 +701,6 @@ local function restartAnimate(char, hum)
 	end)
 end
 
--- Humanoid:AddAccessory di klien TIDAK membuat las (weld dibuat server) -> aksesori
--- tertinggal di posisi awal / tidak terlihat. Jadi kita las sendiri.
 local function findBodyAttachment(char, name)
 	for _, d in ipairs(char:GetDescendants()) do
 		if d:IsA("Attachment") and d.Name == name and d.Parent and d.Parent:IsA("BasePart") then
@@ -789,7 +764,6 @@ local function attachAccessory(acc, char)
 	return true, how
 end
 
--- pindahkan aksesori dari rig donor ke karakter kita, las asli engine disambung ulang
 local function harvestAccessory(donorAcc, char)
 	local c = donorAcc:Clone()
 	c:SetAttribute("ASU", true)
@@ -798,9 +772,8 @@ local function harvestAccessory(donorAcc, char)
 	if dh and ch then
 		local dw = dh:FindFirstChild("AccessoryWeld") or dh:FindFirstChildWhichIsA("Weld")
 		local cw = ch:FindFirstChild("AccessoryWeld") or ch:FindFirstChildWhichIsA("Weld")
-		local p1name = (dw and dw.Part1 and dw.Part1.Name) or donorAcc:GetAttribute("AS_P1")
-		if dw and cw and p1name then
-			local tgt = char:FindFirstChild(p1name) or char:FindFirstChild(p1name, true)
+		if dw and cw and dw.Part1 then
+			local tgt = char:FindFirstChild(dw.Part1.Name) or char:FindFirstChild(dw.Part1.Name, true)
 			if tgt and tgt:IsA("BasePart") then
 				cw.Part0 = ch
 				cw.Part1 = tgt
@@ -819,7 +792,6 @@ local function harvestAccessory(donorAcc, char)
 	return c
 end
 
--- salin tekstur/mesh bagian tubuh dari donor (best-effort; MeshId bisa diblokir)
 local function copyBodyParts(model, char)
 	for _, dp in ipairs(model:GetChildren()) do
 		if dp:IsA("MeshPart") and dp.Name ~= "HumanoidRootPart" then
@@ -1020,7 +992,6 @@ function E.cleanInjected(char)
 	end
 end
 
--- penjaga: pasang ulang item injector yang dihapus/direset oleh map
 function E.hookChar(char)
 	local pending = false
 	char.ChildRemoved:Connect(function(ch)
@@ -1075,7 +1046,6 @@ function E.guard()
 		E.lastRenderAt = os.clock()
 		task.spawn(E.rerender)
 	end
-	-- aksesori hasil render donor dihapus map? render ulang (maks 1x / 6 detik)
 	if not E.remote and (E.rendered or 0) > 0 and os.clock() - (E.lastRenderAt or 0) > 6 then
 		local have = 0
 		for _, ch in ipairs(char:GetChildren()) do
@@ -1167,7 +1137,6 @@ function E.snapAnim(char)
 	end
 end
 
--- salin animasi dari donor (slot yang dipilih); slot yang dilepas dikembalikan ke aslinya
 local function copyAnimations(model, char, hum, desc)
 	local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
 	if not (dan and can) then
@@ -1220,8 +1189,6 @@ local function copyAnimations(model, char, hum, desc)
 	end
 end
 
--- SKIN OVERLAY: seluruh rig donor (badan, tangan, kaki, kepala, pakaian, aksesori) dilas ke
--- bagian tubuh kita; bagian asli disembunyikan. Sendi/animasi karakter asli tidak disentuh.
 function E.removeSkin()
 	if E.skinConn then
 		E.skinConn:Disconnect()
@@ -1343,7 +1310,6 @@ function E.renderSkinWeld(desc)
 	return true
 end
 
--- muat aksesori langsung (GetObjects/LoadAsset) lalu las ke rig skin: cadangan kalau donor menolak aset
 function E.attachDirect(id, host)
 	if not host then
 		return false
@@ -1378,40 +1344,6 @@ function E.attachDirect(id, host)
 	return okA
 end
 
--- muat langsung untuk pakaian klasik (kemeja/celana/kaos) dan wajah
-function E.attachClassicDirect(id, tid, host)
-	local objs = loadAsset(id, nil)
-	if not objs then
-		return false
-	end
-	local class = (tid == 11 and "Shirt") or (tid == 12 and "Pants") or (tid == 2 and "ShirtGraphic") or nil
-	if class then
-		local inst = findIn(objs, class)
-		if not inst then
-			return false
-		end
-		for _, ch in ipairs(host:GetChildren()) do
-			if ch:IsA(class) then
-				ch:Destroy()
-			end
-		end
-		local c = inst:Clone()
-		c.Name = "AS_" .. tostring(id)
-		c.Parent = host
-		return true
-	elseif tid == 18 then
-		local decal = findIn(objs, "Decal")
-		local head = host:FindFirstChild("Head")
-		local face = head and head:FindFirstChildOfClass("Decal")
-		if decal and face then
-			face.Texture = decal.Texture
-			return true
-		end
-	end
-	return false
-end
-
--- apakah donor Roblox sanggup memuat aksesori ini sendirian? (false = aset dibuang diam-diam)
 local function donorHas(id, tid)
 	local d = Instance.new("HumanoidDescription")
 	if not addToDesc(d, id, tid) then
@@ -1428,7 +1360,6 @@ local function donorHas(id, tid)
 	return has
 end
 
--- donor kekurangan aksesori: cari yang hilang, coba muat langsung; kembalikan (jumlahDimuat, daftarGagal)
 local function directFallback(desc, added, model, nAcc)
 	local expected = #desc:GetAccessories(true)
 	if nAcc >= expected then
@@ -1462,86 +1393,13 @@ local function directFallback(desc, added, model, nAcc)
 	return n, failed
 end
 
--- ITEM TERPISAH: tiap item yang dipilih (aksesori, kemeja/celana/kaos klasik, wajah) dirender sendirian
--- lewat donor Roblox (cara yang sama dengan avatar), lalu disimpan (cache) dan dipasang ke skin.
--- Batas jumlah/slot aksesori dan item lain yang gagal tidak bisa lagi membuat item ini hilang.
-local function cacheExtra(id, tid)
-	if E.extraCache[id] then
-		return E.extraCache[id]
-	end
-	local d = Instance.new("HumanoidDescription")
-	if not addToDesc(d, id, tid) then
-		return nil
-	end
-	local m = donorModel(d)
-	if not m then
-		return nil
-	end
-	local list = {}
-	for _, a in ipairs(m:GetChildren()) do
-		if a:IsA("Accessory") then
-			local h = a:FindFirstChild("Handle")
-			local w = h and (h:FindFirstChild("AccessoryWeld") or h:FindFirstChildWhichIsA("Weld"))
-			local c = a:Clone()
-			if w and w.Part1 then
-				c:SetAttribute("AS_P1", w.Part1.Name)
-			end
-			table.insert(list, { kind = "acc", inst = c })
-		elseif (tid == 11 and a:IsA("Shirt")) or (tid == 12 and a:IsA("Pants")) or (tid == 2 and a:IsA("ShirtGraphic")) then
-			table.insert(list, { kind = "cloth", inst = a:Clone() })
-		end
-	end
-	if tid == 18 then
-		local head = m:FindFirstChild("Head")
-		local dec = head and head:FindFirstChildOfClass("Decal")
-		if dec and dec.Texture ~= "" then
-			table.insert(list, { kind = "face", texture = dec.Texture })
-		end
-	end
-	pcall(function()
-		m:Destroy()
-	end)
-	if #list > 0 then
-		E.extraCache[id] = list
-		return list
-	end
-	return nil
-end
-
--- SKIN BONEKA: rig donor utuh (sendi sendiri) dipasang di belakang HumanoidRootPart kita,
--- lalu Motor6D.Transform disalin tiap frame -> bentuk tubuh donor + gerakan karaktermu.
 function E.renderSkinPuppet(desc, added)
 	local hum, char = E.humanoid()
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		return false, "karakter tanpa HumanoidRootPart"
 	end
-	local dset = collect(desc)
-	local extras = {}
-	if E.useExtras then
-		for id in pairs(E.extraIds) do
-			if dset[id] then
-				extras[id] = true
-			end
-		end
-		for _, id in ipairs(added or {}) do
-			local t = E.assetType(id)
-			if t and (ACC[t] or ISOLATED[t]) then
-				extras[id] = true
-				E.extraIds[id] = true
-			end
-		end
-	else
-		E.extraIds = {}
-	end
-	local baseDesc = desc
-	if next(extras) then
-		baseDesc = desc:Clone()
-		for id in pairs(extras) do
-			removeFromDesc(baseDesc, id)
-		end
-	end
-	local model = donorModel(baseDesc)
+	local model = donorModel(desc)
 	if not model then
 		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
 	end
@@ -1583,7 +1441,6 @@ function E.renderSkinPuppet(desc, added)
 			d.Massless = true
 		end
 	end
-	-- samakan tinggi telapak kaki dengan karakter kita
 	local offY = 0
 	if hum.RigType == Enum.HumanoidRigType.R15 and dh then
 		local okH, v = pcall(function()
@@ -1605,7 +1462,6 @@ function E.renderSkinPuppet(desc, added)
 	w.C0 = CFrame.new(0, offY, 0)
 	w.C1 = CFrame.new()
 	w.Parent = dhrp
-	-- peta sendi: Motor6D karakter kita -> Motor6D donor (nama sama)
 	local ours = {}
 	for _, d in ipairs(char:GetDescendants()) do
 		if d:IsA("Motor6D") and not ours[d.Name] then
@@ -1645,69 +1501,10 @@ function E.renderSkinPuppet(desc, added)
 	E.skinAcc = nAcc
 	E.rendered = 0
 	E.lastRenderAt = os.clock()
-	local extraOk, bad = 0, {}
-	for id in pairs(extras) do
-		local tid = E.types[id] or E.assetType(id)
-		local ok = false
-		local list = tid and cacheExtra(id, tid)
-		if list then
-			for _, e in ipairs(list) do
-				if e.kind == "acc" then
-					harvestAccessory(e.inst, model)
-					ok = true
-				elseif e.kind == "cloth" then
-					for _, ch in ipairs(model:GetChildren()) do
-						if ch.ClassName == e.inst.ClassName then
-							ch:Destroy()
-						end
-					end
-					local c = e.inst:Clone()
-					c.Name = "AS_" .. tostring(id)
-					c.Parent = model
-					ok = true
-				elseif e.kind == "face" then
-					local head = model:FindFirstChild("Head")
-					local dec = head and head:FindFirstChildOfClass("Decal")
-					if dec then
-						dec.Texture = e.texture
-						ok = true
-					end
-				end
-			end
-		end
-		if not ok and tid then
-			if ACC[tid] then
-				ok = E.attachDirect(id, model)
-			else
-				ok = E.attachClassicDirect(id, tid, model)
-			end
-		end
-		logf("item terpisah %s (tipe %s) -> %s", tostring(id), tostring(tid), ok and "TAMPIL" or "DITOLAK")
-		if ok then
-			extraOk = extraOk + 1
-		else
-			table.insert(bad, id)
-			E.extraIds[id] = nil
-		end
-	end
-	-- jalur utama: semua item ada di deskripsi penuh (sama seperti tab Avatar).
-	-- kalau donor membuang sebagian aksesori, coba muat langsung item yang baru ditambahkan.
-	local expectedAcc = #desc:GetAccessories(true)
-	if not E.useExtras and nAcc < expectedAcc then
-		logf("donor hanya merender %d dari %d aksesori -> muat langsung item baru", nAcc, expectedAcc)
-		for _, id in ipairs(added or {}) do
-			local t = E.assetType(id)
-			if t and ACC[t] then
-				if E.attachDirect(id, model) then
-					extraOk = extraOk + 1
-				end
-			end
-		end
-	end
+	local direct, bad = directFallback(desc, added, model, nAcc)
 	E.lastFailedIds = bad
-	E.skinAcc = nAcc + extraOk
-	logf("skin boneka: %d sendi disalin, aksesori %d/%d (donor %d + langsung/terpisah %d), offset tinggi %.2f",
-		#links, E.skinAcc, expectedAcc, nAcc, extraOk, offY)
+	E.skinAcc = nAcc + direct
+	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d dimuat langsung, offset tinggi %.2f", #links, nAcc, direct, offY)
 	task.delay(0.2, E.reapplyTweaks)
 	return true
 end
@@ -1747,8 +1544,6 @@ function E.scheduleRerender()
 	end)
 end
 
--- RENDER DONOR: bangun rig donor dari description (diizinkan di klien untuk rig buatan sendiri),
--- lalu pindahkan aksesori / pakaian / wajah / animasi / warna ke karakter kita.
 function E.renderLook(desc)
 	local hum, char = E.humanoid()
 	local model = donorModel(desc)
@@ -1836,7 +1631,6 @@ function E._commit(newLook, text, skipHist, force)
 	end
 
 	local how
-	-- 1) server (kalau AvatarStudioServer ada)
 	if E.remote then
 		E.cleanInjected(char)
 		local ok, err = serverApply(newLook)
@@ -1875,7 +1669,6 @@ function E._commit(newLook, text, skipHist, force)
 	end
 
 	if not how then
-		-- 2) injector: tambah/lepas beberapa item saja, tanpa menyentuh yang lain
 		if not force and (#added + #removed) > 0 then
 			local canInc = true
 			for _, id in ipairs(removed) do
@@ -1913,7 +1706,6 @@ function E._commit(newLook, text, skipHist, force)
 				end
 			end
 		end
-		-- 3) render donor: seluruh look dibangun ulang oleh Roblox sendiri
 		if not how then
 			local ok, err = E.renderLook(newLook)
 			if not ok then
@@ -1930,9 +1722,6 @@ function E._commit(newLook, text, skipHist, force)
 		end
 	end
 
-	for _, rid in ipairs(removed) do
-		E.extraIds[rid] = nil
-	end
 	E.lastMethod = how
 	if not skipHist and E.look then
 		table.insert(E.history, E.look)
@@ -2044,7 +1833,6 @@ function E.applyUserVisual(userId, displayName, keepLook)
 		end
 		E.look = desc
 		E.failed = {}
-		E.extraIds = {}
 		E.userVisual = userId
 		fire()
 	end
@@ -2077,7 +1865,7 @@ function E.applyUser(userId, displayName)
 		toast("Avatar dipakai: " .. tostring(displayName or userId) .. "  (donor-render)", "ok")
 		return true
 	end
-	toast("Avatar tidak bisa dipasang: " .. tostring(ok and why or res) .. "  (lihat tab Log)", "danger")
+	toast("Avatar tidak bisa dipasang: " .. tostring(ok and why or res) .. "  (lihat output/console)", "danger")
 	return false
 end
 
@@ -2109,7 +1897,6 @@ function E.doRedo()
 end
 
 function E.reset()
-	E.extraIds = {}
 	if E.skinActive then
 		E.removeSkin()
 		E.userVisual = nil
@@ -2131,7 +1918,6 @@ function E.reset()
 	toast("Avatar dikembalikan seperti semula", "ok")
 end
 
--- ukuran tubuh & warna kulit (langsung, tanpa ApplyDescription)
 function E.setScale(key, value, noRender)
 	E.scales[key] = value
 	local hum = E.humanoid()
@@ -2217,12 +2003,8 @@ function E.diagnose()
 	end)
 	toast("Mode inject-first: " .. (E.injectFirst and "AKTIF" or "mati") .. "  |  game:GetObjects: " .. (ok and "tersedia" or "tidak tersedia")
 		.. "  |  Mode terakhir: " .. (E.lastMethod ~= "" and E.lastMethod or "-"), "info")
-	if not E.remote and not ok then
-		toast("Hanya jalur native yang aktif. Untuk hasil paling pasti, pasang AvatarStudioServer.lua di ServerScriptService.", "warn")
-	end
 end
 
--- deteksi kemampuan lingkungan (false = pasti tidak bisa, true = bisa, nil = belum pasti)
 function E.probe()
 	local cap = {}
 	local ok, r = pcall(function()
@@ -2259,137 +2041,6 @@ function E.probe()
 	E.injectFirst = (cap.getObjects ~= false) or (cap.insert ~= false) or (cap.donor ~= false)
 	logf("probe: GetObjects=%s LoadAsset=%s Donor=%s -> inject-first=%s", tostring(cap.getObjects), tostring(cap.insert),
 		tostring(cap.donor), tostring(E.injectFirst))
-end
-
--- tes lengkap: mencari penyebab item/avatar/animasi tidak muncul
-function E.fullTest()
-	if E.testing then
-		return
-	end
-	E.testing = true
-	local function res(name, ok, detail)
-		logf("%s  %s%s", ok and "[ OK ]" or "[GAGAL]", name, detail and (" -> " .. tostring(detail)) or "")
-	end
-	local okAll, err = pcall(function()
-		logf("===== TES PENYEBAB =====")
-		local exName = "tidak diketahui"
-		pcall(function()
-			if identifyexecutor then
-				exName = tostring((identifyexecutor()))
-			end
-		end)
-		logf("Executor: %s | PlaceId: %s | Server script: %s", exName, tostring(game.PlaceId), E.remote and "ADA" or "tidak ada")
-		logf("API baru: ApplyDescriptionAsync=%s | CreateHumanoidModelFromDescriptionAsync=%s | GetHumanoidDescriptionFromUserIdAsync=%s | GetProductInfoAsync=%s",
-			tostring(hasMember(Instance.new("Humanoid"), "ApplyDescriptionAsync")),
-			tostring(hasMember(Players, "CreateHumanoidModelFromDescriptionAsync")),
-			tostring(hasMember(Players, "GetHumanoidDescriptionFromUserIdAsync")),
-			tostring(hasMember(MarketplaceService, "GetProductInfoAsync")))
-		local hum, char = E.humanoid()
-		res("Karakter & Humanoid", true, "rig " .. hum.RigType.Name .. ", aksesori " .. countAccessories(char)
-			.. ", Animate " .. (char:FindFirstChild("Animate") and "ada" or "TIDAK ADA"))
-
-		local ok1, r1 = pcall(function()
-			return game:GetObjects("rbxassetid://1028606")
-		end)
-		local gObj = ok1 and type(r1) == "table" and #r1 > 0
-		res("game:GetObjects", gObj, ok1 and ("kelas: " .. ((r1 and r1[1]) and r1[1].ClassName or "kosong")) or tostring(r1))
-
-		local ok2, r2 = pcall(function()
-			return InsertService:LoadAsset(1028606)
-		end)
-		local gIns = ok2 and r2 ~= nil
-		res("InsertService:LoadAsset", gIns, ok2 and "bisa" or tostring(r2))
-		if ok2 and r2 then
-			r2:Destroy()
-		end
-
-		local dd = Instance.new("HumanoidDescription")
-		addToDesc(dd, 1028606, 8)
-		local dm = donorModel(dd)
-		local gDon = dm ~= nil and dm:FindFirstChildOfClass("Accessory") ~= nil
-		res("Donor rig (CreateHumanoidModelFromDescription)", gDon, dm and "model terbentuk" or "gagal / diblokir")
-		if dm then
-			dm:Destroy()
-		end
-
-		local ok4, r4 = pcall(function()
-			return Players:GetCharacterAppearanceAsync(1)
-		end)
-		res("GetCharacterAppearanceAsync", ok4 and r4 ~= nil, ok4 and "bisa" or tostring(r4))
-		if ok4 and r4 then
-			r4:Destroy()
-		end
-
-		local r5 = productInfo(1028606, Enum.InfoType.Asset)
-		local ok5 = r5 ~= nil
-		res("MarketplaceService:GetProductInfo", ok5 and r5 ~= nil, ok5 and "bisa" or tostring(r5))
-
-		local ok6, r6 = pcall(function()
-			local prm = CatalogSearchParams.new()
-			prm.SearchKeyword = "cap"
-			local pg = AvatarEditorService:SearchCatalog(prm)
-			return #pg:GetCurrentPage()
-		end)
-		res("AvatarEditorService:SearchCatalog", ok6 and r6 and r6 > 0, ok6 and (tostring(r6) .. " hasil") or tostring(r6))
-
-		local hb, he = httpGet("https://catalog.roblox.com/v2/search/items/details?assetTypeIds=8&Limit=10")
-		res("Katalog via web (HttpGet/request)", hb ~= nil and string.find(hb, "data", 1, true) ~= nil,
-			hb and ("respons " .. #hb .. " byte") or tostring(he))
-
-		local ok7, r7 = callAny(hum, { "ApplyDescriptionAsync", "ApplyDescription" }, appliedDesc(hum))
-		res("ApplyDescription ke karakter sendiri (biasanya DITOLAK di klien)", ok7, ok7 and "tidak error" or tostring(r7))
-
-		E.cap = { getObjects = ok1 and (gObj or nil) or false, insert = ok2 and (gIns or nil) or false, donor = gDon or false }
-		E.injectFirst = (E.cap.getObjects ~= false) or (E.cap.insert ~= false) or (E.cap.donor ~= false)
-
-		-- uji pemasangan topi sungguhan
-		local injOk = E.inject(1028606, 8)
-		task.wait(1.2)
-		local c = char:FindFirstChild("AS_1028606")
-		local handle = c and c:FindFirstChild("Handle")
-		local detail
-		local tooFar = false
-		if not injOk then
-			detail = E.lastInjectErr or "inject mengembalikan gagal"
-		elseif not c then
-			detail = "topi HILANG setelah 1 detik (map menghapusnya?)"
-		else
-			local mesh = handle and handle:FindFirstChildOfClass("SpecialMesh")
-			local head = char:FindFirstChild("Head")
-			local dist = (handle and head) and (handle.Position - head.Position).Magnitude or nil
-			detail = "handle=" .. (handle and "ada" or "TIDAK ADA") .. ", weld="
-				.. ((handle and handle:FindFirstChildOfClass("Weld")) and "ada" or "TIDAK ADA")
-				.. ", mesh=" .. tostring(handle and (handle:IsA("MeshPart") and handle.MeshId or (mesh and mesh.MeshId)) or "-")
-				.. ", jarak ke kepala=" .. (dist and string.format("%.1f", dist) or "?") .. " studs"
-			if dist and dist > 8 then
-				tooFar = true
-				detail = detail .. "  <-- TIDAK MENEMPEL (las gagal)"
-			end
-		end
-		res("Pasang topi uji (inject)", injOk and c ~= nil and not tooFar, detail)
-		if c then
-			c:Destroy()
-		end
-		char:SetAttribute("ASX_1028606", nil)
-
-		logf("----- KESIMPULAN -----")
-		if not (gObj or gIns or gDon) then
-			logf("Tidak ada pemuat aset yang jalan di sini -> item katalog TIDAK bisa dipasang oleh script ini.")
-		elseif tooFar then
-			logf("Aksesori masuk ke karakter tapi TIDAK menempel (las gagal / rig tidak cocok).")
-		elseif not injOk then
-			logf("Pemuat ada, tapi pemasangan gagal: %s", tostring(E.lastInjectErr))
-		else
-			logf("Pemasangan topi uji BERHASIL. Jika item lain tetap tidak muncul, kirim baris log 'inject ... GAGAL'.")
-		end
-		if hum.RigType == Enum.HumanoidRigType.R6 then
-			logf("Rig R6: pakaian layered tidak akan terlihat; aksesori biasa & pakaian klasik masih bisa.")
-		end
-	end)
-	if not okAll then
-		logf("[ERROR TES] %s", tostring(err))
-	end
-	E.testing = false
 end
 
 function E.snapBody(char)
@@ -2490,55 +2141,16 @@ function E.init()
 end
 
 ----------------------------------------------------------------------------
--- [6] KATALOG
+-- [6] KATALOG  (hanya: Karakter/Tubuh, Animasi, Sepatu)
 ----------------------------------------------------------------------------
 local CATEGORIES = {}
 local function C(group, id, name, kind, list)
 	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list })
 end
 
-C("KOLEKSI", "fav", "★ Favorit", "fav")
-C("KOLEKSI", "recent", "Terakhir dipakai", "recent")
 C("SET & BUNDLE", "b_body", "Karakter / Tubuh", "bundle", { "BodyParts" })
-C("SET & BUNDLE", "b_anim", "Paket Animasi", "bundle", { "Animations" })
-C("SET & BUNDLE", "b_shoes", "Set Sepatu", "bundle", { "Shoes" })
-C("AKSESORI", "hat", "Topi", "asset", { "Hat" })
-C("AKSESORI", "hair", "Rambut", "asset", { "HairAccessory" })
-C("AKSESORI", "face_acc", "Wajah", "asset", { "FaceAccessory" })
-C("AKSESORI", "neck", "Leher", "asset", { "NeckAccessory" })
-C("AKSESORI", "shoulder", "Bahu", "asset", { "ShoulderAccessory" })
-C("AKSESORI", "front", "Depan", "asset", { "FrontAccessory" })
-C("AKSESORI", "back", "Punggung", "asset", { "BackAccessory" })
-C("AKSESORI", "waist", "Pinggang", "asset", { "WaistAccessory" })
-C("PAKAIAN LAYERED", "jacket", "Jaket", "asset", { "JacketAccessory" })
-C("PAKAIAN LAYERED", "sweater", "Sweater", "asset", { "SweaterAccessory" })
-C("PAKAIAN LAYERED", "l_shirt", "Kemeja", "asset", { "ShirtAccessory" })
-C("PAKAIAN LAYERED", "l_tshirt", "Kaos", "asset", { "TShirtAccessory" })
-C("PAKAIAN LAYERED", "l_pants", "Celana", "asset", { "PantsAccessory" })
-C("PAKAIAN LAYERED", "shorts", "Celana Pendek", "asset", { "ShortsAccessory" })
-C("PAKAIAN LAYERED", "dress", "Gaun / Rok", "asset", { "DressSkirtAccessory" })
-C("PAKAIAN LAYERED", "lshoe", "Sepatu Kiri", "asset", { "LeftShoeAccessory" })
-C("PAKAIAN LAYERED", "rshoe", "Sepatu Kanan", "asset", { "RightShoeAccessory" })
-C("PAKAIAN KLASIK", "shirt", "Kemeja Klasik", "asset", { "Shirt" })
-C("PAKAIAN KLASIK", "pants", "Celana Klasik", "asset", { "Pants" })
-C("PAKAIAN KLASIK", "tshirt", "Kaos Grafis", "asset", { "TShirt" })
-C("TUBUH", "face", "Ekspresi Wajah", "asset", { "Face" })
-C("TUBUH", "head", "Kepala", "asset", { "Head" })
-C("TUBUH", "torso", "Badan", "asset", { "Torso" })
-C("TUBUH", "rarm", "Lengan Kanan", "asset", { "RightArm" })
-C("TUBUH", "larm", "Lengan Kiri", "asset", { "LeftArm" })
-C("TUBUH", "rleg", "Kaki Kanan", "asset", { "RightLeg" })
-C("TUBUH", "lleg", "Kaki Kiri", "asset", { "LeftLeg" })
-C("TUBUH", "brow", "Alis", "asset", { "EyebrowAccessory" })
-C("TUBUH", "lash", "Bulu Mata", "asset", { "EyelashAccessory" })
-C("ANIMASI", "a_idle", "Idle", "asset", { "IdleAnimation" })
-C("ANIMASI", "a_walk", "Jalan", "asset", { "WalkAnimation" })
-C("ANIMASI", "a_run", "Lari", "asset", { "RunAnimation" })
-C("ANIMASI", "a_jump", "Lompat", "asset", { "JumpAnimation" })
-C("ANIMASI", "a_fall", "Jatuh", "asset", { "FallAnimation" })
-C("ANIMASI", "a_climb", "Panjat", "asset", { "ClimbAnimation" })
-C("ANIMASI", "a_swim", "Renang", "asset", { "SwimAnimation" })
-C("ANIMASI", "a_mood", "Mood", "asset", { "MoodAnimation" })
+C("SET & BUNDLE", "b_anim", "Animasi", "bundle", { "Animations" })
+C("SET & BUNDLE", "b_shoes", "Sepatu", "bundle", { "Shoes" })
 
 local SORTS = {
 	{ name = "Relevansi", enum = "Relevance" },
@@ -2559,7 +2171,6 @@ for _, c in ipairs(CATEGORIES) do
 	end
 end
 
--- tipe aset -> Category katalog web (dipakai jalur HTTP v1 sebagai cadangan)
 local function httpCategoryFor(tid)
 	if tid == 8 or (tid and tid >= 41 and tid <= 47) or tid == 76 or tid == 77 then
 		return 11
@@ -2798,9 +2409,9 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
--- [7] WINDOW  (450 x 300)
+-- [7] WINDOW  (500 x 300)
 ----------------------------------------------------------------------------
-local W, H = 450, 300
+local W, H = 500, 300
 local UI = {}
 local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, open = true,
 	favorites = {}, favOrder = {}, recent = {}, token = 0 }
@@ -2830,23 +2441,22 @@ UI.scale = mk("UIScale", { Parent = UI.window })
 local function computeScale()
 	local cam = Workspace.CurrentCamera
 	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
-	return math.max(math.min((vp.X - 20) / W, (vp.Y - 20) / H, 1.1), 0.4)
+	return math.max(math.min((vp.X - 20) / W, (vp.Y - 20) / H, 1.2), 0.4)
 end
 UI.scale.Scale = computeScale()
 
 -- titlebar
 local TITLE_H = 40
 local titlebar = mk("Frame", { Size = UDim2.new(1, 0, 0, TITLE_H), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = UI.window })
-local tl = label(titlebar, "leon4951hub", 16, T.Text, Enum.Font.GothamBold)
+local tl = label(titlebar, "leon4951hub", 15, T.Text, Enum.Font.GothamBold)
 tl.Position = UDim2.fromOffset(12, 3)
-tl.Size = UDim2.new(0, 120, 0, 20)
+tl.Size = UDim2.new(0, 200, 0, 18)
 UI.subtitle = label(titlebar, "Memuat karakter...", 11, T.Dim, Enum.Font.Gotham)
-UI.subtitle.Position = UDim2.fromOffset(12, 22)
-UI.subtitle.Size = UDim2.new(0, 260, 0, 14)
-UI.subtitle.TextTruncate = Enum.TextTruncate.AtEnd
+UI.subtitle.Position = UDim2.fromOffset(12, 21)
+UI.subtitle.Size = UDim2.new(0, 250, 0, 14)
 
 local tbBtns = mk("Frame", {
-	Size = UDim2.fromOffset(150, 30), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
+	Size = UDim2.fromOffset(190, 30), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
 	BackgroundTransparency = 1, Parent = titlebar,
 })
 mk("UIListLayout", {
@@ -2854,14 +2464,13 @@ mk("UIListLayout", {
 	HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center,
 	Parent = tbBtns,
 })
-UI.undoBtn = button(tbBtns, { text = "↶", size = UDim2.fromOffset(32, 28), textSize = 15, radius = 8, order = 1,
+UI.undoBtn = button(tbBtns, { text = "↶", size = UDim2.fromOffset(34, 28), textSize = 16, order = 1,
 	onClick = function() task.spawn(E.undo) end })
-UI.redoBtn = button(tbBtns, { text = "↷", size = UDim2.fromOffset(32, 28), textSize = 15, radius = 8, order = 2,
+UI.redoBtn = button(tbBtns, { text = "↷", size = UDim2.fromOffset(34, 28), textSize = 16, order = 2,
 	onClick = function() task.spawn(E.doRedo) end })
-UI.destroyBtn = button(tbBtns, { text = "💥", size = UDim2.fromOffset(32, 28), textSize = 13, radius = 8, bg = rgb(120, 40, 56), order = 3 })
-UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(32, 28), textSize = 13, radius = 8, bg = T.Danger, order = 4 })
+UI.destroyBtn = button(tbBtns, { text = "💥", size = UDim2.fromOffset(34, 28), textSize = 14, bg = rgb(120, 40, 56), order = 3 })
+UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(34, 28), textSize = 13, bg = T.Danger, order = 4 })
 
--- drag
 do
 	local dragging, dragStart, startPos = false, nil, nil
 	titlebar.InputBegan:Connect(function(input)
@@ -2883,12 +2492,12 @@ do
 end
 
 -- body
-local RAIL_W = 44
+local RAIL_W = 64
 local body = mk("Frame", { Position = UDim2.fromOffset(0, TITLE_H), Size = UDim2.new(1, 0, 1, -TITLE_H), BackgroundTransparency = 1, Parent = UI.window })
 local rail = mk("Frame", { Size = UDim2.new(0, RAIL_W, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = body })
 local railList = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = rail })
 vlist(railList, 4)
-pad(railList, 6, 8, 6, 8)
+pad(railList, 5, 6, 5, 6)
 UI.content = mk("Frame", {
 	Position = UDim2.fromOffset(RAIL_W, 0), Size = UDim2.new(1, -RAIL_W, 1, 0), BackgroundTransparency = 1,
 	ClipsDescendants = true, Parent = body,
@@ -2896,12 +2505,8 @@ UI.content = mk("Frame", {
 
 local TABS = {
 	{ key = "catalog", icon = "🛍", name = "Katalog" },
-	{ key = "worn", icon = "👕", name = "Dipakai" },
 	{ key = "avatars", icon = "👥", name = "Avatar" },
-	{ key = "body", icon = "📏", name = "Tubuh" },
-	{ key = "color", icon = "🎨", name = "Warna" },
-	{ key = "log", icon = "📋", name = "Log" },
-	{ key = "info", icon = "⚙", name = "Setelan" },
+	{ key = "worn", icon = "👕", name = "Dipakai" },
 }
 UI.pages, UI.builders, UI.built, UI.railBtns, UI.onShow = {}, {}, {}, {}, {}
 
@@ -2926,13 +2531,15 @@ end
 
 for i, tab in ipairs(TABS) do
 	local b = mk("TextButton", {
-		Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, 0, 0, 54), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
 		AutoButtonColor = false, LayoutOrder = i, Parent = railList,
 	})
-	corner(b, 9)
-	local ic = mk("TextLabel", { BackgroundTransparency = 1, Text = tab.icon, TextSize = 17, TextColor3 = T.Dim,
-		Size = UDim2.new(1, 0, 1, 0), Parent = b })
-	UI.railBtns[tab.key] = { btn = b, txt = ic }
+	corner(b, 12)
+	mk("TextLabel", { BackgroundTransparency = 1, Text = tab.icon, TextSize = 20, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 5), Parent = b })
+	local tx = label(b, tab.name, 10, T.Dim, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+	tx.Size = UDim2.new(1, 0, 0, 14)
+	tx.Position = UDim2.fromOffset(0, 33)
+	UI.railBtns[tab.key] = { btn = b, txt = tx }
 	b.Activated:Connect(function()
 		UI.showTab(tab.key)
 	end)
@@ -2983,18 +2590,18 @@ local function makeCard(parent, item, onFav)
 	corner(card, 10)
 	local st = stroke(card, T.Stroke, 1.5, 0.3)
 	local img = mk("ImageLabel", {
-		Size = UDim2.new(1, -10, 0, 68), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
+		Size = UDim2.new(1, -10, 0, 72), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
 		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
 	})
 	corner(img, 8)
 	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
-	nm.Position = UDim2.fromOffset(6, 76)
-	nm.Size = UDim2.new(1, -12, 0, 15)
+	nm.Position = UDim2.fromOffset(6, 80)
+	nm.Size = UDim2.new(1, -12, 0, 14)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
 	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
-	pr.Position = UDim2.fromOffset(6, 92)
-	pr.Size = UDim2.new(1, -12, 0, 13)
+	pr.Position = UDim2.fromOffset(6, 96)
+	pr.Size = UDim2.new(1, -12, 0, 12)
 
 	local badge = mk("TextLabel", {
 		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
@@ -3059,17 +2666,22 @@ local function makeCard(parent, item, onFav)
 end
 
 UI.builders.catalog = function(page)
-	local main = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = page })
+	-- baris 1: kategori (3 tombol)
+	local catRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = catRow,
+	})
 
-	-- baris 1: cari + refresh
-	local row1 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = main })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -36, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row1 })
+	-- baris 2: cari, sort, gratis, refresh
+	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -206, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row2 })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
-		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
 		PlaceholderText = "🔍 Cari (Enter)...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		ClearTextOnFocus = false, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = sbFrame,
 	})
 	local startQuery
@@ -3079,77 +2691,38 @@ UI.builders.catalog = function(page)
 			startQuery()
 		end
 	end)
-	button(row1, { text = "⟳", size = UDim2.fromOffset(30, 30), position = UDim2.new(1, -30, 0, 0), textSize = 16, radius = 8,
-		onClick = function() startQuery() end })
-
-	-- baris 2: kategori (dropdown), sort, gratis, jumlah
-	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = main })
-	local drop
-	local catBtn = button(row2, { text = "☰ Kategori", size = UDim2.fromOffset(130, 26), textSize = 11, radius = 8,
-		onClick = function() drop.Visible = not drop.Visible end })
-	catBtn.TextTruncate = Enum.TextTruncate.AtEnd
-	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(96, 26), position = UDim2.fromOffset(136, 0),
-		textSize = 11, radius = 8, onClick = function()
+	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(96, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -104, 0, 0), textSize = 12,
+		onClick = function()
 			State.sortIdx = State.sortIdx % #SORTS + 1
 			startQuery()
 		end })
 	local freeBtn
-	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(70, 26), position = UDim2.fromOffset(238, 0),
-		textSize = 11, radius = 8, onClick = function()
+	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(62, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -38, 0, 0), textSize = 12,
+		onClick = function()
 			State.freeOnly = not State.freeOnly
 			startQuery()
 		end })
-	local countL = label(row2, "", 10, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
-	countL.Size = UDim2.fromOffset(70, 26)
-	countL.Position = UDim2.fromOffset(314, 0)
+	button(row2, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
+		textSize = 17, onClick = function() startQuery() end })
 
-	-- grid item
-	local grid = makeScroll(main, UDim2.new(1, 0, 1, -66), UDim2.fromOffset(0, 66))
+	-- jumlah item (disembunyikan karena ruang sempit, dipakai logika bawah)
+	local countL = label(page, "", 11, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
+	countL.Visible = false
+
+	-- grid
+	local grid = makeScroll(page, UDim2.new(1, 0, 1, -70), UDim2.fromOffset(0, 70))
 	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(90, 112), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		CellSize = UDim2.fromOffset(98, 116), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
 	})
 	pad(grid, 0, 2, 0, 10)
 	local msg = mk("TextLabel", {
-		Size = UDim2.new(1, -20, 0, 80), Position = UDim2.fromOffset(10, 90), BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, -20, 0, 70), Position = UDim2.fromOffset(10, 100), BackgroundTransparency = 1, Text = "",
 		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
-		ZIndex = 5, Parent = main,
+		ZIndex = 5, Parent = page,
 	})
-
-	-- dropdown kategori (+ pakai lewat ID)
-	drop = mk("Frame", {
-		Size = UDim2.new(1, 0, 1, -64), Position = UDim2.fromOffset(0, 62), BackgroundColor3 = T.Surface,
-		BorderSizePixel = 0, Visible = false, ZIndex = 30, Parent = main,
-	})
-	corner(drop, 10)
-	stroke(drop, T.Stroke, 1)
-	local idBox = mk("TextBox", {
-		Size = UDim2.new(1, -92, 0, 26), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
-		Text = "", PlaceholderText = "Pakai lewat ID item", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, Parent = drop,
-	})
-	corner(idBox, 8)
-	button(drop, { text = "Pakai", size = UDim2.fromOffset(72, 26), position = UDim2.new(1, -78, 0, 6), bg = T.Accent,
-		textSize = 12, radius = 8, onClick = function()
-			local id = tonumber(idBox.Text)
-			if not id then
-				toast("Isi ID angka dulu", "warn")
-				return
-			end
-			drop.Visible = false
-			task.spawn(function()
-				if not E.assetType(id) then
-					local t = State.cat and State.cat.list and NAME2TID[State.cat.list[1]]
-					if t then
-						E.types[id] = t
-					end
-				end
-				E.toggleAsset(id, "ID " .. id)
-			end)
-		end })
-	local catScroll = makeScroll(drop, UDim2.new(1, -8, 1, -40), UDim2.fromOffset(4, 36))
-	pad(catScroll, 4, 2, 4, 6)
-	vlist(catScroll, 2)
 
 	local currentQuery, loading = nil, false
 
@@ -3202,7 +2775,7 @@ UI.builders.catalog = function(page)
 			if q.total == 0 then
 				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
 			end
-			countL.Text = q.total .. (q.finished and "" or "+")
+			countL.Text = q.total .. " item" .. (q.finished and "" or "+") .. (q.backend and ("  •  " .. q.backend) or "")
 		end)
 	end
 
@@ -3214,40 +2787,7 @@ UI.builders.catalog = function(page)
 		sortBtn.Text = "↕ " .. SORTS[State.sortIdx].name
 		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
 		freeBtn.Text = (State.freeOnly and "✓ " or "") .. "Gratis"
-		local cat = State.cat
-		if cat.kind == "fav" or cat.kind == "recent" then
-			currentQuery = nil
-			local src = {}
-			if cat.kind == "fav" then
-				for _, id in ipairs(State.favOrder) do
-					if State.favorites[id] then
-						table.insert(src, State.favorites[id])
-					end
-				end
-			else
-				src = State.recent
-			end
-			local kw = string.lower(State.keyword or "")
-			local n = 0
-			for _, it in ipairs(src) do
-				if kw == "" or string.find(string.lower(it.Name), kw, 1, true) then
-					n = n + 1
-					local copy = {}
-					for k, v in pairs(it) do
-						copy[k] = v
-					end
-					copy.Order = n
-					addCard(copy)
-				end
-			end
-			countL.Text = tostring(n)
-			if n == 0 then
-				showMsg(cat.kind == "fav" and "★ Belum ada favorit. Tekan ♡ pada item." or "🕘 Belum ada riwayat pemakaian.")
-			end
-			return
-		end
-		countL.Text = "…"
-		currentQuery = newQuery(cat, State.keyword, State.sortIdx, State.freeOnly)
+		currentQuery = newQuery(State.cat, State.keyword, State.sortIdx, State.freeOnly)
 		loadPage(token)
 	end
 
@@ -3257,46 +2797,28 @@ UI.builders.catalog = function(page)
 		end
 	end)
 
-	-- daftar kategori
-	local catRows = {}
+	-- tombol kategori
+	local catBtns = {}
 	local function markCat()
-		for id, r in pairs(catRows) do
-			local active = id == State.cat.id
-			r.btn.BackgroundTransparency = active and 0 or 1
-			r.txt.TextColor3 = active and T.Accent or T.Text
+		for id, b in pairs(catBtns) do
+			b.BackgroundColor3 = (id == State.cat.id) and T.Accent or T.Surface2
 		end
 	end
 	local function selectCat(cat)
 		State.cat = cat
 		State.keyword = ""
 		sbBox.Text = ""
-		catBtn.Text = "☰ " .. cat.name
-		drop.Visible = false
 		markCat()
 		startQuery()
 	end
-
-	local order, lastGroup = 0, nil
-	for _, cat in ipairs(CATEGORIES) do
-		if cat.group ~= lastGroup then
-			lastGroup = cat.group
-			order = order + 1
-			local h = label(catScroll, cat.group, 10, T.Dim, Enum.Font.GothamBold)
-			h.LayoutOrder = order
-			h.Size = UDim2.new(1, 0, 0, 20)
-			h.TextYAlignment = Enum.TextYAlignment.Bottom
-		end
-		order = order + 1
+	for i, cat in ipairs(CATEGORIES) do
 		local b = mk("TextButton", {
-			Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
-			AutoButtonColor = false, LayoutOrder = order, Parent = catScroll,
+			Size = UDim2.new(1 / #CATEGORIES, -4, 1, 0), BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
+			Text = cat.name, TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
+			AutoButtonColor = false, LayoutOrder = i, Parent = catRow,
 		})
-		corner(b, 7)
-		local t = label(b, cat.name, 12, T.Text, Enum.Font.GothamMedium)
-		t.Size = UDim2.new(1, -16, 1, 0)
-		t.Position = UDim2.fromOffset(10, 0)
-		t.TextTruncate = Enum.TextTruncate.AtEnd
-		catRows[cat.id] = { btn = b, txt = t }
+		corner(b, 8)
+		catBtns[cat.id] = b
 		b.Activated:Connect(function()
 			selectCat(cat)
 		end)
@@ -3309,31 +2831,26 @@ UI.builders.catalog = function(page)
 	end
 	UI.onShow.catalog = UI.refreshCards
 
-	for _, cat in ipairs(CATEGORIES) do
-		if cat.id == "hat" then
-			selectCat(cat)
-			break
-		end
-	end
+	selectCat(CATEGORIES[1])
 end
 
 ----------------------------------------------------------------------------
 -- [9] HALAMAN DIPAKAI
 ----------------------------------------------------------------------------
 UI.builders.worn = function(page)
-	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Parent = page })
-	label(head, "Sedang dipakai", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.6, 0, 0, 22)
-	local sub = label(head, "", 12, T.Dim, Enum.Font.Gotham)
-	sub.Position = UDim2.fromOffset(0, 24)
-	sub.Size = UDim2.new(0.7, 0, 0, 16)
-	button(head, { text = "Lepas semua", size = UDim2.fromOffset(92, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12, radius = 8,
+	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
+	label(head, "Sedang dipakai", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
+	local sub = label(head, "", 11, T.Dim, Enum.Font.Gotham)
+	sub.Position = UDim2.fromOffset(0, 20)
+	sub.Size = UDim2.new(0.5, 0, 0, 14)
+	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
 		onClick = function() task.spawn(E.removeAll) end })
-	button(head, { text = "↺ Reset", size = UDim2.fromOffset(66, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -98, 0, 2), textSize = 12, radius = 8, onClick = function() task.spawn(E.reset) end })
+	button(head, { text = "↺ Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
 
-	local list = makeScroll(page, UDim2.new(1, 0, 1, -50), UDim2.fromOffset(0, 50))
-	vlist(list, 8)
+	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
+	vlist(list, 6)
 	pad(list, 0, 0, 8, 10)
 
 	UI.refreshWorn = function()
@@ -3345,20 +2862,20 @@ UI.builders.worn = function(page)
 		local items = E.wornList()
 		sub.Text = #items .. " item aktif pada karakter"
 		for n, e in ipairs(items) do
-			local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 58), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
-			corner(row, 12)
-			local img = mk("ImageLabel", { Size = UDim2.fromOffset(42, 42), Position = UDim2.fromOffset(8, 8), BackgroundColor3 = T.Surface2,
+			local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
+			corner(row, 10)
+			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
 				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = row })
 			corner(img, 8)
-			local nameL = label(row, "Memuat nama...", 14, T.Text, Enum.Font.GothamBold)
-			nameL.Position = UDim2.fromOffset(60, 10)
-			nameL.Size = UDim2.new(1, -160, 0, 20)
+			local nameL = label(row, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
+			nameL.Position = UDim2.fromOffset(50, 6)
+			nameL.Size = UDim2.new(1, -124, 0, 18)
 			nameL.TextTruncate = Enum.TextTruncate.AtEnd
-			local typeL = label(row, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 12, T.Dim, Enum.Font.Gotham)
-			typeL.Position = UDim2.fromOffset(60, 30)
-			typeL.Size = UDim2.new(1, -160, 0, 16)
-			button(row, { text = "Lepas", size = UDim2.fromOffset(72, 30), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -10, 0.5, 0),
-				textSize = 13, onClick = function() task.spawn(E.removeAsset, e.Id) end })
+			local typeL = label(row, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
+			typeL.Position = UDim2.fromOffset(50, 26)
+			typeL.Size = UDim2.new(1, -124, 0, 14)
+			button(row, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
+				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
 			task.spawn(function()
 				local nm = E.name(e.Id)
 				if nameL.Parent then
@@ -3372,23 +2889,25 @@ UI.builders.worn = function(page)
 end
 
 ----------------------------------------------------------------------------
--- [10] HALAMAN AVATAR (preset, server, teman)
+-- [10] HALAMAN AVATAR  (cari semua pemain Roblox + preset + server + teman)
 ----------------------------------------------------------------------------
 local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
 
-local function userCard(parent, userId, name, order)
+local function userCard(parent, userId, name, order, sub)
 	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
 	corner(card, 12)
-	local img = mk("ImageLabel", { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(11, 8), BackgroundColor3 = T.Surface2,
+	local img = mk("ImageLabel", { Size = UDim2.fromOffset(60, 60), Position = UDim2.new(0.5, -30, 0, 6), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, Image = thumbURL("AvatarHeadShot", userId, 150), Parent = card })
-	corner(img, 35)
-	local nm = label(card, name, 12, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
-	nm.Position = UDim2.fromOffset(4, 82)
-	nm.Size = UDim2.new(1, -8, 0, 16)
+	corner(img, 30)
+	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+	nm.Position = UDim2.fromOffset(4, 68)
+	nm.Size = UDim2.new(1, -8, 0, 14)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
-	local hint = label(card, "klik untuk pakai", 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
-	hint.Position = UDim2.fromOffset(4, 98)
-	hint.Size = UDim2.new(1, -8, 0, 14)
+	local idleText = sub or "klik untuk pakai"
+	local hint = label(card, idleText, 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+	hint.Position = UDim2.fromOffset(4, 83)
+	hint.Size = UDim2.new(1, -8, 0, 12)
+	hint.TextTruncate = Enum.TextTruncate.AtEnd
 	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
 	local busyCard = false
@@ -3404,7 +2923,7 @@ local function userCard(parent, userId, name, order)
 			else
 				E.applyUser(userId, name)
 			end
-			hint.Text = "klik untuk pakai"
+			hint.Text = idleText
 			busyCard = false
 		end)
 	end)
@@ -3413,28 +2932,219 @@ end
 
 local function userGrid(parent, order)
 	local g = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = order, Parent = parent })
-	mk("UIGridLayout", { CellSize = UDim2.fromOffset(92, 118), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = g })
+	mk("UIGridLayout", { CellSize = UDim2.fromOffset(92, 100), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = g })
 	return g
+end
+
+-- pencarian pemain Roblox mana pun (tanpa harus satu server / berteman)
+local function searchUsers(keyword, cursor)
+	local path = "/v1/users/search?keyword=" .. urlenc(keyword) .. "&limit=25"
+	if cursor then
+		path = path .. "&cursor=" .. urlenc(cursor)
+	end
+	local lastErr = "tidak ada URL"
+	for _, host in ipairs({ "https://users.roblox.com", "https://users.roproxy.com" }) do
+		local bodyTxt, err = httpGet(host .. path)
+		if bodyTxt then
+			local ok, data = pcall(function()
+				return HttpService:JSONDecode(bodyTxt)
+			end)
+			if ok and type(data) == "table" and type(data.data) == "table" then
+				return data.data, data.nextPageCursor
+			end
+			lastErr = "JSON tidak valid dari " .. host
+		else
+			lastErr = tostring(err)
+		end
+	end
+	return nil, lastErr
+end
+
+local function nameFromId(uid)
+	local ok, n = callAny(Players, { "GetNameFromUserIdAsync" }, uid)
+	if ok and type(n) == "string" then
+		return n
+	end
+	return nil
+end
+
+local function idFromName(name)
+	local ok, id = callAny(Players, { "GetUserIdFromNameAsync" }, name)
+	if ok and type(id) == "number" and id > 0 then
+		return id
+	end
+	return nil
 end
 
 UI.builders.avatars = function(page)
 	local scroll = makeScroll(page)
 	vlist(scroll, 8)
 	pad(scroll, 0, 0, 8, 12)
-	local t = label(scroll, "Coba avatar pemain lain", 16, T.Text, Enum.Font.GothamBold)
-	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 22)
 
-	local h1 = label(scroll, "PRESET", 12, T.Dim, Enum.Font.GothamBold)
-	h1.LayoutOrder = 3
-	local presetGrid = userGrid(scroll, 4)
+	-- baris pencarian
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = 1, Parent = scroll })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+	corner(sbFrame, 8)
+	stroke(sbFrame, T.Stroke, 1)
+	local box = mk("TextBox", {
+		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Username / nama / UserId (semua Roblox)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = sbFrame,
+	})
+	local searchBtn = button(row, { text = "Cari", size = UDim2.fromOffset(60, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -42, 0, 0), bg = T.Accent, textSize = 12 })
+	local randBtn = button(row, { text = "🎲", size = UDim2.fromOffset(36, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 0), textSize = 15 })
+
+	local status = label(scroll, "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak.", 11, T.Dim, Enum.Font.Gotham)
+	status.LayoutOrder = 2
+	status.Size = UDim2.new(1, 0, 0, 14)
+
+	local resultGrid = userGrid(scroll, 3)
+	local moreBtn = button(scroll, { text = "Muat lebih banyak", size = UDim2.new(1, 0, 0, 28), order = 4, textSize = 12 })
+	moreBtn.Visible = false
+
+	local token, nextCursor, keyword, loading, count, seen = 0, nil, "", false, 0, {}
+
+	local function clearResults()
+		for _, c in ipairs(resultGrid:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+		count, seen = 0, {}
+		moreBtn.Visible = false
+	end
+
+	local function addUser(id, name, sub, front)
+		if seen[id] then
+			return
+		end
+		seen[id] = true
+		count = count + 1
+		userCard(resultGrid, id, name, front and (-1000 + count) or count, sub)
+	end
+
+	local function doSearch()
+		local kw = box.Text:match("^%s*(.-)%s*$")
+		token = token + 1
+		local myToken = token
+		clearResults()
+		nextCursor = nil
+		if kw == "" then
+			status.Text = "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak."
+			return
+		end
+		keyword, loading = kw, true
+		status.Text = "Mencari \"" .. kw .. "\"..."
+		task.spawn(function()
+			local exactId = tonumber(kw)
+			local exactName
+			if exactId then
+				exactName = nameFromId(exactId)
+			else
+				exactId = idFromName(kw)
+				if exactId then
+					exactName = nameFromId(exactId) or kw
+				end
+			end
+			if myToken ~= token then
+				return
+			end
+			if exactId and exactName then
+				addUser(exactId, exactName, "ID " .. exactId, true)
+			end
+			local list, cur = searchUsers(kw, nil)
+			if myToken ~= token then
+				return
+			end
+			loading = false
+			if list then
+				nextCursor = cur
+				for _, u in ipairs(list) do
+					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
+				end
+				status.Text = count == 0 and ("Tidak ada hasil untuk \"" .. kw .. "\".") or (count .. " pemain ditemukan")
+				moreBtn.Visible = nextCursor ~= nil
+			else
+				status.Text = (count > 0) and "Pencarian luas gagal (HTTP diblokir), hanya hasil persis."
+					or ("⚠ Pencarian gagal: " .. tostring(cur))
+			end
+		end)
+	end
+
+	moreBtn.Activated:Connect(function()
+		if loading or not nextCursor then
+			return
+		end
+		loading = true
+		local myToken = token
+		task.spawn(function()
+			local list, cur = searchUsers(keyword, nextCursor)
+			if myToken ~= token then
+				return
+			end
+			loading = false
+			if list then
+				nextCursor = cur
+				for _, u in ipairs(list) do
+					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
+				end
+			else
+				nextCursor = nil
+			end
+			moreBtn.Visible = nextCursor ~= nil
+			status.Text = count .. " pemain ditemukan" .. (nextCursor and "+" or "")
+		end)
+	end)
+
+	randBtn.Activated:Connect(function()
+		if loading then
+			return
+		end
+		loading = true
+		token = token + 1
+		local myToken = token
+		clearResults()
+		nextCursor = nil
+		status.Text = "Mencari pemain acak..."
+		task.spawn(function()
+			local tries = 0
+			while count < 8 and tries < 30 and myToken == token do
+				tries = tries + 1
+				local id = math.random(100000, 3500000000)
+				local nm = nameFromId(id)
+				if nm then
+					addUser(id, nm, "ID " .. id)
+				end
+			end
+			if myToken == token then
+				loading = false
+				status.Text = count .. " pemain acak (tekan 🎲 lagi untuk ganti)"
+			end
+		end)
+	end)
+
+	searchBtn.Activated:Connect(doSearch)
+	box.FocusLost:Connect(function(enter)
+		if enter then
+			doSearch()
+		end
+	end)
+
+	-- preset
+	local h1 = label(scroll, "PRESET", 11, T.Dim, Enum.Font.GothamBold)
+	h1.LayoutOrder = 5
+	local presetGrid = userGrid(scroll, 6)
 	for i, p in ipairs(PRESETS) do
 		userCard(presetGrid, p[2], p[1], i)
 	end
 
-	local h2 = label(scroll, "PEMAIN DI SERVER INI", 12, T.Dim, Enum.Font.GothamBold)
-	h2.LayoutOrder = 5
-	local serverGrid = userGrid(scroll, 6)
+	-- pemain di server
+	local h2 = label(scroll, "PEMAIN DI SERVER INI", 11, T.Dim, Enum.Font.GothamBold)
+	h2.LayoutOrder = 7
+	local serverGrid = userGrid(scroll, 8)
 	local function refreshServer()
 		for _, c in ipairs(serverGrid:GetChildren()) do
 			if c:IsA("GuiObject") then
@@ -3452,24 +3162,25 @@ UI.builders.avatars = function(page)
 	UI.onShow.avatars = refreshServer
 	refreshServer()
 
-	local h3 = label(scroll, "TEMAN", 12, T.Dim, Enum.Font.GothamBold)
-	h3.LayoutOrder = 8
-	local friendGrid = userGrid(scroll, 9)
-	local status = label(scroll, "Memuat daftar teman...", 12, T.Dim, Enum.Font.Gotham)
-	status.LayoutOrder = 10
+	-- teman
+	local h3 = label(scroll, "TEMAN", 11, T.Dim, Enum.Font.GothamBold)
+	h3.LayoutOrder = 9
+	local friendGrid = userGrid(scroll, 10)
+	local fstatus = label(scroll, "Memuat daftar teman...", 11, T.Dim, Enum.Font.Gotham)
+	fstatus.LayoutOrder = 11
 	task.spawn(function()
 		local ok, pages = pcall(function()
 			return Players:GetFriendsAsync(player.UserId)
 		end)
 		if not ok or not pages then
-			status.Text = "Daftar teman tidak bisa dimuat."
+			fstatus.Text = "Daftar teman tidak bisa dimuat."
 			return
 		end
-		local count, done = 0, false
-		while not done and count < 72 do
+		local fcount, done = 0, false
+		while not done and fcount < 72 do
 			for _, f in ipairs(pages:GetCurrentPage()) do
-				count = count + 1
-				userCard(friendGrid, f.Id, f.DisplayName or f.Username, count)
+				fcount = fcount + 1
+				userCard(friendGrid, f.Id, f.DisplayName or f.Username, fcount)
 			end
 			if pages.IsFinished then
 				done = true
@@ -3477,238 +3188,18 @@ UI.builders.avatars = function(page)
 				done = true
 			end
 		end
-		status.Text = count == 0 and "Belum ada teman di akun ini." or (count .. " teman dimuat")
+		fstatus.Text = fcount == 0 and "Belum ada teman di akun ini." or (fcount .. " teman dimuat")
 	end)
 end
 
 ----------------------------------------------------------------------------
--- [11] HALAMAN TUBUH & WARNA
-----------------------------------------------------------------------------
-local function slider(parent, o)
-	local min, max, step = o.min, o.max, o.step or 0.01
-	local value = o.value or min
-	local holder = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundTransparency = 1, LayoutOrder = o.order or 0, Parent = parent })
-	label(holder, o.text or "", 13, T.Text, Enum.Font.GothamMedium).Size = UDim2.new(0.6, 0, 0, 20)
-	local valL = label(holder, "", 13, T.Dim, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
-	valL.Size = UDim2.new(0.4, 0, 0, 20)
-	valL.Position = UDim2.new(0.6, 0, 0, 0)
-	local track = mk("Frame", { Size = UDim2.new(1, 0, 0, 6), Position = UDim2.fromOffset(0, 32), BackgroundColor3 = T.Surface2, BorderSizePixel = 0, Parent = holder })
-	corner(track, 3)
-	local fill = mk("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.Accent, BorderSizePixel = 0, Parent = track })
-	corner(fill, 3)
-	local knob = mk("Frame", { Size = UDim2.fromOffset(16, 16), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
-		BackgroundColor3 = T.Text, BorderSizePixel = 0, ZIndex = 2, Parent = track })
-	corner(knob, 8)
-	local hit = mk("TextButton", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 20), BackgroundTransparency = 1, Text = "", Parent = holder })
-
-	local function setValue(v, doFire)
-		v = math.clamp(v, min, max)
-		v = math.floor(v / step + 0.5) * step
-		value = v
-		local a = (max - min) > 0 and (v - min) / (max - min) or 0
-		fill.Size = UDim2.new(a, 0, 1, 0)
-		knob.Position = UDim2.new(a, 0, 0.5, 0)
-		valL.Text = o.format and o.format(v) or string.format("%.2f", v)
-		if doFire and o.onChange then
-			o.onChange(v)
-		end
-	end
-	local dragging = false
-	local function fromInput(input)
-		local a = math.clamp((input.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-		setValue(min + (max - min) * a, true)
-	end
-	hit.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			fromInput(input)
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			fromInput(input)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
-	setValue(value, false)
-	return { Set = function(v) setValue(v, false) end }
-end
-
-UI.builders.body = function(page)
-	local scroll = makeScroll(page)
-	vlist(scroll, 6)
-	pad(scroll, 0, 0, 10, 12)
-	local t = label(scroll, "Ukuran tubuh", 16, T.Text, Enum.Font.GothamBold)
-	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 22)
-	local s = label(scroll, "Geser slider, perubahan langsung terlihat (hanya rig R15).", 11, T.Dim, Enum.Font.Gotham)
-	s.LayoutOrder = 2
-	local defs = {
-		{ "Height", "Tinggi", 0.9, 1.05 }, { "Width", "Lebar", 0.7, 1.0 }, { "Depth", "Ketebalan", 0.7, 1.0 },
-		{ "Head", "Ukuran kepala", 0.95, 1.0 }, { "Proportion", "Proporsi", 0, 1 }, { "BodyType", "Tipe tubuh", 0, 1 },
-	}
-	local sliders = {}
-	for i, d in ipairs(defs) do
-		sliders[d[1]] = slider(scroll, { text = d[2], min = d[3], max = d[4], value = 1, order = 10 + i,
-			onChange = function(v) E.setScale(d[1], v) end })
-	end
-	button(scroll, { text = "Reset ukuran", size = UDim2.new(1, 0, 0, 36), order = 30, onClick = function()
-		E.resetScales()
-		toast("Ukuran tubuh direset", "ok")
-	end })
-	UI.onShow.body = function()
-		local hum = E.humanoid()
-		for key, nvName in pairs(SCALE_VALUES) do
-			local nv = hum:FindFirstChild(nvName)
-			if nv and nv:IsA("NumberValue") and sliders[key] then
-				sliders[key].Set(nv.Value)
-			end
-		end
-	end
-	UI.onShow.body()
-end
-
-local PALETTE = {
-	rgb(255, 224, 189), rgb(255, 205, 148), rgb(234, 184, 146), rgb(224, 172, 105), rgb(204, 142, 105),
-	rgb(198, 134, 66), rgb(160, 95, 53), rgb(141, 85, 36), rgb(124, 92, 70), rgb(105, 64, 40),
-	rgb(86, 52, 32), rgb(62, 39, 25), rgb(253, 234, 141), rgb(245, 205, 48), rgb(218, 133, 65),
-	rgb(196, 40, 28), rgb(255, 152, 220), rgb(167, 94, 155), rgb(98, 71, 170), rgb(13, 105, 172),
-	rgb(18, 238, 212), rgb(75, 151, 75), rgb(164, 189, 71), rgb(163, 162, 165), rgb(205, 205, 205),
-	rgb(242, 243, 243), rgb(99, 95, 98), rgb(27, 42, 53),
-}
-
-UI.builders.color = function(page)
-	local scroll = makeScroll(page)
-	vlist(scroll, 8)
-	pad(scroll, 0, 0, 10, 12)
-	local t = label(scroll, "Warna kulit", 16, T.Text, Enum.Font.GothamBold)
-	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 22)
-	local grid = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 3, Parent = scroll })
-	mk("UIGridLayout", { CellSize = UDim2.fromOffset(46, 46), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = grid })
-	for i, c in ipairs(PALETTE) do
-		local sw = mk("TextButton", { BackgroundColor3 = c, Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = i, Parent = grid })
-		corner(sw, 12)
-		stroke(sw, T.Stroke, 2, 0.3)
-		sw.Activated:Connect(function()
-			E.setSkin(c)
-		end)
-	end
-	button(scroll, { text = "Kembalikan warna asli", size = UDim2.new(1, 0, 0, 36), order = 14, onClick = function()
-		E.resetSkin()
-		toast("Warna kulit dikembalikan", "ok")
-	end })
-end
-
-----------------------------------------------------------------------------
--- [12] HALAMAN LOG & SETELAN
-----------------------------------------------------------------------------
-UI.builders.log = function(page)
-	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Parent = page })
-	label(head, "Log & Tes Penyebab", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(1, 0, 0, 22)
-	local sub = label(head, "Jalankan tes, lalu salin log dan kirim ke pembuat script.", 11, T.Dim, Enum.Font.Gotham)
-	sub.Position = UDim2.fromOffset(0, 22)
-	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 44), BackgroundTransparency = 1, Parent = page })
-	button(row, { text = "▶ Tes Penyebab", size = UDim2.new(0.42, -4, 1, 0), bg = T.Accent, textSize = 12, radius = 8,
-		onClick = function() task.spawn(E.fullTest) end })
-	button(row, { text = "📋 Salin", size = UDim2.new(0.29, -4, 1, 0), position = UDim2.new(0.42, 0, 0, 0), textSize = 12, radius = 8,
-		onClick = function()
-			local ok = pcall(function()
-				setclipboard(table.concat(LOG, "\n"))
-			end)
-			toast(ok and "Log disalin ke clipboard" or "setclipboard tidak ada di executor ini: blok lalu salin manual dari kotak log", ok and "ok" or "warn")
-		end })
-	button(row, { text = "Bersihkan", size = UDim2.new(0.29, 0, 1, 0), position = UDim2.new(0.71, 0, 0, 0), textSize = 12, radius = 8,
-		onClick = function()
-			for i = #LOG, 1, -1 do
-				LOG[i] = nil
-			end
-			if logHook then
-				logHook()
-			end
-		end })
-	local sc = makeScroll(page, UDim2.new(1, 0, 1, -80), UDim2.fromOffset(0, 80))
-	local box = mk("TextBox", {
-		Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.Surface, BorderSizePixel = 0,
-		TextColor3 = T.Text, Font = Enum.Font.Code, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, MultiLine = true, TextEditable = false,
-		ClearTextOnFocus = false, Text = "", Parent = sc,
-	})
-	corner(box, 8)
-	pad(box, 8, 8, 8, 8)
-	logHook = function()
-		box.Text = table.concat(LOG, "\n")
-		sc.CanvasPosition = Vector2.new(0, 100000)
-	end
-	logHook()
-end
-
-UI.builders.info = function(page)
-	local scroll = makeScroll(page)
-	vlist(scroll, 8)
-	pad(scroll, 0, 0, 10, 12)
-	local t = label(scroll, "Setelan & diagnostik", 16, T.Text, Enum.Font.GothamBold)
-	t.LayoutOrder = 1
-	t.Size = UDim2.new(1, 0, 0, 22)
-	local txt = label(scroll,
-		"K  buka / tutup UI\nCtrl+Z  undo   •   Ctrl+Y  redo\n\nJika item tidak muncul: tekan Tes Penyebab, lalu pasang "
-		.. "AvatarStudioServer.lua di ServerScriptService (jalur paling pasti).", 12, T.Dim, Enum.Font.GothamMedium)
-	txt.LayoutOrder = 2
-	txt.TextWrapped = true
-	txt.TextYAlignment = Enum.TextYAlignment.Top
-	txt.Size = UDim2.new(1, 0, 0, 110)
-	button(scroll, { text = "🩺 Tes penyebab (buka Log)", size = UDim2.new(1, 0, 0, 34), bg = T.Accent, order = 3,
-		onClick = function() UI.showTab("log") task.spawn(E.fullTest) end })
-	local mb
-	mb = button(scroll, { text = "Gaya skin: BONEKA (bentuk tubuh donor utuh)", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
-		onClick = function()
-			E.skinMode = (E.skinMode == "puppet") and "weld" or "puppet"
-			mb.Text = "Gaya skin: " .. (E.skinMode == "puppet" and "BONEKA (bentuk tubuh donor utuh)" or "LAS PER-BAGIAN")
-			task.spawn(E.rerender)
-		end })
-	local sb
-	sb = button(scroll, { text = "Mode kulit overlay (badan ikut berubah): HIDUP", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
-		onClick = function()
-			E.useSkin = not E.useSkin
-			sb.Text = "Mode kulit overlay (badan ikut berubah): " .. (E.useSkin and "HIDUP" or "MATI")
-			task.spawn(E.rerender)
-		end })
-	local xb
-	xb = button(scroll, { text = "Item terpisah (eksperimen): MATI", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
-		onClick = function()
-			E.useExtras = not E.useExtras
-			xb.Text = "Item terpisah (eksperimen): " .. (E.useExtras and "HIDUP" or "MATI")
-			E.extraIds = {}
-			task.spawn(E.rerender)
-		end })
-	button(scroll, { text = "🦴 Pulihkan badan/tangan/kaki", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
-		onClick = function() task.spawn(E.restoreBody) end })
-	local cb
-	cb = button(scroll, { text = "Salin bentuk tubuh donor: MATI", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
-		onClick = function()
-			E.copyBody = not E.copyBody
-			cb.Text = "Salin bentuk tubuh donor: " .. (E.copyBody and "HIDUP (eksperimental)" or "MATI")
-		end })
-	button(scroll, { text = "↻ Render ulang avatar (jika item hilang)", size = UDim2.new(1, 0, 0, 34), order = 3, textSize = 12,
-		onClick = function() task.spawn(E.rerender) end })
-	button(scroll, { text = "Tutup UI", size = UDim2.new(1, 0, 0, 34), order = 4, onClick = function() UI.setOpen(false) end })
-	button(scroll, { text = "Hapus UI sepenuhnya", size = UDim2.new(1, 0, 0, 34), bg = T.Danger, order = 5,
-		onClick = function() UI.destroyUI() end })
-end
-
-----------------------------------------------------------------------------
--- [13] BUKA/TUTUP, KEYBIND, REAKSI
+-- [11] BUKA/TUTUP, KEYBIND, REAKSI
 ----------------------------------------------------------------------------
 UI.fab = mk("TextButton", {
 	Size = UDim2.fromOffset(54, 54), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 14, 0.5, 0), Text = "👗",
 	TextSize = 26, AutoButtonColor = false, BackgroundColor3 = T.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 20, Parent = UI.gui,
 })
 corner(UI.fab, 27)
--- tombol 👗 bisa digeser BEBAS ke mana saja, termasuk keluar layar (disisakan 12px agar masih bisa dipegang)
 do
 	local fab = UI.fab
 	fab.Active = true
@@ -3731,7 +3222,6 @@ do
 			moved = false
 		end
 	end)
-	-- klik / sentuh tanpa geser = buka UI
 	fab.Activated:Connect(function()
 		if not moved then
 			UI.setOpen(true)
@@ -3798,7 +3288,6 @@ do
 	end
 end
 
--- hapus UI + tombol 👗; avatar (skin) di tubuh TETAP: skin menempel di karakter, bukan di UI
 function UI.destroyUI()
 	E.uiDestroyed = true
 	toastHolder = nil
@@ -3874,7 +3363,7 @@ E.onChanged(function()
 end)
 
 ----------------------------------------------------------------------------
--- [14] START
+-- [12] START
 ----------------------------------------------------------------------------
 UI.showTab("catalog")
 UI.setOpen(true)
