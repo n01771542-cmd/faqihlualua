@@ -224,7 +224,7 @@ end
 
 local function thumbURL(kind, id, size)
 	size = size or 150
-	return string.format("rbxthumb://type=%s&id=%d&w=%d&h=%d", kind, id, size, size)
+	return "rbxthumb://type=" .. kind .. "&id=" .. string.format("%.0f", id) .. "&w=" .. size .. "&h=" .. size
 end
 
 local function commas(n)
@@ -478,6 +478,14 @@ function E.name(id)
 		E.assetType(id)
 	end
 	return E.names[id] or ("Item #" .. id)
+end
+
+local function needReady()
+	if E.look and E.original then
+		return true
+	end
+	toast("Karakter masih disiapkan, coba lagi sebentar...", "warn")
+	return false
 end
 
 local function collect(desc)
@@ -1753,6 +1761,9 @@ end
 -- API tingkat tinggi
 ------------------------------------------------------------------------
 function E.toggleAsset(id, itemName)
+	if not needReady() then
+		return false
+	end
 	local tid = E.assetType(id)
 	if not tid then
 		toast("Tidak bisa membaca info item ini", "danger")
@@ -1781,12 +1792,18 @@ function E.toggleAsset(id, itemName)
 end
 
 function E.removeAsset(id)
+	if not needReady() then
+		return false
+	end
 	local nl = E.look:Clone()
 	removeFromDesc(nl, id)
 	return E.commit(nl, "lepas")
 end
 
 function E.equipBundle(bundleId, bundleName)
+	if not needReady() then
+		return false
+	end
 	local info = productInfo(bundleId, Enum.InfoType.Bundle)
 	if not info or not info.Items then
 		toast("Gagal membaca isi bundle", "danger")
@@ -1868,6 +1885,9 @@ function E.applyUser(userId, displayName)
 end
 
 function E.removeAll()
+	if not needReady() then
+		return false
+	end
 	local nl = E.look:Clone()
 	nl:SetAccessories({}, true)
 	E.failed = {}
@@ -1895,6 +1915,9 @@ function E.doRedo()
 end
 
 function E.reset()
+	if not needReady() then
+		return
+	end
 	if E.skinActive then
 		E.removeSkin()
 		E.userVisual = nil
@@ -2005,35 +2028,54 @@ end
 
 function E.probe()
 	local cap = {}
-	local ok, r = pcall(function()
-		return game:GetObjects("rbxassetid://1028606")
-	end)
-	if not ok then
-		cap.getObjects = false
-	elseif type(r) == "table" and #r > 0 then
-		cap.getObjects = true
-	end
-	local ok2, m2 = pcall(function()
-		return InsertService:LoadAsset(1028606)
-	end)
-	if not ok2 then
-		cap.insert = false
-	elseif m2 then
-		cap.insert = true
-		pcall(function()
-			m2:Destroy()
+	local pending = 3
+	task.spawn(function()
+		local ok, r = pcall(function()
+			return game:GetObjects("rbxassetid://1028606")
 		end)
-	end
-	local d = Instance.new("HumanoidDescription")
-	addToDesc(d, 1028606, 8)
-	local dm = donorModel(d)
-	if dm then
-		cap.donor = dm:FindFirstChildOfClass("Accessory") ~= nil or nil
-		pcall(function()
-			dm:Destroy()
+		if not ok then
+			cap.getObjects = false
+		elseif type(r) == "table" and #r > 0 then
+			cap.getObjects = true
+		end
+		pending = pending - 1
+	end)
+	task.spawn(function()
+		local ok2, m2 = pcall(function()
+			return InsertService:LoadAsset(1028606)
 		end)
-	else
-		cap.donor = false
+		if not ok2 then
+			cap.insert = false
+		elseif m2 then
+			cap.insert = true
+			pcall(function()
+				m2:Destroy()
+			end)
+		end
+		pending = pending - 1
+	end)
+	task.spawn(function()
+		local okD = pcall(function()
+			local d = Instance.new("HumanoidDescription")
+			addToDesc(d, 1028606, 8)
+			local dm = donorModel(d)
+			if dm then
+				cap.donor = dm:FindFirstChildOfClass("Accessory") ~= nil or nil
+				pcall(function()
+					dm:Destroy()
+				end)
+			else
+				cap.donor = false
+			end
+		end)
+		if not okD then
+			cap.donor = false
+		end
+		pending = pending - 1
+	end)
+	local t0 = os.clock()
+	while pending > 0 and os.clock() - t0 < 8 do
+		task.wait(0.05)
 	end
 	E.cap = cap
 	E.injectFirst = (cap.getObjects ~= false) or (cap.insert ~= false) or (cap.donor ~= false)
@@ -2090,9 +2132,18 @@ function E.init()
 	E.snapBody(char)
 	E.snapAnim(char)
 	E.hookChar(char)
-	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
+	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 1)
+	local d, gotDesc = nil, false
+	task.spawn(function()
+		d = appliedDesc(hum)
+		gotDesc = true
+	end)
 	E.probe()
-	local d = appliedDesc(hum)
+	local tw = os.clock()
+	while not gotDesc and os.clock() - tw < 10 do
+		task.wait(0.05)
+	end
+	d = d or Instance.new("HumanoidDescription")
 	E.original = d:Clone()
 	E.look = d:Clone()
 	E.origColors = {}
@@ -2299,8 +2350,26 @@ function Query:aesPage()
 			table.insert(assetIds, it.Id)
 		end
 	end
-	local aD = fetchDetails(assetIds, Enum.AvatarItemType.Asset)
-	local bD = fetchDetails(bundleIds, Enum.AvatarItemType.Bundle)
+	local aD, bD, pendingD = {}, {}, 0
+	local function runDetails(ids, itemType, out)
+		if #ids == 0 then
+			return
+		end
+		pendingD = pendingD + 1
+		task.spawn(function()
+			local r = fetchDetails(ids, itemType)
+			for k, v in pairs(r) do
+				out[k] = v
+			end
+			pendingD = pendingD - 1
+		end)
+	end
+	runDetails(assetIds, Enum.AvatarItemType.Asset, aD)
+	runDetails(bundleIds, Enum.AvatarItemType.Bundle, bD)
+	local tD = os.clock()
+	while pendingD > 0 and os.clock() - tD < 10 do
+		task.wait()
+	end
 	local items = {}
 	for _, it in ipairs(res) do
 		local isBundle = it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle
@@ -2443,7 +2512,7 @@ end
 --  sampai paling bawah dengan isi file ini. Section [1]-[6] JANGAN diubah.)
 ----------------------------------------------------------------------------
 local FILTER_POLOSAN = true -- true = sembunyikan avatar polosan (bacon dll). false = tampilkan semua
-local MAX_POLOS_ITEMS = 3 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
+local MAX_POLOS_ITEMS = 4 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
 
 local Theme = {
 	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
@@ -2463,8 +2532,43 @@ T.Text = Theme.TextPrimary
 T.Dim = Theme.TextMuted
 T.Accent = Theme.Accent
 
--- apakah avatar pemain ini "polosan" (tanpa item / hanya item default buatan Roblox)
+-- cache: apakah item dibuat Roblox (item default). Item default berulang, jadi cache menghemat banyak request
+local creatorCache = {}
 local plainCache = {}
+
+local function plainFromDesc(desc)
+	local _, list = collect(desc)
+	if #list == 0 then
+		return true
+	end
+	if #list > MAX_POLOS_ITEMS then
+		return false
+	end
+	local need = {}
+	for _, e in ipairs(list) do
+		if creatorCache[e.Id] == false then
+			return false
+		elseif creatorCache[e.Id] == nil then
+			table.insert(need, e.Id)
+		end
+	end
+	if #need > 0 then
+		local det = fetchDetails(need, Enum.AvatarItemType.Asset)
+		for _, id in ipairs(need) do
+			local dd = det[id]
+			if not dd then
+				return false
+			end
+			creatorCache[id] = (dd.CreatorTargetId == 1 or dd.CreatorName == "Roblox")
+			if not creatorCache[id] then
+				return false
+			end
+		end
+	end
+	return true
+end
+
+-- return: polosan?, sudah-pasti?
 local function isPlainAvatar(userId)
 	if not FILTER_POLOSAN then
 		return false, true
@@ -2476,32 +2580,11 @@ local function isPlainAvatar(userId)
 	if not desc then
 		return false, false
 	end
-	local _, list = collect(desc)
-	local plain
-	if #list == 0 then
-		plain = true
-	elseif #list <= MAX_POLOS_ITEMS then
-		local ids = {}
-		for _, e in ipairs(list) do
-			table.insert(ids, e.Id)
-		end
-		local det = fetchDetails(ids, Enum.AvatarItemType.Asset)
-		plain = true
-		for _, id in ipairs(ids) do
-			local d = det[id]
-			if not d then
-				plain = false
-				break
-			end
-			if not (d.CreatorTargetId == 1 or d.CreatorName == "Roblox") then
-				plain = false
-				break
-			end
-		end
-	else
-		plain = false
-	end
+	local plain = plainFromDesc(desc)
 	plainCache[userId] = plain
+	pcall(function()
+		desc:Destroy()
+	end)
 	return plain, true
 end
 
@@ -2910,7 +2993,7 @@ local function buildAvatars(page)
 	local serverSc = makeSection("server")
 	local friendSc = makeSection("friends")
 
-	local refreshServer
+	local refreshServer, loadFriends
 	local function showSection(key)
 		for k, sc in pairs(secs) do
 			sc.Visible = k == key
@@ -2921,6 +3004,8 @@ local function buildAvatars(page)
 		status.Visible = key == "all"
 		if key == "server" and refreshServer then
 			refreshServer()
+		elseif key == "friends" and loadFriends then
+			loadFriends()
 		end
 	end
 	local chipDefs = { { "all", "🌐 Semua" }, { "preset", "⭐ Preset" }, { "server", "🖥 Server" }, { "friends", "👥 Teman" } }
@@ -2987,28 +3072,51 @@ local function buildAvatars(page)
 		end
 	end
 
+	local tried = {}
 	local function feedBatch(myToken, n)
 		loading = true
 		setStatus("Memuat pemain Roblox...")
-		local found, attempts, inflight = 0, 0, 0
-		local maxAttempts = n * 30
+		local found, attempts, inflight, throttled = 0, 0, 0, 0
+		local maxAttempts = n * 40
+		local CONC = 14
 		while myToken == token and found < n and attempts < maxAttempts do
-			while myToken == token and inflight < 10 and (found + inflight) < n and attempts < maxAttempts do
+			if throttled >= 5 then
+				setStatus("Roblox membatasi permintaan, menunggu...")
+				task.wait(2)
+				throttled = 0
+			end
+			while myToken == token and inflight < CONC and found < n and attempts < maxAttempts do
 				attempts = attempts + 1
 				inflight = inflight + 1
 				task.spawn(function()
 					local id = math.floor(math.random() * 5000000000) + 100000
-					local nm = nameFromId(id)
-					if nm and myToken == token and not seen[id] then
-						local plain, known = isPlainAvatar(id)
-						if known and not plain and myToken == token and addUser(id, nm, "ID " .. id) then
-							found = found + 1
+					if not tried[id] then
+						tried[id] = true
+						-- cek avatar dulu (gagal cepat untuk akun tidak ada), nama hanya untuk yang lolos
+						local desc, derr = descFromUser(id)
+						if desc then
+							local plain = FILTER_POLOSAN and plainFromDesc(desc) or false
+							plainCache[id] = plain
+							pcall(function()
+								desc:Destroy()
+							end)
+							if not plain and myToken == token then
+								local nm = nameFromId(id)
+								if nm and myToken == token and addUser(id, nm, "ID " .. id) then
+									found = found + 1
+								end
+							end
+						else
+							local sErr = string.lower(tostring(derr))
+							if sErr:find("429") or sErr:find("too many") or sErr:find("throttl") or sErr:find("limit") then
+								throttled = throttled + 1
+							end
 						end
 					end
 					inflight = inflight - 1
 				end)
 			end
-			task.wait(0.1)
+			task.wait(0.05)
 		end
 		local t0 = os.clock()
 		while inflight > 0 and os.clock() - t0 < 8 and myToken == token do
@@ -3016,7 +3124,11 @@ local function buildAvatars(page)
 		end
 		if myToken == token then
 			loading = false
-			setStatus(count .. " pemain • gulir untuk lagi")
+			if found == 0 and count == 0 then
+				setStatus("Belum ketemu avatar non-polosan, tekan 🎲")
+			else
+				setStatus(count .. " pemain • gulir untuk lagi")
+			end
 		end
 	end
 
@@ -3026,7 +3138,7 @@ local function buildAvatars(page)
 		clearAll()
 		mode, searchState, keyword = "feed", nil, ""
 		showSection("all")
-		task.spawn(feedBatch, myToken, 12)
+		task.spawn(feedBatch, myToken, 8)
 	end
 
 	local function doSearch()
@@ -3087,7 +3199,7 @@ local function buildAvatars(page)
 		end
 		local myToken = token
 		if mode == "feed" then
-			task.spawn(feedBatch, myToken, 12)
+			task.spawn(feedBatch, myToken, 8)
 		elseif mode == "search" and searchState and searchState.cursor then
 			loading = true
 			task.spawn(function()
@@ -3131,7 +3243,7 @@ local function buildAvatars(page)
 		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- isi daftar (server / teman) dengan penyaring polosan
+	-- isi daftar (server / teman): kartu tampil LANGSUNG, yang polosan dibuang di latar belakang
 	local ver = {}
 	local function populate(sc, entries, emptyText)
 		ver[sc] = (ver[sc] or 0) + 1
@@ -3141,34 +3253,39 @@ local function buildAvatars(page)
 				c:Destroy()
 			end
 		end
-		local n, inflight = 0, 0
-		for _, e in ipairs(entries) do
-			while inflight >= 6 and ver[sc] == v do
-				task.wait(0.05)
-			end
-			if ver[sc] ~= v then
-				return
-			end
-			inflight = inflight + 1
-			task.spawn(function()
-				local plain, known = isPlainAvatar(e.id)
-				if ver[sc] == v and not (known and plain) then
-					n = n + 1
-					userCard(sc, e.id, e.name, n)
-				end
-				inflight = inflight - 1
-			end)
-		end
-		local t0 = os.clock()
-		while inflight > 0 and os.clock() - t0 < 10 and ver[sc] == v do
-			task.wait(0.05)
-		end
-		if ver[sc] == v and n == 0 then
+		if #entries == 0 then
 			mk("TextLabel", {
 				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = emptyText,
 				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = sc,
 			})
+			return
 		end
+		local cards = {}
+		for i, e in ipairs(entries) do
+			table.insert(cards, { id = e.id, card = userCard(sc, e.id, e.name, i) })
+		end
+		if not FILTER_POLOSAN then
+			return
+		end
+		task.spawn(function()
+			local inflight = 0
+			for _, c in ipairs(cards) do
+				while inflight >= 4 and ver[sc] == v do
+					task.wait(0.05)
+				end
+				if ver[sc] ~= v then
+					return
+				end
+				inflight = inflight + 1
+				task.spawn(function()
+					local plain, known = isPlainAvatar(c.id)
+					if known and plain and c.card.Parent then
+						c.card:Destroy()
+					end
+					inflight = inflight - 1
+				end)
+			end
+		end)
 	end
 
 	-- ===== PEMAIN DI SERVER =====
@@ -3179,34 +3296,42 @@ local function buildAvatars(page)
 				table.insert(entries, { id = p.UserId, name = p.DisplayName })
 			end
 		end
-		task.spawn(populate, serverSc, entries, "Tidak ada pemain lain (atau semuanya polosan).")
+		populate(serverSc, entries, "Tidak ada pemain lain di server ini.")
 	end
 
-	-- ===== TEMAN =====
-	task.spawn(function()
-		local ok, pages = pcall(function()
-			return Players:GetFriendsAsync(player.UserId)
-		end)
-		if not ok or not pages then
-			mk("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Daftar teman tidak bisa dimuat.",
-				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
-			})
+	-- ===== TEMAN (dimuat saat tab Teman pertama kali dibuka) =====
+	local friendsLoaded = false
+	loadFriends = function()
+		if friendsLoaded then
 			return
 		end
-		local entries, done = {}, false
-		while not done and #entries < 72 do
-			for _, f in ipairs(pages:GetCurrentPage()) do
-				table.insert(entries, { id = f.Id, name = f.DisplayName or f.Username })
+		friendsLoaded = true
+		mk("TextLabel", {
+			Name = "Memuat", Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Memuat teman...",
+			TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
+		})
+		task.spawn(function()
+			local ok, pages = pcall(function()
+				return Players:GetFriendsAsync(player.UserId)
+			end)
+			if not ok or not pages then
+				populate(friendSc, {}, "Daftar teman tidak bisa dimuat.")
+				return
 			end
-			if pages.IsFinished then
-				done = true
-			elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
-				done = true
+			local entries, done = {}, false
+			while not done and #entries < 72 do
+				for _, f in ipairs(pages:GetCurrentPage()) do
+					table.insert(entries, { id = f.Id, name = f.DisplayName or f.Username })
+				end
+				if pages.IsFinished then
+					done = true
+				elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
+					done = true
+				end
 			end
-		end
-		populate(friendSc, entries, "Belum ada teman (atau semuanya polosan).")
-	end)
+			populate(friendSc, entries, "Belum ada teman di akun ini.")
+		end)
+	end
 
 	startFeed()
 end
@@ -3319,6 +3444,20 @@ local header = mk("Frame", { Name = "Header", Size = UDim2.new(1, 0, 0, 52), Bac
 local logo = createLogo(UDim2.fromOffset(26, 26), -12)
 logo.Position = UDim2.new(0, 16, 0, 13)
 logo.Parent = header
+local logBtn = mk("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0, 14, 0, 11), BackgroundTransparency = 1, Text = "", ZIndex = 5, Parent = header })
+logBtn.Activated:Connect(function()
+	local okC = pcall(function()
+		local txt = table.concat(LOG, "\n")
+		if setclipboard then
+			setclipboard(txt)
+		elseif toclipboard then
+			toclipboard(txt)
+		else
+			error("tidak ada clipboard")
+		end
+	end)
+	toast(okC and "Log disalin ke clipboard (tempel ke chat kalau ada error)" or "Clipboard tidak ada di executor ini, lihat Output/F9", okC and "ok" or "warn")
+end)
 mk("TextLabel", {
 	Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
 	Size = UDim2.new(0, 200, 0, 26), Position = UDim2.new(0, 50, 0, 13), TextXAlignment = Enum.TextXAlignment.Left,
@@ -3605,50 +3744,7 @@ end)
 -- [12] BOOT + START
 ----------------------------------------------------------------------------
 setTab(1)
-
-do
-	local boot = mk("CanvasGroup", {
-		Name = "BootScreen", Size = UDim2.fromOffset(280, 130), AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5), BackgroundColor3 = Theme.Background, GroupTransparency = 0,
-		ZIndex = 100, Parent = UI.gui,
-	})
-	corner(boot, 16)
-	stroke(boot, Theme.Accent, 2)
-	local bl = createLogo(UDim2.fromOffset(20, 20), -12)
-	bl.Position = UDim2.new(0.5, -10, 0, 20)
-	bl.Parent = boot
-	mk("TextLabel", {
-		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
-		Size = UDim2.new(1, -20, 0, 18), Position = UDim2.new(0, 10, 0, 48), Text = "LEON4951 HUB", Parent = boot,
-	})
-	local sub = mk("TextLabel", {
-		Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
-		Size = UDim2.new(1, -20, 0, 14), Position = UDim2.new(0, 10, 0, 68), Text = "Loading...", Parent = boot,
-	})
-	local track = mk("Frame", { Size = UDim2.new(1, -40, 0, 5), Position = UDim2.new(0, 20, 1, -24), BackgroundColor3 = Theme.CardBg, BorderSizePixel = 0, Parent = boot })
-	corner(track, 99)
-	local fill = mk("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = track })
-	corner(fill, 99)
-
-	task.spawn(function()
-		local t0, dur = os.clock(), 0.5
-		while true do
-			local pct = math.clamp((os.clock() - t0) / dur, 0, 1)
-			fill.Size = UDim2.new(pct, 0, 1, 0)
-			sub.Text = pct < 0.4 and "Initializing..." or (pct < 0.8 and "Loading UI..." or "Ready...")
-			if pct >= 1 then
-				break
-			end
-			RunService.Heartbeat:Wait()
-		end
-		sub.Text = "✓ Ready"
-		task.wait(0.2)
-		tween(boot, { GroupTransparency = 1 }, 0.2)
-		task.wait(0.2)
-		boot:Destroy()
-		ToggleMainUI(true)
-	end)
-end
+ToggleMainUI(true)
 
 task.spawn(function()
 	local ok, err = pcall(E.init)
