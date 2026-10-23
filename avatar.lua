@@ -3,11 +3,14 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL (OPTIMAL): antrian render, katalog instan, tab ramping, bug UI fix.
+  VERSI FULL (OPTIMAL v2): antrian render, katalog instan, tab ramping, bug UI fix.
   Tab: avatar | karakter | animasi | sepatu | dipakai
-  Avatar bawaan Roblox (bacon / cowo / cewe / dll) disaring di tab avatar
-  (lihat FILTER_POLOSAN). Hasil PENCARIAN tidak disaring.
-  Tab avatar > Semua: urut item terbanyak, filter Cowo / Cewe.
+  UPDATE v2:
+   - Filter bacon / bacon cewe jauh lebih ketat (cek pembuat item + cadangan ProductInfo,
+     minimal item "asli" buatan orang lain). Hasil PENCARIAN tetap tidak disaring.
+   - Filter Cowo / Cewe diganti sistem skor (kata kunci kuat/lemah + tipe aksesori).
+     Avatar yang tidak jelas gendernya TIDAK ikut muncul di filter Cowo/Cewe lagi.
+   - "Item terbanyak" hanya menampilkan avatar asli dengan item banyak (lihat MOST_MIN_ITEMS).
   Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
 
@@ -2588,11 +2591,16 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
--- [7] TEMA + FILTER AVATAR BAWAAN ROBLOX + ANALISIS (jumlah item, cowo/cewe)
+-- [7] TEMA + FILTER BACON / BACON CEWE + ANALISIS (jumlah item, cowo/cewe)
 ----------------------------------------------------------------------------
-local FILTER_POLOSAN = true -- true = sembunyikan avatar bawaan Roblox (bacon / cowo / cewe dll). false = tampilkan semua
-local MAX_POLOS_ITEMS = 8 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
-local ALWAYS_PLAIN_MAX = 3 -- avatar dengan item <= angka ini SELALU dianggap polosan (siapa pun pembuat itemnya)
+-- ===== PENGATURAN FILTER (ubah angka ini kalau mau lebih longgar / lebih ketat) =====
+local FILTER_POLOSAN = true  -- true = sembunyikan avatar bawaan Roblox (bacon / bacon cewe / dll) dari tab avatar. false = tampilkan semua
+local MIN_REAL_ITEMS = 4     -- avatar dengan item kurang dari ini SELALU dianggap bacon (tersembunyi)
+local MIN_FOREIGN_ITEMS = 2  -- avatar asli minimal punya segini item BUKAN buatan Roblox (kalau kurang = bacon / bacon cewe)
+local ROBLOX_ONLY_MAX = 16   -- avatar dengan item sebanyak ini atau kurang yang cuma pakai item Roblox = bacon. Di atas ini langsung dianggap asli
+local MOST_MIN_ITEMS = 6     -- mode "Item terbanyak": hanya avatar dengan minimal segini item yang tampil
+local GENDER_MIN_DIFF = 2    -- selisih skor minimal untuk memastikan cowo/cewe (makin besar = makin teliti, hasil makin sedikit)
+local ROBLOX_CREATORS = { [1] = true, [1200769] = true } -- ID akun / grup resmi Roblox
 
 local Theme = {
 	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
@@ -2614,6 +2622,7 @@ T.Accent = Theme.Accent
 
 -- cache info item: nama (huruf kecil) + apakah buatan Roblox. Item default berulang, jadi cache menghemat banyak request
 local itemInfo = {}
+local itemMiss = {}
 local plainCache = {}
 local analysisCache = {}
 
@@ -2622,33 +2631,85 @@ local PLAIN_PROPS = {
 	"JumpAnimation", "RunAnimation", "SwimAnimation", "WalkAnimation", "MoodAnimation",
 }
 
-local function ensureDetails(ids)
-	local need = {}
-	for _, id in ipairs(ids) do
-		if itemInfo[id] == nil then
-			table.insert(need, id)
-		end
+local function robloxMade(creatorId, creatorName)
+	local cid = tonumber(creatorId)
+	if cid and ROBLOX_CREATORS[cid] then
+		return true
 	end
-	for i = 1, #need, 50 do
-		local chunk = {}
-		for j = i, math.min(i + 49, #need) do
-			table.insert(chunk, need[j])
-		end
-		local det = fetchDetails(chunk, Enum.AvatarItemType.Asset)
-		for _, id in ipairs(chunk) do
-			local dd = det[id]
-			if dd then
-				itemInfo[id] = {
-					name = string.lower(tostring(dd.Name or "")),
-					roblox = (dd.CreatorTargetId == 1 or tostring(dd.CreatorName or "") == "Roblox"),
-				}
-			end
-		end
-	end
+	return tostring(creatorName or "") == "Roblox"
 end
 
--- hitung item pada avatar (aksesori + baju/celana/animasi), tentukan polosan atau bukan.
+-- nama dinormalkan: "bow tie" & "tie dye" dibuang supaya tidak salah dikira kata gender
+local function normName(name)
+	local s = string.lower(tostring(name or ""))
+	s = s:gsub("bow%s*tie", " "):gsub("tie%s*%-?%s*dye", " ")
+	return s
+end
+
+local function storeInfo(id, name, creatorId, creatorName)
+	itemInfo[id] = { name = normName(name), roblox = robloxMade(creatorId, creatorName) }
+end
+
+-- isi itemInfo untuk semua id. Coba batch 2x, lalu cadangan GetProductInfo per item. return true kalau SEMUA id terisi
+local function ensureDetails(ids)
+	local function missing()
+		local need, now = {}, os.clock()
+		for _, id in ipairs(ids) do
+			if itemInfo[id] == nil and (now - (itemMiss[id] or -100)) > 15 then
+				table.insert(need, id)
+			end
+		end
+		return need
+	end
+	for attempt = 1, 2 do
+		local need = missing()
+		if #need == 0 then
+			break
+		end
+		for i = 1, #need, 50 do
+			local chunk = {}
+			for j = i, math.min(i + 49, #need) do
+				table.insert(chunk, need[j])
+			end
+			local det = fetchDetails(chunk, Enum.AvatarItemType.Asset)
+			for _, id in ipairs(chunk) do
+				local dd = det[id]
+				if dd then
+					storeInfo(id, dd.Name, dd.CreatorTargetId, dd.CreatorName)
+				end
+			end
+		end
+		if attempt == 1 and #missing() > 0 then
+			task.wait(0.4)
+		end
+	end
+	local need = missing()
+	for k, id in ipairs(need) do
+		if k > 16 then
+			break
+		end
+		local info = productInfo(id, Enum.InfoType.Asset)
+		if info then
+			local c = info.Creator or {}
+			storeInfo(id, info.Name, c.Id or c.TargetId, c.Name)
+		else
+			itemMiss[id] = os.clock()
+		end
+	end
+	for _, id in ipairs(ids) do
+		if itemInfo[id] == nil then
+			return false
+		end
+	end
+	return true
+end
+
+-- hitung item pada avatar (aksesori + baju/celana/animasi), tentukan bacon / bacon cewe atau avatar asli.
 -- Bagian tubuh klasik (kepala, badan, tangan, kaki, wajah) tidak dihitung, karena itu bawaan semua akun.
+-- Aturan (semua harus lolos agar dianggap AVATAR ASLI):
+--   1) item >= MIN_REAL_ITEMS
+--   2) item > ROBLOX_ONLY_MAX  ATAU  minimal MIN_FOREIGN_ITEMS item buatan selain Roblox
+-- Kalau info item gagal dimuat dan belum terbukti asli -> dianggap bacon + ditandai unsure (disembunyikan, aman).
 local function analyzeDesc(desc)
 	local ids, types, seen = {}, {}, {}
 	local okA, accs = pcall(function()
@@ -2671,68 +2732,102 @@ local function analyzeDesc(desc)
 		end
 	end
 	local count = #ids
-	local plain
-	if count <= ALWAYS_PLAIN_MAX then
-		plain = true
-	elseif count > MAX_POLOS_ITEMS then
-		plain = false
-	else
-		ensureDetails(ids)
-		plain = true
-		for _, id in ipairs(ids) do
-			local inf = itemInfo[id]
-			if not inf or not inf.roblox then
-				plain = false
-				break
-			end
+	local a = { count = count, ids = ids, types = types, plain = false, unsure = false, foreign = 0 }
+	if count < MIN_REAL_ITEMS then
+		a.plain = true
+		return a
+	end
+	if count > ROBLOX_ONLY_MAX then
+		a.foreign = count
+		return a
+	end
+	local complete = ensureDetails(ids)
+	local foreign = 0
+	for _, id in ipairs(ids) do
+		local inf = itemInfo[id]
+		if inf and not inf.roblox then
+			foreign = foreign + 1
 		end
 	end
-	return { plain = plain, count = count, ids = ids, types = types }
+	a.foreign = foreign
+	if foreign >= MIN_FOREIGN_ITEMS then
+		a.plain = false
+	elseif complete then
+		a.plain = true
+	else
+		a.plain = true
+		a.unsure = true
+	end
+	return a
 end
 
--- perkiraan cowo/cewe dari nama item (Roblox tidak menyimpan gender akun, jadi ini tebakan)
+----------------------------------------------------------------------------
+-- DETEKSI COWO / CEWE (sistem skor)
+-- Roblox tidak menyimpan gender akun, jadi dinilai dari NAMA item + tipe aksesori.
+-- {kata, bobot}: bobot 2 = petunjuk kuat, 1 = petunjuk lemah. Skor per item dibatasi maks 3.
+-- Kalau selisih skor < GENDER_MIN_DIFF -> avatar dianggap "tidak jelas" dan TIDAK muncul di filter Cowo / Cewe.
+----------------------------------------------------------------------------
 local FEMALE_WORDS = {
-	"girl", "female", "woman", "lady", "dress", "skirt", "bikini", "ponytail", "pigtail", "heel",
-	"bow", "lipstick", "makeup", "princess", "braid", "crop", "blouse", "bunny", "kawaii", "gyaru",
-	"cewek", "wanita", "maid", "hime", "mermaid", "fairy", "witch", "queen", "bride", "lolita",
+	{ "girl", 2 }, { "female", 2 }, { "woman", 2 }, { "women", 2 }, { "lady", 2 }, { "dress", 2 }, { "skirt", 2 },
+	{ "miniskirt", 2 }, { "sundress", 2 }, { "bikini", 2 }, { "ponytail", 2 }, { "pigtail", 2 }, { "twintail", 2 },
+	{ "twin tail", 2 }, { "heel", 2 }, { "lipstick", 2 }, { "makeup", 2 }, { "princess", 2 }, { "braid", 2 },
+	{ "blouse", 2 }, { "kawaii", 2 }, { "gyaru", 2 }, { "cewek", 2 }, { "wanita", 2 }, { "maid", 2 }, { "hime", 2 },
+	{ "mermaid", 2 }, { "fairy", 2 }, { "queen", 2 }, { "bride", 2 }, { "lolita", 2 }, { "bra", 2 }, { "stocking", 2 },
+	{ "tutu", 2 }, { "gown", 2 }, { "crop top", 2 }, { "corset", 2 }, { "babydoll", 2 }, { "waifu", 2 },
+	{ "bunny", 1 }, { "legging", 1 }, { "lash", 1 }, { "eyelash", 1 }, { "bangs", 1 }, { "bun", 1 }, { "bob", 1 },
+	{ "ribbon", 1 }, { "bow", 1 }, { "pink", 1 }, { "cute", 1 }, { "heart", 1 }, { "kitty", 1 }, { "pastel", 1 },
+	{ "sparkle", 1 }, { "glitter", 1 }, { "floral", 1 }, { "flower", 1 }, { "angel", 1 }, { "idol", 1 },
 }
 local MALE_WORDS = {
-	"boy", "male", "man", "guy", "beard", "mustache", "moustache", "stubble", "dude", "gentleman",
-	"king", "cowok", "pria", "bro", "sir", "goatee", "sideburn",
+	{ "boy", 2 }, { "male", 2 }, { "man", 2 }, { "men", 2 }, { "guy", 2 }, { "beard", 2 }, { "mustache", 2 },
+	{ "moustache", 2 }, { "stubble", 2 }, { "dude", 2 }, { "gentleman", 2 }, { "king", 2 }, { "cowok", 2 },
+	{ "pria", 2 }, { "goatee", 2 }, { "sideburn", 2 }, { "buzz cut", 2 }, { "crew cut", 2 }, { "undercut", 2 },
+	{ "mohawk", 2 }, { "pompadour", 2 }, { "tuxedo", 2 },
+	{ "bro", 1 }, { "suit", 1 }, { "necktie", 1 }, { "tie", 1 }, { "hoodie", 1 }, { "beanie", 1 }, { "cap", 1 },
+	{ "snapback", 1 }, { "jeans", 1 }, { "jersey", 1 }, { "tracksuit", 1 }, { "muscle", 1 }, { "bandana", 1 },
+	{ "skater", 1 }, { "streetwear", 1 }, { "sneaker", 1 }, { "bald", 1 }, { "spiky", 1 }, { "slick", 1 },
 }
 
-local function hasWord(name, word)
-	return string.find(name, "%f[%a]" .. word .. "e?s?%f[%A]") ~= nil
+local function scoreWords(name, list)
+	local s = 0
+	for _, w in ipairs(list) do
+		if string.find(name, "%f[%a]" .. w[1] .. "e?s?%f[%A]") then
+			s = s + w[2]
+		end
+	end
+	return s
 end
 
+-- return "cewe" / "cowo" / nil (tidak jelas)
 local function genderOf(a)
 	ensureDetails(a.ids)
 	local f, m = 0, 0
 	for _, id in ipairs(a.ids) do
 		local inf = itemInfo[id]
+		local fi, mi = 0, 0
 		if inf then
-			for _, w in ipairs(FEMALE_WORDS) do
-				if hasWord(inf.name, w) then
-					f = f + 1
-				end
-			end
-			for _, w in ipairs(MALE_WORDS) do
-				if hasWord(inf.name, w) then
-					m = m + 1
-				end
-			end
+			fi = scoreWords(inf.name, FEMALE_WORDS)
+			mi = scoreWords(inf.name, MALE_WORDS)
 		end
-		if a.types[id] == "DressSkirt" then
-			f = f + 2
+		local t = a.types[id]
+		if t == "DressSkirt" then
+			fi = fi + 3
+		elseif t == "Eyelash" then
+			fi = fi + 1
 		end
+		f = f + math.min(fi, 3)
+		m = m + math.min(mi, 3)
 	end
-	if f > m then
+	if f - m >= GENDER_MIN_DIFF then
 		return "cewe"
 	end
-	return "cowo"
+	if m - f >= GENDER_MIN_DIFF then
+		return "cowo"
+	end
+	return nil
 end
 
--- return: polosan?, sudah-pasti?
+-- return: polosan (bacon / bacon cewe)?, sudah-pasti?
 local function isPlainAvatar(userId)
 	if not FILTER_POLOSAN then
 		return false, true
@@ -2745,11 +2840,14 @@ local function isPlainAvatar(userId)
 		return false, false
 	end
 	local a = analyzeDesc(desc)
-	plainCache[userId] = a.plain
-	analysisCache[userId] = a
 	pcall(function()
 		desc:Destroy()
 	end)
+	if a.unsure then
+		return true, false
+	end
+	plainCache[userId] = a.plain
+	analysisCache[userId] = a
 	return a.plain, true
 end
 
@@ -3286,7 +3384,7 @@ local function buildAvatars(page)
 		end)
 	end
 
-	-- ===== SEMUA PEMAIN ROBLOX (bawaan Roblox disaring, urut item terbanyak) =====
+	-- ===== SEMUA PEMAIN ROBLOX (bacon & bacon cewe disaring, urut item terbanyak) =====
 	local token, loading, mode, searchState, keyword = 0, false, "feed", nil, ""
 	local count, seen = 0, {}
 
@@ -3303,19 +3401,23 @@ local function buildAvatars(page)
 		count, seen = 0, {}
 		entries, seqN = {}, 0
 	end
-	local function visibleFor(g)
-		return sortMode == "most" or g == sortMode
+	-- mode "most": hanya avatar dengan item >= MOST_MIN_ITEMS. mode cowo/cewe: hanya yang gendernya pasti cocok
+	local function visibleFor(g, cnt)
+		if sortMode == "most" then
+			return (cnt or 0) >= MOST_MIN_ITEMS
+		end
+		return g == sortMode
 	end
 	local function countVisible()
 		local n = 0
 		for _, e in pairs(entries) do
-			if e.card and e.card.Parent and visibleFor(e.gender) then
+			if e.card and e.card.Parent and visibleFor(e.gender, e.count) then
 				n = n + 1
 			end
 		end
 		return n
 	end
-	-- info (opsional): { count = jumlah item, gender = "cowo"/"cewe" } -> dipakai untuk urutan + filter
+	-- info (opsional): { count = jumlah item, gender = "cowo"/"cewe"/nil } -> dipakai untuk urutan + filter
 	local function addUser(id, name, sub, front, info)
 		if seen[id] then
 			return false
@@ -3333,7 +3435,7 @@ local function buildAvatars(page)
 		if e then
 			e.card = card
 			entries[id] = e
-			card.Visible = visibleFor(e.gender)
+			card.Visible = visibleFor(e.gender, e.count)
 		end
 		return true
 	end
@@ -3341,14 +3443,14 @@ local function buildAvatars(page)
 	local function applyMode()
 		for _, e in pairs(entries) do
 			if e.card and e.card.Parent then
-				e.card.Visible = visibleFor(e.gender)
+				e.card.Visible = visibleFor(e.gender, e.count)
 				e.card.LayoutOrder = -(e.count) * 100000 + e.seq
 			end
 		end
 		allSc.CanvasPosition = Vector2.new(0, 0)
 	end
 
-	-- hasil pencarian: tampilkan semua (tidak disaring)
+	-- hasil pencarian: tampilkan semua (tidak disaring, bacon / bacon cewe tetap muncul di sini)
 	local function addAll(list, myToken)
 		for _, u in ipairs(list) do
 			if myToken ~= token then
@@ -3368,8 +3470,8 @@ local function buildAvatars(page)
 			end
 			inflight = inflight + 1
 			task.spawn(function()
-				local plain, known = isPlainAvatar(u.id)
-				if myToken == token and not (known and plain) then
+				local plain = isPlainAvatar(u.id)
+				if myToken == token and not plain then
 					addUser(u.id, u.display, "@" .. u.name)
 				end
 				inflight = inflight - 1
@@ -3405,19 +3507,22 @@ local function buildAvatars(page)
 						local desc, derr = descFromUser(id)
 						if desc then
 							local a = analyzeDesc(desc)
-							local plain = FILTER_POLOSAN and a.plain or false
-							plainCache[id] = plain
 							pcall(function()
 								desc:Destroy()
 							end)
+							local plain = FILTER_POLOSAN and a.plain or false
+							if not a.unsure then
+								plainCache[id] = plain
+							end
 							if not plain and myToken == token then
 								local nm = nameFromId(id)
 								if nm and myToken == token then
 									a.gender = genderOf(a)
 									analysisCache[id] = a
-									local sub = a.count .. " item " .. (a.gender == "cewe" and "♀" or "♂")
+									local gsym = (a.gender == "cewe" and "♀") or (a.gender == "cowo" and "♂") or "•"
+									local sub = a.count .. " item " .. gsym
 									if addUser(id, nm, sub, nil, { count = a.count, gender = a.gender }) then
-										if visibleFor(a.gender) then
+										if visibleFor(a.gender, a.count) then
 											found = found + 1
 										end
 									end
@@ -3584,7 +3689,7 @@ local function buildAvatars(page)
 		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- isi daftar (server / teman): kartu tampil LANGSUNG, yang polosan dibuang di latar belakang
+	-- isi daftar (server / teman): kartu tampil LANGSUNG, bacon / bacon cewe dibuang di latar belakang
 	local ver = {}
 	local function populate(sc, entriesList, emptyText)
 		ver[sc] = (ver[sc] or 0) + 1
@@ -3619,8 +3724,8 @@ local function buildAvatars(page)
 				end
 				inflight = inflight + 1
 				task.spawn(function()
-					local plain, known = isPlainAvatar(c.id)
-					if known and plain and c.card.Parent then
+					local plain = isPlainAvatar(c.id)
+					if plain and c.card.Parent then
 						c.card:Destroy()
 					end
 					inflight = inflight - 1
