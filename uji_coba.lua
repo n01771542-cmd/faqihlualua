@@ -1351,19 +1351,24 @@ local function SetActiveCategory(index)
         local isActive = (i == index)
         local isSpecial = (Categories[i].key == "GantiAvatar")
 
-        TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
-            BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
-        }):Play()
-        btnData.frame.BackgroundTransparency = isActive and 0 or 1
-
         if isSpecial then
-            -- outline biru muda tipis selalu aktif hanya di tab besar
-            btnData.stroke.Color = Color3.fromRGB(120, 185, 255)
-            btnData.stroke.Thickness = 1
+            -- tab besar: background tetap terlihat supaya outline bisa render
+            TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
+                BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(12, 22, 38)
+            }):Play()
+            btnData.frame.BackgroundTransparency = isActive and 0 or 0.35
+            btnData.stroke.Color = Color3.fromRGB(130, 200, 255)
+            btnData.stroke.Thickness = 1.5
+            btnData.stroke.Transparency = 0.15
             btnData.stroke.Enabled = true
         else
+            TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
+                BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
+            }):Play()
+            btnData.frame.BackgroundTransparency = isActive and 0 or 1
             btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
             btnData.stroke.Thickness = 1.5
+            btnData.stroke.Transparency = 0
             btnData.stroke.Enabled = isActive
         end
 
@@ -1394,24 +1399,32 @@ RenderSidebarTabs = function()
 
     for i, category in ipairs(Categories) do
         local tabHeight = category.tabHeight or 42
+        local isSpecialTab = (category.key == "GantiAvatar")
         local tabBtn = Instance.new("TextButton")
         tabBtn.Name = "Tab_" .. category.key
         tabBtn.Size = UDim2.new(1, 0, 0, tabHeight)
-        tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
-        tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
+        if isSpecialTab then
+            -- background semi-opaque agar UIStroke terlihat
+            tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(12, 22, 38)
+            tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 0.35
+        else
+            tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
+            tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
+        end
         tabBtn.Text = ""
         tabBtn.AutoButtonColor = false
         tabBtn.LayoutOrder = i
         tabBtn.Parent = Sidebar
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
 
-        local isSpecialTab = (category.key == "GantiAvatar")
         local tabStroke = Instance.new("UIStroke")
         if isSpecialTab then
             -- outline biru muda tipis hanya di tab besar
-            tabStroke.Color = Color3.fromRGB(120, 185, 255)
-            tabStroke.Thickness = 1
+            tabStroke.Color = Color3.fromRGB(130, 200, 255)
+            tabStroke.Thickness = 1.5
+            tabStroke.Transparency = 0.15
             tabStroke.Enabled = true
+            tabStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         else
             tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
             tabStroke.Thickness = 1.5
