@@ -1349,13 +1349,24 @@ local function SetActiveCategory(index)
 
     for i, btnData in ipairs(sidebarTabButtons) do
         local isActive = (i == index)
+        local isSpecial = (Categories[i].key == "GantiAvatar")
 
         TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
             BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
         }):Play()
         btnData.frame.BackgroundTransparency = isActive and 0 or 1
-        btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-        btnData.stroke.Enabled = isActive
+
+        if isSpecial then
+            -- outline biru muda tipis selalu aktif hanya di tab besar
+            btnData.stroke.Color = Color3.fromRGB(120, 185, 255)
+            btnData.stroke.Thickness = 1
+            btnData.stroke.Enabled = true
+        else
+            btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
+            btnData.stroke.Thickness = 1.5
+            btnData.stroke.Enabled = isActive
+        end
+
         btnData.label.TextColor3 = isActive and Theme.TextPrimary or Theme.TextMuted
         btnData.indicator.Visible = isActive
 
@@ -1394,10 +1405,18 @@ RenderSidebarTabs = function()
         tabBtn.Parent = Sidebar
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
 
+        local isSpecialTab = (category.key == "GantiAvatar")
         local tabStroke = Instance.new("UIStroke")
-        tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-        tabStroke.Thickness = 1.5
-        tabStroke.Enabled = (i == activeCategoryIndex)
+        if isSpecialTab then
+            -- outline biru muda tipis hanya di tab besar
+            tabStroke.Color = Color3.fromRGB(120, 185, 255)
+            tabStroke.Thickness = 1
+            tabStroke.Enabled = true
+        else
+            tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
+            tabStroke.Thickness = 1.5
+            tabStroke.Enabled = (i == activeCategoryIndex)
+        end
         tabStroke.Parent = tabBtn
 
         local indicator = Instance.new("Frame")
