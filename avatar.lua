@@ -2141,16 +2141,42 @@ function E.init()
 end
 
 ----------------------------------------------------------------------------
--- [6] KATALOG  (hanya: Karakter/Tubuh, Animasi, Sepatu)
+-- [6] KATALOG  (Karakter/Tubuh, Animasi, Sepatu)
 ----------------------------------------------------------------------------
+pcall(function()
+	math.randomseed(os.time())
+end)
+
 local CATEGORIES = {}
-local function C(group, id, name, kind, list)
-	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list })
+-- variants (hanya untuk bundle, jalur web cadangan): { Category, Subcategory, kataKunciBawaan }
+local function C(group, id, name, kind, list, variants)
+	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list, httpVariants = variants })
 end
 
-C("SET & BUNDLE", "b_body", "Karakter / Tubuh", "bundle", { "BodyParts" })
-C("SET & BUNDLE", "b_anim", "Animasi", "bundle", { "Animations" })
-C("SET & BUNDLE", "b_shoes", "Sepatu", "bundle", { "Shoes" })
+C("KARAKTER / TUBUH", "b_body", "Paket Karakter", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } })
+C("KARAKTER / TUBUH", "face", "Ekspresi Wajah", "asset", { "Face" })
+C("KARAKTER / TUBUH", "head", "Kepala", "asset", { "Head" })
+C("KARAKTER / TUBUH", "torso", "Badan", "asset", { "Torso" })
+C("KARAKTER / TUBUH", "rarm", "Lengan Kanan", "asset", { "RightArm" })
+C("KARAKTER / TUBUH", "larm", "Lengan Kiri", "asset", { "LeftArm" })
+C("KARAKTER / TUBUH", "rleg", "Kaki Kanan", "asset", { "RightLeg" })
+C("KARAKTER / TUBUH", "lleg", "Kaki Kiri", "asset", { "LeftLeg" })
+C("KARAKTER / TUBUH", "brow", "Alis", "asset", { "EyebrowAccessory" })
+C("KARAKTER / TUBUH", "lash", "Bulu Mata", "asset", { "EyelashAccessory" })
+
+C("ANIMASI", "b_anim", "Paket Animasi", "bundle", { "Animations" }, { { 12, 38 }, { 12 } })
+C("ANIMASI", "a_idle", "Idle", "asset", { "IdleAnimation" })
+C("ANIMASI", "a_walk", "Jalan", "asset", { "WalkAnimation" })
+C("ANIMASI", "a_run", "Lari", "asset", { "RunAnimation" })
+C("ANIMASI", "a_jump", "Lompat", "asset", { "JumpAnimation" })
+C("ANIMASI", "a_fall", "Jatuh", "asset", { "FallAnimation" })
+C("ANIMASI", "a_climb", "Panjat", "asset", { "ClimbAnimation" })
+C("ANIMASI", "a_swim", "Renang", "asset", { "SwimAnimation" })
+C("ANIMASI", "a_mood", "Mood", "asset", { "MoodAnimation" })
+
+C("SEPATU", "b_shoes", "Set Sepatu", "bundle", { "Shoes" }, { { 4, 37, "shoes" }, { 3, nil, "shoes" }, { 1, 37, "shoes" } })
+C("SEPATU", "lshoe", "Sepatu Kiri", "asset", { "LeftShoeAccessory" })
+C("SEPATU", "rshoe", "Sepatu Kanan", "asset", { "RightShoeAccessory" })
 
 local SORTS = {
 	{ name = "Relevansi", enum = "Relevance" },
@@ -2161,16 +2187,9 @@ local SORTS = {
 	{ name = "Termahal", enum = "PriceHighToLow" },
 }
 
-for _, c in ipairs(CATEGORIES) do
-	if c.id == "b_body" then
-		c.httpCat = 4
-	elseif c.id == "b_anim" then
-		c.httpCat = 12
-	elseif c.id == "b_shoes" then
-		c.httpCat = 3
-	end
-end
+local HOSTS = { "https://catalog.roblox.com", "https://catalog.roproxy.com" }
 
+-- tipe aset -> Category katalog web (dipakai jalur HTTP v1 sebagai cadangan)
 local function httpCategoryFor(tid)
 	if tid == 8 or (tid and tid >= 41 and tid <= 47) or tid == 76 or tid == 77 then
 		return 11
@@ -2304,25 +2323,37 @@ function Query:aesPage()
 	return items
 end
 
+-- jalur web cadangan. Bundle memakai Category + Subcategory (37 = Bundles, 38 = AnimationBundles)
 function Query:httpPage()
 	local cat = self.cat
-	local common = "&Limit=" .. PAGE_SIZE .. "&SortType=" .. tostring(self.sortNum or 0)
-	if self.keyword ~= "" then
-		common = common .. "&Keyword=" .. urlenc(self.keyword)
-	end
+	local base = "&Limit=" .. PAGE_SIZE .. "&SortType=" .. tostring(self.sortNum or 0)
 	if self.freeOnly then
-		common = common .. "&MaxPrice=0"
+		base = base .. "&MaxPrice=0"
 	end
 	if self.cursor then
-		common = common .. "&cursor=" .. urlenc(self.cursor)
+		base = base .. "&cursor=" .. urlenc(self.cursor)
+	end
+	local function withKeyword(kw)
+		if kw and kw ~= "" then
+			return base .. "&Keyword=" .. urlenc(kw)
+		end
+		return base
 	end
 	local urls = {}
-	for _, host in ipairs({ "https://catalog.roblox.com", "https://catalog.roproxy.com" }) do
+	for _, host in ipairs(HOSTS) do
 		if cat.kind == "asset" and self.tid then
-			table.insert(urls, host .. "/v2/search/items/details?assetTypeIds=" .. self.tid .. common)
-			table.insert(urls, host .. "/v1/search/items/details?Category=" .. httpCategoryFor(self.tid) .. common)
+			local c = withKeyword(self.keyword)
+			table.insert(urls, host .. "/v2/search/items/details?assetTypeIds=" .. self.tid .. c)
+			table.insert(urls, host .. "/v1/search/items/details?Category=" .. httpCategoryFor(self.tid) .. c)
 		else
-			table.insert(urls, host .. "/v1/search/items/details?Category=" .. tostring(cat.httpCat or 1) .. common)
+			for _, v in ipairs(cat.httpVariants or { { 1, 37 } }) do
+				local q = "Category=" .. tostring(v[1])
+				if v[2] then
+					q = q .. "&Subcategory=" .. tostring(v[2])
+				end
+				local kw = (self.keyword ~= "") and self.keyword or v[3]
+				table.insert(urls, host .. "/v1/search/items/details?" .. q .. withKeyword(kw))
+			end
 		end
 	end
 	local a, b = 1, #urls
@@ -2413,8 +2444,7 @@ end
 ----------------------------------------------------------------------------
 local W, H = 500, 300
 local UI = {}
-local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, open = true,
-	favorites = {}, favOrder = {}, recent = {}, token = 0 }
+local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, open = true, token = 0 }
 
 UI.gui = mk("ScreenGui", {
 	Name = "leon4951hub", ResetOnSpawn = false, IgnoreGuiInset = true,
@@ -2422,7 +2452,7 @@ UI.gui = mk("ScreenGui", {
 })
 
 toastHolder = mk("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(440, 300),
+	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(420, 300),
 	BackgroundTransparency = 1, ZIndex = 200, Parent = UI.gui,
 })
 mk("UIListLayout", {
@@ -2522,10 +2552,20 @@ function UI.showTab(key)
 	end
 	if not UI.built[key] and UI.builders[key] then
 		UI.built[key] = true
-		UI.builders[key](UI.pages[key])
+		-- kalau satu halaman error, tampilkan pesannya (bukan halaman kosong) dan jangan hentikan script
+		local okB, errB = pcall(UI.builders[key], UI.pages[key])
+		if not okB then
+			logf("GAGAL membuat halaman %s: %s", key, tostring(errB))
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, TextWrapped = true, TextColor3 = T.Danger,
+				TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top, Text = "⚠ Halaman gagal dibuat:\n" .. tostring(errB),
+				Parent = UI.pages[key],
+			})
+		end
 	end
 	if UI.onShow[key] then
-		UI.onShow[key]()
+		pcall(UI.onShow[key])
 	end
 end
 
@@ -2553,35 +2593,7 @@ end
 ----------------------------------------------------------------------------
 local activeCards = {}
 
-local function addRecent(item)
-	for i, r in ipairs(State.recent) do
-		if r.Id == item.Id then
-			table.remove(State.recent, i)
-			break
-		end
-	end
-	table.insert(State.recent, 1, item)
-	while #State.recent > 40 do
-		table.remove(State.recent)
-	end
-end
-
-local function toggleFavorite(item)
-	if State.favorites[item.Id] then
-		State.favorites[item.Id] = nil
-		for i, id in ipairs(State.favOrder) do
-			if id == item.Id then
-				table.remove(State.favOrder, i)
-				break
-			end
-		end
-	else
-		State.favorites[item.Id] = item
-		table.insert(State.favOrder, 1, item.Id)
-	end
-end
-
-local function makeCard(parent, item, onFav)
+local function makeCard(parent, item)
 	local isBundle = item.Type == "Bundle"
 	local card = mk("TextButton", {
 		AutoButtonColor = false, Text = "", BackgroundColor3 = T.Surface, BorderSizePixel = 0,
@@ -2590,18 +2602,18 @@ local function makeCard(parent, item, onFav)
 	corner(card, 10)
 	local st = stroke(card, T.Stroke, 1.5, 0.3)
 	local img = mk("ImageLabel", {
-		Size = UDim2.new(1, -10, 0, 72), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
+		Size = UDim2.new(1, -8, 0, 64), Position = UDim2.fromOffset(4, 4), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
 		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
 	})
 	corner(img, 8)
 	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
-	nm.Position = UDim2.fromOffset(6, 80)
-	nm.Size = UDim2.new(1, -12, 0, 14)
+	nm.Position = UDim2.fromOffset(5, 71)
+	nm.Size = UDim2.new(1, -10, 0, 14)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
 	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
-	pr.Position = UDim2.fromOffset(6, 96)
-	pr.Size = UDim2.new(1, -12, 0, 12)
+	pr.Position = UDim2.fromOffset(5, 88)
+	pr.Size = UDim2.new(1, -10, 0, 12)
 
 	local badge = mk("TextLabel", {
 		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
@@ -2609,12 +2621,6 @@ local function makeCard(parent, item, onFav)
 		BorderSizePixel = 0, Visible = false, ZIndex = 3, Parent = card,
 	})
 	corner(badge, 9)
-	local fav = mk("TextButton", {
-		Size = UDim2.fromOffset(22, 22), Position = UDim2.fromOffset(8, 8), BackgroundTransparency = 0.35,
-		BackgroundColor3 = Color3.new(0, 0, 0), Text = "♡", TextSize = 13, Font = Enum.Font.GothamBold,
-		TextColor3 = Color3.new(1, 1, 1), AutoButtonColor = false, ZIndex = 3, Parent = card,
-	})
-	corner(fav, 11)
 	local overlay = mk("TextLabel", {
 		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45,
 		Text = "⏳", TextSize = 22, Visible = false, ZIndex = 6, Parent = card,
@@ -2627,21 +2633,11 @@ local function makeCard(parent, item, onFav)
 		badge.Visible = worn
 		st.Color = worn and T.Ok or T.Stroke
 		st.Transparency = worn and 0 or 0.3
-		local isFav = State.favorites[item.Id] ~= nil
-		fav.Text = isFav and "♥" or "♡"
-		fav.TextColor3 = isFav and T.Danger or Color3.new(1, 1, 1)
 	end
 	obj.update()
 
 	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
-	fav.Activated:Connect(function()
-		toggleFavorite(item)
-		obj.update()
-		if onFav then
-			onFav()
-		end
-	end)
 	card.Activated:Connect(function()
 		if obj.loading then
 			return
@@ -2649,14 +2645,10 @@ local function makeCard(parent, item, onFav)
 		obj.loading = true
 		overlay.Visible = true
 		task.spawn(function()
-			local ok
 			if isBundle then
-				ok = E.equipBundle(item.Id, item.Name)
+				E.equipBundle(item.Id, item.Name)
 			else
-				ok = E.toggleAsset(item.Id, item.Name)
-			end
-			if ok and (isBundle or E.isWorn(item.Id)) then
-				addRecent(item)
+				E.toggleAsset(item.Id, item.Name)
 			end
 			overlay.Visible = false
 			obj.loading = false
@@ -2666,22 +2658,27 @@ local function makeCard(parent, item, onFav)
 end
 
 UI.builders.catalog = function(page)
-	-- baris 1: kategori (3 tombol)
-	local catRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = page })
-	mk("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
-		Parent = catRow,
+	local CAT_W = 118
+	local catPanel = mk("Frame", { Size = UDim2.new(0, CAT_W, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = page })
+	corner(catPanel, 10)
+	local catScroll = makeScroll(catPanel)
+	pad(catScroll, 4, 4, 4, 4)
+	vlist(catScroll, 2)
+
+	local main = mk("Frame", {
+		Position = UDim2.fromOffset(CAT_W + 8, 0), Size = UDim2.new(1, -(CAT_W + 8), 1, 0),
+		BackgroundTransparency = 1, Parent = page,
 	})
 
-	-- baris 2: cari, sort, gratis, refresh
-	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = page })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -206, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row2 })
+	-- baris atas: cari | urut | gratis | refresh
+	local row1 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = main })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -170, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row1 })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
-		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Cari (Enter)...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.new(1, -14, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Cari (Enter)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = sbFrame,
 	})
 	local startQuery
@@ -2691,37 +2688,37 @@ UI.builders.catalog = function(page)
 			startQuery()
 		end
 	end)
-	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(96, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -104, 0, 0), textSize = 12,
+	local sortBtn = button(row1, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(72, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -94, 0, 0), textSize = 10,
 		onClick = function()
 			State.sortIdx = State.sortIdx % #SORTS + 1
 			startQuery()
 		end })
 	local freeBtn
-	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(62, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -38, 0, 0), textSize = 12,
+	freeBtn = button(row1, { text = "Gratis", size = UDim2.fromOffset(52, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -38, 0, 0), textSize = 11,
 		onClick = function()
 			State.freeOnly = not State.freeOnly
 			startQuery()
 		end })
-	button(row2, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
-		textSize = 17, onClick = function() startQuery() end })
+	button(row1, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
+		textSize = 16, onClick = function() startQuery() end })
 
-	-- jumlah item (disembunyikan karena ruang sempit, dipakai logika bawah)
-	local countL = label(page, "", 11, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
+	-- teks jumlah item (disembunyikan karena ruang sempit)
+	local countL = label(main, "", 10, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
 	countL.Visible = false
 
 	-- grid
-	local grid = makeScroll(page, UDim2.new(1, 0, 1, -70), UDim2.fromOffset(0, 70))
+	local grid = makeScroll(main, UDim2.new(1, 0, 1, -36), UDim2.fromOffset(0, 36))
 	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(98, 116), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		CellSize = UDim2.fromOffset(90, 112), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
 	})
 	pad(grid, 0, 2, 0, 10)
 	local msg = mk("TextLabel", {
-		Size = UDim2.new(1, -20, 0, 70), Position = UDim2.fromOffset(10, 100), BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, -16, 0, 90), Position = UDim2.fromOffset(8, 70), BackgroundTransparency = 1, Text = "",
 		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
-		ZIndex = 5, Parent = page,
+		ZIndex = 5, Parent = main,
 	})
 
 	local currentQuery, loading = nil, false
@@ -2735,14 +2732,6 @@ UI.builders.catalog = function(page)
 			end
 		end
 		grid.CanvasPosition = Vector2.new(0, 0)
-	end
-
-	local function addCard(item)
-		table.insert(activeCards, makeCard(grid, item, function()
-			if State.cat.kind == "fav" then
-				startQuery()
-			end
-		end))
 	end
 
 	local function showMsg(text)
@@ -2770,7 +2759,7 @@ UI.builders.catalog = function(page)
 			end
 			msg.Visible = false
 			for _, it in ipairs(items) do
-				addCard(it)
+				table.insert(activeCards, makeCard(grid, it))
 			end
 			if q.total == 0 then
 				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
@@ -2787,6 +2776,7 @@ UI.builders.catalog = function(page)
 		sortBtn.Text = "↕ " .. SORTS[State.sortIdx].name
 		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
 		freeBtn.Text = (State.freeOnly and "✓ " or "") .. "Gratis"
+		showMsg("⏳ Memuat...")
 		currentQuery = newQuery(State.cat, State.keyword, State.sortIdx, State.freeOnly)
 		loadPage(token)
 	end
@@ -2797,11 +2787,13 @@ UI.builders.catalog = function(page)
 		end
 	end)
 
-	-- tombol kategori
-	local catBtns = {}
+	-- daftar kategori (dikelompokkan)
+	local catRows = {}
 	local function markCat()
-		for id, b in pairs(catBtns) do
-			b.BackgroundColor3 = (id == State.cat.id) and T.Accent or T.Surface2
+		for id, r in pairs(catRows) do
+			local active = id == State.cat.id
+			r.btn.BackgroundTransparency = active and 0 or 1
+			r.txt.TextColor3 = active and T.Accent or T.Text
 		end
 	end
 	local function selectCat(cat)
@@ -2811,14 +2803,28 @@ UI.builders.catalog = function(page)
 		markCat()
 		startQuery()
 	end
-	for i, cat in ipairs(CATEGORIES) do
+
+	local order, lastGroup = 0, nil
+	for _, cat in ipairs(CATEGORIES) do
+		if cat.group ~= lastGroup then
+			lastGroup = cat.group
+			order = order + 1
+			local h = label(catScroll, cat.group, 10, T.Dim, Enum.Font.GothamBold)
+			h.LayoutOrder = order
+			h.Size = UDim2.new(1, 0, 0, 20)
+			h.TextYAlignment = Enum.TextYAlignment.Bottom
+		end
+		order = order + 1
 		local b = mk("TextButton", {
-			Size = UDim2.new(1 / #CATEGORIES, -4, 1, 0), BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
-			Text = cat.name, TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
-			AutoButtonColor = false, LayoutOrder = i, Parent = catRow,
+			Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
+			AutoButtonColor = false, LayoutOrder = order, Parent = catScroll,
 		})
-		corner(b, 8)
-		catBtns[cat.id] = b
+		corner(b, 7)
+		local t = label(b, cat.name, 12, T.Text, Enum.Font.GothamMedium)
+		t.Size = UDim2.new(1, -12, 1, 0)
+		t.Position = UDim2.fromOffset(8, 0)
+		t.TextTruncate = Enum.TextTruncate.AtEnd
+		catRows[cat.id] = { btn = b, txt = t }
 		b.Activated:Connect(function()
 			selectCat(cat)
 		end)
@@ -2889,24 +2895,24 @@ UI.builders.worn = function(page)
 end
 
 ----------------------------------------------------------------------------
--- [10] HALAMAN AVATAR  (cari semua pemain Roblox + preset + server + teman)
+-- [10] HALAMAN AVATAR  (semua pemain Roblox + preset + server + teman)
 ----------------------------------------------------------------------------
 local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
 
 local function userCard(parent, userId, name, order, sub)
 	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
-	corner(card, 12)
-	local img = mk("ImageLabel", { Size = UDim2.fromOffset(60, 60), Position = UDim2.new(0.5, -30, 0, 6), BackgroundColor3 = T.Surface2,
+	corner(card, 10)
+	local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, Image = thumbURL("AvatarHeadShot", userId, 150), Parent = card })
-	corner(img, 30)
+	corner(img, 27)
 	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
-	nm.Position = UDim2.fromOffset(4, 68)
-	nm.Size = UDim2.new(1, -8, 0, 14)
+	nm.Position = UDim2.fromOffset(3, 61)
+	nm.Size = UDim2.new(1, -6, 0, 14)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
 	local idleText = sub or "klik untuk pakai"
-	local hint = label(card, idleText, 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
-	hint.Position = UDim2.fromOffset(4, 83)
-	hint.Size = UDim2.new(1, -8, 0, 12)
+	local hint = label(card, idleText, 9, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+	hint.Position = UDim2.fromOffset(3, 76)
+	hint.Size = UDim2.new(1, -6, 0, 12)
 	hint.TextTruncate = Enum.TextTruncate.AtEnd
 	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
@@ -2930,36 +2936,6 @@ local function userCard(parent, userId, name, order, sub)
 	return card
 end
 
-local function userGrid(parent, order)
-	local g = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = order, Parent = parent })
-	mk("UIGridLayout", { CellSize = UDim2.fromOffset(92, 100), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = g })
-	return g
-end
-
--- pencarian pemain Roblox mana pun (tanpa harus satu server / berteman)
-local function searchUsers(keyword, cursor)
-	local path = "/v1/users/search?keyword=" .. urlenc(keyword) .. "&limit=25"
-	if cursor then
-		path = path .. "&cursor=" .. urlenc(cursor)
-	end
-	local lastErr = "tidak ada URL"
-	for _, host in ipairs({ "https://users.roblox.com", "https://users.roproxy.com" }) do
-		local bodyTxt, err = httpGet(host .. path)
-		if bodyTxt then
-			local ok, data = pcall(function()
-				return HttpService:JSONDecode(bodyTxt)
-			end)
-			if ok and type(data) == "table" and type(data.data) == "table" then
-				return data.data, data.nextPageCursor
-			end
-			lastErr = "JSON tidak valid dari " .. host
-		else
-			lastErr = tostring(err)
-		end
-	end
-	return nil, lastErr
-end
-
 local function nameFromId(uid)
 	local ok, n = callAny(Players, { "GetNameFromUserIdAsync" }, uid)
 	if ok and type(n) == "string" then
@@ -2976,19 +2952,91 @@ local function idFromName(name)
 	return nil
 end
 
-UI.builders.avatars = function(page)
-	local scroll = makeScroll(page)
-	vlist(scroll, 8)
-	pad(scroll, 0, 0, 8, 12)
+-- pencarian pemain di SELURUH Roblox lewat web (beberapa backend dicoba berurutan)
+local SESSION_ID = "leon-" .. tostring(os.time())
+pcall(function()
+	SESSION_ID = HttpService:GenerateGUID(false)
+end)
 
+local SEARCH_BUILDERS = {
+	function(kw, cur)
+		return "https://users.roblox.com/v1/users/search?keyword=" .. urlenc(kw) .. "&limit=25" .. (cur and ("&cursor=" .. urlenc(cur)) or "")
+	end,
+	function(kw, cur)
+		return "https://users.roproxy.com/v1/users/search?keyword=" .. urlenc(kw) .. "&limit=25" .. (cur and ("&cursor=" .. urlenc(cur)) or "")
+	end,
+	function(kw, cur)
+		return "https://apis.roblox.com/search-api/omni-search?searchQuery=" .. urlenc(kw) .. "&pageType=all&sessionId="
+			.. urlenc(SESSION_ID) .. (cur and ("&pageToken=" .. urlenc(cur)) or "")
+	end,
+}
+
+local function parseUserList(bodyTxt)
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(bodyTxt)
+	end)
+	if not ok or type(data) ~= "table" then
+		return nil
+	end
+	local out = {}
+	if type(data.data) == "table" then
+		for _, u in ipairs(data.data) do
+			if tonumber(u.id) then
+				table.insert(out, { id = tonumber(u.id), name = tostring(u.name), display = tostring(u.displayName or u.name) })
+			end
+		end
+		return out, data.nextPageCursor
+	end
+	if type(data.searchResults) == "table" then
+		for _, grp in ipairs(data.searchResults) do
+			if type(grp.contents) == "table" then
+				for _, c in ipairs(grp.contents) do
+					if (c.contentType == "User" or grp.contentGroupType == "User") and tonumber(c.contentId) then
+						table.insert(out, {
+							id = tonumber(c.contentId), name = tostring(c.username or c.contentId),
+							display = tostring(c.displayName or c.username or c.contentId),
+						})
+					end
+				end
+			end
+		end
+		return out, data.nextPageToken
+	end
+	return nil
+end
+
+-- state = { idx = backend yang dipakai, cursor = halaman berikut }
+local function searchUsersWeb(keyword, state)
+	state = state or {}
+	local first, last = 1, #SEARCH_BUILDERS
+	if state.idx then
+		first, last = state.idx, state.idx
+	end
+	local lastErr = "tidak ada hasil"
+	for i = first, last do
+		local bodyTxt, err = httpGet(SEARCH_BUILDERS[i](keyword, state.cursor))
+		if bodyTxt then
+			local list, nextCur = parseUserList(bodyTxt)
+			if list and (#list > 0 or state.idx) then
+				return list, { idx = i, cursor = nextCur }
+			end
+			lastErr = list and "kosong" or ("balasan backend " .. i .. " tidak dikenali")
+		else
+			lastErr = tostring(err)
+		end
+	end
+	return nil, lastErr
+end
+
+UI.builders.avatars = function(page)
 	-- baris pencarian
-	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = 1, Parent = scroll })
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = page })
 	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local box = mk("TextBox", {
 		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Username / nama / UserId (semua Roblox)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		PlaceholderText = "🔍 Username / nama / UserId (seluruh Roblox)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
 		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = sbFrame,
 	})
@@ -2997,47 +3045,142 @@ UI.builders.avatars = function(page)
 	local randBtn = button(row, { text = "🎲", size = UDim2.fromOffset(36, 30), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, 0, 0, 0), textSize = 15 })
 
-	local status = label(scroll, "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak.", 11, T.Dim, Enum.Font.Gotham)
-	status.LayoutOrder = 2
-	status.Size = UDim2.new(1, 0, 0, 14)
+	-- baris tab kecil + status
+	local status = label(page, "", 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Right)
+	status.Position = UDim2.fromOffset(288, 34)
+	status.Size = UDim2.new(1, -288, 0, 24)
+	status.TextTruncate = Enum.TextTruncate.AtEnd
+	local chipRow = mk("Frame", { Size = UDim2.new(0, 280, 0, 24), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, ZIndex = 2, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = chipRow,
+	})
 
-	local resultGrid = userGrid(scroll, 3)
-	local moreBtn = button(scroll, { text = "Muat lebih banyak", size = UDim2.new(1, 0, 0, 28), order = 4, textSize = 12 })
-	moreBtn.Visible = false
+	local secs, chips = {}, {}
+	local function makeSection(key)
+		local sc = makeScroll(page, UDim2.new(1, 0, 1, -64), UDim2.fromOffset(0, 64))
+		mk("UIGridLayout", {
+			CellSize = UDim2.fromOffset(88, 96), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = sc,
+		})
+		pad(sc, 0, 2, 0, 10)
+		sc.Visible = false
+		secs[key] = sc
+		return sc
+	end
+	local allSc = makeSection("all")
+	local presetSc = makeSection("preset")
+	local serverSc = makeSection("server")
+	local friendSc = makeSection("friends")
 
-	local token, nextCursor, keyword, loading, count, seen = 0, nil, "", false, 0, {}
+	local current = "all"
+	local function showSection(key)
+		current = key
+		for k, sc in pairs(secs) do
+			sc.Visible = k == key
+		end
+		for k, c in pairs(chips) do
+			c.BackgroundColor3 = (k == key) and T.Accent or T.Surface2
+		end
+		status.Visible = key == "all"
+		if key == "server" and UI.refreshServer then
+			UI.refreshServer()
+		end
+	end
+	local chipDefs = { { "all", "🌐 Semua" }, { "preset", "⭐ Preset" }, { "server", "🖥 Server" }, { "friends", "👥 Teman" } }
+	for i, d in ipairs(chipDefs) do
+		local c = mk("TextButton", {
+			Size = UDim2.fromOffset(66, 24), BackgroundColor3 = T.Surface2, BorderSizePixel = 0, Text = d[2], TextSize = 11,
+			Font = Enum.Font.GothamBold, TextColor3 = T.Text, AutoButtonColor = false, LayoutOrder = i, Parent = chipRow,
+		})
+		corner(c, 8)
+		chips[d[1]] = c
+		c.Activated:Connect(function()
+			showSection(d[1])
+		end)
+	end
 
-	local function clearResults()
-		for _, c in ipairs(resultGrid:GetChildren()) do
+	-- ===== SEMUA PEMAIN ROBLOX =====
+	local token, loading, mode, searchState, keyword = 0, false, "feed", nil, ""
+	local count, seen = 0, {}
+
+	local function setStatus(t)
+		status.Text = t
+	end
+
+	local function clearAll()
+		for _, c in ipairs(allSc:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
 			end
 		end
+		allSc.CanvasPosition = Vector2.new(0, 0)
 		count, seen = 0, {}
-		moreBtn.Visible = false
 	end
 
 	local function addUser(id, name, sub, front)
 		if seen[id] then
-			return
+			return false
 		end
 		seen[id] = true
 		count = count + 1
-		userCard(resultGrid, id, name, front and (-1000 + count) or count, sub)
+		userCard(allSc, id, name, front and (-1000 + count) or count, sub)
+		return true
 	end
 
-	local function doSearch()
-		local kw = box.Text:match("^%s*(.-)%s*$")
+	-- mode "feed": ambil pemain acak dari seluruh Roblox (hanya butuh layanan Roblox, tanpa HTTP)
+	local function feedBatch(myToken, n)
+		loading = true
+		setStatus("Memuat pemain Roblox...")
+		local found, attempts, inflight = 0, 0, 0
+		local maxAttempts = n * 6
+		while myToken == token and found < n and attempts < maxAttempts do
+			while myToken == token and inflight < 8 and (found + inflight) < n and attempts < maxAttempts do
+				attempts = attempts + 1
+				inflight = inflight + 1
+				task.spawn(function()
+					local id = math.floor(math.random() * 5000000000) + 100000
+					local nm = nameFromId(id)
+					inflight = inflight - 1
+					if nm and myToken == token and addUser(id, nm, "ID " .. id) then
+						found = found + 1
+					end
+				end)
+			end
+			task.wait(0.1)
+		end
+		local t0 = os.clock()
+		while inflight > 0 and os.clock() - t0 < 6 and myToken == token do
+			task.wait(0.1)
+		end
+		if myToken == token then
+			loading = false
+			setStatus(count .. " pemain • gulir untuk lagi")
+		end
+	end
+
+	local function startFeed()
 		token = token + 1
 		local myToken = token
-		clearResults()
-		nextCursor = nil
+		clearAll()
+		mode, searchState, keyword = "feed", nil, ""
+		showSection("all")
+		task.spawn(feedBatch, myToken, 12)
+	end
+
+	-- mode "search": pencarian nama di seluruh Roblox
+	local function doSearch()
+		local kw = box.Text:match("^%s*(.-)%s*$")
 		if kw == "" then
-			status.Text = "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak."
+			startFeed()
 			return
 		end
-		keyword, loading = kw, true
-		status.Text = "Mencari \"" .. kw .. "\"..."
+		token = token + 1
+		local myToken = token
+		clearAll()
+		mode, searchState, keyword, loading = "search", nil, kw, true
+		showSection("all")
+		setStatus("Mencari \"" .. kw .. "\"...")
 		task.spawn(function()
 			local exactId = tonumber(kw)
 			local exactName
@@ -3055,75 +3198,57 @@ UI.builders.avatars = function(page)
 			if exactId and exactName then
 				addUser(exactId, exactName, "ID " .. exactId, true)
 			end
-			local list, cur = searchUsers(kw, nil)
+			local list, st = searchUsersWeb(kw, nil)
 			if myToken ~= token then
 				return
 			end
 			loading = false
 			if list then
-				nextCursor = cur
+				searchState = st
 				for _, u in ipairs(list) do
-					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
+					addUser(u.id, u.display, "@" .. u.name)
 				end
-				status.Text = count == 0 and ("Tidak ada hasil untuk \"" .. kw .. "\".") or (count .. " pemain ditemukan")
-				moreBtn.Visible = nextCursor ~= nil
+				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " ditemukan")
+			elseif count > 0 then
+				setStatus("Pencarian luas gagal (HTTP diblokir?), hanya hasil persis.")
 			else
-				status.Text = (count > 0) and "Pencarian luas gagal (HTTP diblokir), hanya hasil persis."
-					or ("⚠ Pencarian gagal: " .. tostring(cur))
+				setStatus("⚠ " .. string.sub(tostring(st), 1, 60))
 			end
 		end)
 	end
 
-	moreBtn.Activated:Connect(function()
-		if loading or not nextCursor then
-			return
-		end
-		loading = true
-		local myToken = token
-		task.spawn(function()
-			local list, cur = searchUsers(keyword, nextCursor)
-			if myToken ~= token then
-				return
-			end
-			loading = false
-			if list then
-				nextCursor = cur
-				for _, u in ipairs(list) do
-					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
-				end
-			else
-				nextCursor = nil
-			end
-			moreBtn.Visible = nextCursor ~= nil
-			status.Text = count .. " pemain ditemukan" .. (nextCursor and "+" or "")
-		end)
-	end)
-
-	randBtn.Activated:Connect(function()
+	local function loadMore()
 		if loading then
 			return
 		end
-		loading = true
-		token = token + 1
 		local myToken = token
-		clearResults()
-		nextCursor = nil
-		status.Text = "Mencari pemain acak..."
-		task.spawn(function()
-			local tries = 0
-			while count < 8 and tries < 30 and myToken == token do
-				tries = tries + 1
-				local id = math.random(100000, 3500000000)
-				local nm = nameFromId(id)
-				if nm then
-					addUser(id, nm, "ID " .. id)
+		if mode == "feed" then
+			task.spawn(feedBatch, myToken, 12)
+		elseif mode == "search" and searchState and searchState.cursor then
+			loading = true
+			task.spawn(function()
+				local list, st = searchUsersWeb(keyword, searchState)
+				if myToken ~= token then
+					return
 				end
-			end
-			if myToken == token then
 				loading = false
-				status.Text = count .. " pemain acak (tekan 🎲 lagi untuk ganti)"
-			end
-		end)
+				if list then
+					searchState = st
+					for _, u in ipairs(list) do
+						addUser(u.id, u.display, "@" .. u.name)
+					end
+					setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " ditemukan")
+				else
+					searchState = nil
+				end
+			end)
+		end
+	end
+
+	allSc:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		if allSc.Visible and allSc.CanvasPosition.Y + allSc.AbsoluteWindowSize.Y >= allSc.AbsoluteCanvasSize.Y - 120 then
+			loadMore()
+		end
 	end)
 
 	searchBtn.Activated:Connect(doSearch)
@@ -3132,21 +3257,19 @@ UI.builders.avatars = function(page)
 			doSearch()
 		end
 	end)
+	randBtn.Activated:Connect(function()
+		box.Text = ""
+		startFeed()
+	end)
 
-	-- preset
-	local h1 = label(scroll, "PRESET", 11, T.Dim, Enum.Font.GothamBold)
-	h1.LayoutOrder = 5
-	local presetGrid = userGrid(scroll, 6)
+	-- ===== PRESET =====
 	for i, p in ipairs(PRESETS) do
-		userCard(presetGrid, p[2], p[1], i)
+		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- pemain di server
-	local h2 = label(scroll, "PEMAIN DI SERVER INI", 11, T.Dim, Enum.Font.GothamBold)
-	h2.LayoutOrder = 7
-	local serverGrid = userGrid(scroll, 8)
-	local function refreshServer()
-		for _, c in ipairs(serverGrid:GetChildren()) do
+	-- ===== PEMAIN DI SERVER =====
+	UI.refreshServer = function()
+		for _, c in ipairs(serverSc:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
 			end
@@ -3155,32 +3278,34 @@ UI.builders.avatars = function(page)
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= player then
 				n = n + 1
-				userCard(serverGrid, p.UserId, p.DisplayName, n)
+				userCard(serverSc, p.UserId, p.DisplayName, n)
 			end
 		end
+		if n == 0 then
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Tidak ada pemain lain di server ini.",
+				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = serverSc,
+			})
+		end
 	end
-	UI.onShow.avatars = refreshServer
-	refreshServer()
 
-	-- teman
-	local h3 = label(scroll, "TEMAN", 11, T.Dim, Enum.Font.GothamBold)
-	h3.LayoutOrder = 9
-	local friendGrid = userGrid(scroll, 10)
-	local fstatus = label(scroll, "Memuat daftar teman...", 11, T.Dim, Enum.Font.Gotham)
-	fstatus.LayoutOrder = 11
+	-- ===== TEMAN =====
 	task.spawn(function()
 		local ok, pages = pcall(function()
 			return Players:GetFriendsAsync(player.UserId)
 		end)
 		if not ok or not pages then
-			fstatus.Text = "Daftar teman tidak bisa dimuat."
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Daftar teman tidak bisa dimuat.",
+				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
+			})
 			return
 		end
 		local fcount, done = 0, false
 		while not done and fcount < 72 do
 			for _, f in ipairs(pages:GetCurrentPage()) do
 				fcount = fcount + 1
-				userCard(friendGrid, f.Id, f.DisplayName or f.Username, fcount)
+				userCard(friendSc, f.Id, f.DisplayName or f.Username, fcount)
 			end
 			if pages.IsFinished then
 				done = true
@@ -3188,8 +3313,15 @@ UI.builders.avatars = function(page)
 				done = true
 			end
 		end
-		fstatus.Text = fcount == 0 and "Belum ada teman di akun ini." or (fcount .. " teman dimuat")
+		if fcount == 0 then
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Belum ada teman di akun ini.",
+				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
+			})
+		end
 	end)
+
+	startFeed()
 end
 
 ----------------------------------------------------------------------------
@@ -3200,6 +3332,7 @@ UI.fab = mk("TextButton", {
 	TextSize = 26, AutoButtonColor = false, BackgroundColor3 = T.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 20, Parent = UI.gui,
 })
 corner(UI.fab, 27)
+-- tombol 👗 bisa digeser bebas
 do
 	local fab = UI.fab
 	fab.Active = true
@@ -3288,6 +3421,7 @@ do
 	end
 end
 
+-- hapus UI + tombol 👗; avatar di tubuh TETAP dipakai
 function UI.destroyUI()
 	E.uiDestroyed = true
 	toastHolder = nil
