@@ -5,7 +5,9 @@
 
   VERSI FULL (OPTIMAL): antrian render, katalog instan, tab ramping, bug UI fix.
   Tab: avatar | karakter | animasi | sepatu | dipakai
-  Avatar polosan (bacon dll) disaring di tab avatar (lihat FILTER_POLOSAN).
+  Avatar bawaan Roblox (bacon / cowo / cewe / dll) disaring di tab avatar
+  (lihat FILTER_POLOSAN). Hasil PENCARIAN tidak disaring.
+  Tab avatar > Semua: urut item terbanyak, filter Cowo / Cewe.
   Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
 
@@ -2586,10 +2588,11 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
--- [7] TEMA + FILTER AVATAR POLOSAN
+-- [7] TEMA + FILTER AVATAR BAWAAN ROBLOX + ANALISIS (jumlah item, cowo/cewe)
 ----------------------------------------------------------------------------
-local FILTER_POLOSAN = true -- true = sembunyikan avatar polosan (bacon dll). false = tampilkan semua
+local FILTER_POLOSAN = true -- true = sembunyikan avatar bawaan Roblox (bacon / cowo / cewe dll). false = tampilkan semua
 local MAX_POLOS_ITEMS = 8 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
+local ALWAYS_PLAIN_MAX = 3 -- avatar dengan item <= angka ini SELALU dianggap polosan (siapa pun pembuat itemnya)
 
 local Theme = {
 	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
@@ -2609,61 +2612,124 @@ T.Text = Theme.TextPrimary
 T.Dim = Theme.TextMuted
 T.Accent = Theme.Accent
 
--- cache: apakah item dibuat Roblox (item default). Item default berulang, jadi cache menghemat banyak request
-local creatorCache = {}
+-- cache info item: nama (huruf kecil) + apakah buatan Roblox. Item default berulang, jadi cache menghemat banyak request
+local itemInfo = {}
 local plainCache = {}
+local analysisCache = {}
 
 local PLAIN_PROPS = {
 	"Shirt", "Pants", "GraphicTShirt", "ClimbAnimation", "FallAnimation", "IdleAnimation",
 	"JumpAnimation", "RunAnimation", "SwimAnimation", "WalkAnimation", "MoodAnimation",
 }
 
--- polosan = hanya berisi item buatan Roblox (rambut bacon, kaos/celana bawaan, dll).
+local function ensureDetails(ids)
+	local need = {}
+	for _, id in ipairs(ids) do
+		if itemInfo[id] == nil then
+			table.insert(need, id)
+		end
+	end
+	for i = 1, #need, 50 do
+		local chunk = {}
+		for j = i, math.min(i + 49, #need) do
+			table.insert(chunk, need[j])
+		end
+		local det = fetchDetails(chunk, Enum.AvatarItemType.Asset)
+		for _, id in ipairs(chunk) do
+			local dd = det[id]
+			if dd then
+				itemInfo[id] = {
+					name = string.lower(tostring(dd.Name or "")),
+					roblox = (dd.CreatorTargetId == 1 or tostring(dd.CreatorName or "") == "Roblox"),
+				}
+			end
+		end
+	end
+end
+
+-- hitung item pada avatar (aksesori + baju/celana/animasi), tentukan polosan atau bukan.
 -- Bagian tubuh klasik (kepala, badan, tangan, kaki, wajah) tidak dihitung, karena itu bawaan semua akun.
-local function plainFromDesc(desc)
-	local ids = {}
+local function analyzeDesc(desc)
+	local ids, types, seen = {}, {}, {}
 	local okA, accs = pcall(function()
 		return desc:GetAccessories(true)
 	end)
 	if okA then
 		for _, a in ipairs(accs) do
-			table.insert(ids, a.AssetId)
+			if not seen[a.AssetId] then
+				seen[a.AssetId] = true
+				table.insert(ids, a.AssetId)
+				types[a.AssetId] = a.AccessoryType.Name
+			end
 		end
 	end
 	for _, prop in ipairs(PLAIN_PROPS) do
 		local v = getProp(desc, prop)
-		if type(v) == "number" and v > 0 then
+		if type(v) == "number" and v > 0 and not seen[v] then
+			seen[v] = true
 			table.insert(ids, v)
 		end
 	end
-	if #ids == 0 then
-		return true
-	end
-	if #ids > MAX_POLOS_ITEMS then
-		return false
-	end
-	local need = {}
-	for _, id in ipairs(ids) do
-		if creatorCache[id] == false then
-			return false
-		elseif creatorCache[id] == nil then
-			table.insert(need, id)
-		end
-	end
-	if #need > 0 then
-		local det = fetchDetails(need, Enum.AvatarItemType.Asset)
-		for _, id in ipairs(need) do
-			local dd = det[id]
-			if not dd then
-				return false
-			end
-			creatorCache[id] = (dd.CreatorTargetId == 1 or dd.CreatorName == "Roblox")
-			if not creatorCache[id] then
-				return false
+	local count = #ids
+	local plain
+	if count <= ALWAYS_PLAIN_MAX then
+		plain = true
+	elseif count > MAX_POLOS_ITEMS then
+		plain = false
+	else
+		ensureDetails(ids)
+		plain = true
+		for _, id in ipairs(ids) do
+			local inf = itemInfo[id]
+			if not inf or not inf.roblox then
+				plain = false
+				break
 			end
 		end
 	end
-	return true
+	return { plain = plain, count = count, ids = ids, types = types }
+end
+
+-- perkiraan cowo/cewe dari nama item (Roblox tidak menyimpan gender akun, jadi ini tebakan)
+local FEMALE_WORDS = {
+	"girl", "female", "woman", "lady", "dress", "skirt", "bikini", "ponytail", "pigtail", "heel",
+	"bow", "lipstick", "makeup", "princess", "braid", "crop", "blouse", "bunny", "kawaii", "gyaru",
+	"cewek", "wanita", "maid", "hime", "mermaid", "fairy", "witch", "queen", "bride", "lolita",
+}
+local MALE_WORDS = {
+	"boy", "male", "man", "guy", "beard", "mustache", "moustache", "stubble", "dude", "gentleman",
+	"king", "cowok", "pria", "bro", "sir", "goatee", "sideburn",
+}
+
+local function hasWord(name, word)
+	return string.find(name, "%f[%a]" .. word .. "e?s?%f[%A]") ~= nil
+end
+
+local function genderOf(a)
+	ensureDetails(a.ids)
+	local f, m = 0, 0
+	for _, id in ipairs(a.ids) do
+		local inf = itemInfo[id]
+		if inf then
+			for _, w in ipairs(FEMALE_WORDS) do
+				if hasWord(inf.name, w) then
+					f = f + 1
+				end
+			end
+			for _, w in ipairs(MALE_WORDS) do
+				if hasWord(inf.name, w) then
+					m = m + 1
+				end
+			end
+		end
+		if a.types[id] == "DressSkirt" then
+			f = f + 2
+		end
+	end
+	if f > m then
+		return "cewe"
+	end
+	return "cowo"
 end
 
 -- return: polosan?, sudah-pasti?
@@ -2678,12 +2744,13 @@ local function isPlainAvatar(userId)
 	if not desc then
 		return false, false
 	end
-	local plain = plainFromDesc(desc)
-	plainCache[userId] = plain
+	local a = analyzeDesc(desc)
+	plainCache[userId] = a.plain
+	analysisCache[userId] = a
 	pcall(function()
 		desc:Destroy()
 	end)
-	return plain, true
+	return a.plain, true
 end
 
 ----------------------------------------------------------------------------
@@ -3142,6 +3209,35 @@ local function buildAvatars(page)
 		Parent = chipRow,
 	})
 
+	-- baris filter urutan (hanya untuk tab "Semua"): item terbanyak / cowo / cewe
+	local sortMode = "most" -- "most" | "cowo" | "cewe"
+	local entries, seqN = {}, 0
+	local modeRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 62), BackgroundTransparency = 1, ZIndex = 2, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = modeRow,
+	})
+	local modeChips = {}
+	local MODE_DEFS = { { "most", "🏆 Item terbanyak" }, { "cowo", "♂ Cowo" }, { "cewe", "♀ Cewe" } }
+	local function markModes()
+		for k, c in pairs(modeChips) do
+			local active = k == sortMode
+			c.BackgroundColor3 = active and Theme.TabActiveBg or T.Surface2
+			c.TextColor3 = active and T.Accent or T.Text
+		end
+	end
+	for i, d in ipairs(MODE_DEFS) do
+		local c = mk("TextButton", {
+			Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Text = d[2], TextSize = 11, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
+			AutoButtonColor = false, LayoutOrder = i, Parent = modeRow,
+		})
+		corner(c, 8)
+		pad(c, 10, 0, 10, 0)
+		modeChips[d[1]] = c
+	end
+	markModes()
+
 	local secs, chips = {}, {}
 	local function makeSection(key)
 		local sc = makeScroll(page, UDim2.new(1, 0, 1, -64), UDim2.fromOffset(0, 64))
@@ -3155,6 +3251,8 @@ local function buildAvatars(page)
 		return sc
 	end
 	local allSc = makeSection("all")
+	allSc.Position = UDim2.fromOffset(0, 90)
+	allSc.Size = UDim2.new(1, 0, 1, -90)
 	local presetSc = makeSection("preset")
 	local serverSc = makeSection("server")
 	local friendSc = makeSection("friends")
@@ -3168,6 +3266,7 @@ local function buildAvatars(page)
 			c.BackgroundColor3 = (k == key) and T.Accent or T.Surface2
 		end
 		status.Visible = key == "all"
+		modeRow.Visible = key == "all"
 		if key == "server" and refreshServer then
 			refreshServer()
 		elseif key == "friends" and loadFriends then
@@ -3187,7 +3286,7 @@ local function buildAvatars(page)
 		end)
 	end
 
-	-- ===== SEMUA PEMAIN ROBLOX (polosan disaring) =====
+	-- ===== SEMUA PEMAIN ROBLOX (bawaan Roblox disaring, urut item terbanyak) =====
 	local token, loading, mode, searchState, keyword = 0, false, "feed", nil, ""
 	local count, seen = 0, {}
 
@@ -3202,15 +3301,51 @@ local function buildAvatars(page)
 		end
 		allSc.CanvasPosition = Vector2.new(0, 0)
 		count, seen = 0, {}
+		entries, seqN = {}, 0
 	end
-	local function addUser(id, name, sub, front)
+	local function visibleFor(g)
+		return sortMode == "most" or g == sortMode
+	end
+	local function countVisible()
+		local n = 0
+		for _, e in pairs(entries) do
+			if e.card and e.card.Parent and visibleFor(e.gender) then
+				n = n + 1
+			end
+		end
+		return n
+	end
+	-- info (opsional): { count = jumlah item, gender = "cowo"/"cewe" } -> dipakai untuk urutan + filter
+	local function addUser(id, name, sub, front, info)
 		if seen[id] then
 			return false
 		end
 		seen[id] = true
 		count = count + 1
-		userCard(allSc, id, name, front and (-1000 + count) or count, sub)
+		local ord = front and (-1000 + count) or count
+		local e
+		if info then
+			seqN = seqN + 1
+			e = { count = info.count or 0, gender = info.gender, seq = seqN }
+			ord = -(e.count) * 100000 + e.seq
+		end
+		local card = userCard(allSc, id, name, ord, sub)
+		if e then
+			e.card = card
+			entries[id] = e
+			card.Visible = visibleFor(e.gender)
+		end
 		return true
+	end
+	-- urutkan ulang kartu sesuai mode: terbanyak di atas, cowo/cewe hanya yang cocok
+	local function applyMode()
+		for _, e in pairs(entries) do
+			if e.card and e.card.Parent then
+				e.card.Visible = visibleFor(e.gender)
+				e.card.LayoutOrder = -(e.count) * 100000 + e.seq
+			end
+		end
+		allSc.CanvasPosition = Vector2.new(0, 0)
 	end
 
 	-- hasil pencarian: tampilkan semua (tidak disaring)
@@ -3269,15 +3404,23 @@ local function buildAvatars(page)
 						-- cek avatar dulu (gagal cepat untuk akun tidak ada), nama hanya untuk yang lolos
 						local desc, derr = descFromUser(id)
 						if desc then
-							local plain = FILTER_POLOSAN and plainFromDesc(desc) or false
+							local a = analyzeDesc(desc)
+							local plain = FILTER_POLOSAN and a.plain or false
 							plainCache[id] = plain
 							pcall(function()
 								desc:Destroy()
 							end)
 							if not plain and myToken == token then
 								local nm = nameFromId(id)
-								if nm and myToken == token and addUser(id, nm, "ID " .. id) then
-									found = found + 1
+								if nm and myToken == token then
+									a.gender = genderOf(a)
+									analysisCache[id] = a
+									local sub = a.count .. " item " .. (a.gender == "cewe" and "♀" or "♂")
+									if addUser(id, nm, sub, nil, { count = a.count, gender = a.gender }) then
+										if visibleFor(a.gender) then
+											found = found + 1
+										end
+									end
 								end
 							end
 						else
@@ -3298,10 +3441,11 @@ local function buildAvatars(page)
 		end
 		if myToken == token then
 			loading = false
-			if found == 0 and count == 0 then
-				setStatus("Belum ketemu avatar non-polosan, tekan Acak")
+			local vis = countVisible()
+			if found == 0 and vis == 0 then
+				setStatus("Belum ketemu avatar yang cocok, tekan Acak / gulir")
 			else
-				setStatus(count .. " pemain • gulir untuk lagi")
+				setStatus(vis .. " pemain • gulir untuk lagi")
 			end
 		end
 	end
@@ -3313,6 +3457,29 @@ local function buildAvatars(page)
 		mode, searchState, keyword = "feed", nil, ""
 		showSection("all")
 		task.spawn(feedBatch, myToken, 8)
+	end
+
+	local function setSortMode(m)
+		if sortMode == m then
+			return
+		end
+		sortMode = m
+		markModes()
+		if mode == "feed" then
+			applyMode()
+			local vis = countVisible()
+			setStatus(vis .. " pemain • gulir untuk lagi")
+			if vis < 8 and not loading then
+				task.spawn(feedBatch, token, 8)
+			end
+		else
+			startFeed()
+		end
+	end
+	for k, c in pairs(modeChips) do
+		c.Activated:Connect(function()
+			setSortMode(k)
+		end)
 	end
 
 	local function doSearch()
@@ -3419,7 +3586,7 @@ local function buildAvatars(page)
 
 	-- isi daftar (server / teman): kartu tampil LANGSUNG, yang polosan dibuang di latar belakang
 	local ver = {}
-	local function populate(sc, entries, emptyText)
+	local function populate(sc, entriesList, emptyText)
 		ver[sc] = (ver[sc] or 0) + 1
 		local v = ver[sc]
 		for _, c in ipairs(sc:GetChildren()) do
@@ -3427,23 +3594,23 @@ local function buildAvatars(page)
 				c:Destroy()
 			end
 		end
-		if #entries == 0 then
+		if #entriesList == 0 then
 			mk("TextLabel", {
 				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = emptyText,
 				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = sc,
 			})
 			return
 		end
-		local cards = {}
-		for i, e in ipairs(entries) do
-			table.insert(cards, { id = e.id, card = userCard(sc, e.id, e.name, i) })
+		local cardsList = {}
+		for i, e in ipairs(entriesList) do
+			table.insert(cardsList, { id = e.id, card = userCard(sc, e.id, e.name, i) })
 		end
 		if not FILTER_POLOSAN then
 			return
 		end
 		task.spawn(function()
 			local inflight = 0
-			for _, c in ipairs(cards) do
+			for _, c in ipairs(cardsList) do
 				while inflight >= 4 and ver[sc] == v do
 					task.wait(0.05)
 				end
@@ -3464,13 +3631,13 @@ local function buildAvatars(page)
 
 	-- ===== PEMAIN DI SERVER =====
 	refreshServer = function()
-		local entries = {}
+		local list = {}
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= player then
-				table.insert(entries, { id = p.UserId, name = p.DisplayName })
+				table.insert(list, { id = p.UserId, name = p.DisplayName })
 			end
 		end
-		populate(serverSc, entries, "Tidak ada pemain lain di server ini.")
+		populate(serverSc, list, "Tidak ada pemain lain di server ini.")
 	end
 
 	-- ===== TEMAN (dimuat saat tab Teman pertama kali dibuka) =====
@@ -3492,10 +3659,10 @@ local function buildAvatars(page)
 				populate(friendSc, {}, "Daftar teman tidak bisa dimuat.")
 				return
 			end
-			local entries, done = {}, false
-			while not done and #entries < 72 do
+			local list, done = {}, false
+			while not done and #list < 72 do
 				for _, f in ipairs(pages:GetCurrentPage()) do
-					table.insert(entries, { id = f.Id, name = f.DisplayName or f.Username })
+					table.insert(list, { id = f.Id, name = f.DisplayName or f.Username })
 				end
 				if pages.IsFinished then
 					done = true
@@ -3503,7 +3670,7 @@ local function buildAvatars(page)
 					done = true
 				end
 			end
-			populate(friendSc, entries, "Belum ada teman di akun ini.")
+			populate(friendSc, list, "Belum ada teman di akun ini.")
 		end)
 	end
 
