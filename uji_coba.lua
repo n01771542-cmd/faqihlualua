@@ -1,636 +1,2467 @@
 -- ============================================================================
--- LEON4951 HUB v2 - FINAL REDESIGN EDITION WITH NEW LOGO & TOGGLE
+-- LEON4951 HUB v2 + AVATAR ENGINE (full, no feature cut)
+-- Tabs: avatar | karakter | animasi | sepatu | sedang di pakai
+-- Engine from leon4951hub avatar script — UI shell LEON4951
 -- ============================================================================
 
 -- [ PRE-INITIALIZATION CLEANUP ]
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local player = LocalPlayer
 
 local function DestroyOldUI(name)
     local old = CoreGui:FindFirstChild(name) or (LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name))
-    if old then
-        pcall(function() old:Destroy() end)
-    end
+    if old then pcall(function() old:Destroy() end) end
 end
-
 DestroyOldUI("leon4951HubGuiV2")
+DestroyOldUI("leon4951hub")
 
--- [ 1. SERVICES ]
+-- [ SERVICES ]
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local AvatarEditorService = game:GetService("AvatarEditorService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local InsertService = game:GetService("InsertService")
 local HttpService = game:GetService("HttpService")
 
--- [ 2. CONFIGURASI & THEME ]
+local playerGui = player:WaitForChild("PlayerGui")
+local GEN = (tonumber(playerGui:GetAttribute("leon_gen")) or 0) + 1
+playerGui:SetAttribute("leon_gen", GEN)
+local function stale()
+	return playerGui:GetAttribute("leon_gen") ~= GEN
+end
+
+local REMOTE_NAME = "AvatarStudioApply"
+local PAGE_SIZE = 30
+
+
+-- [2] TABEL TIPE ITEM
+----------------------------------------------------------------------------
+local CLASSIC = {
+	[11] = "Shirt", [12] = "Pants", [2] = "GraphicTShirt", [18] = "Face",
+	[17] = "Head", [27] = "Torso", [28] = "RightArm", [29] = "LeftArm",
+	[30] = "LeftLeg", [31] = "RightLeg",
+	[48] = "ClimbAnimation", [50] = "FallAnimation", [51] = "IdleAnimation",
+	[52] = "JumpAnimation", [53] = "RunAnimation", [54] = "SwimAnimation",
+	[55] = "WalkAnimation", [78] = "MoodAnimation",
+}
+
+local ACC = {
+	[8] = { "Hat", false }, [41] = { "Hair", false }, [42] = { "Face", false },
+	[43] = { "Neck", false }, [44] = { "Shoulder", false }, [45] = { "Front", false },
+	[46] = { "Back", false }, [47] = { "Waist", false },
+	[64] = { "TShirt", true }, [65] = { "Shirt", true }, [66] = { "Pants", true },
+	[67] = { "Jacket", true }, [68] = { "Sweater", true }, [69] = { "Shorts", true },
+	[70] = { "LeftShoe", true }, [71] = { "RightShoe", true }, [72] = { "DressSkirt", true },
+	[76] = { "Eyebrow", false }, [77] = { "Eyelash", false },
+}
+
+local ANIM_SLOT = {
+	[51] = { "idle", { "Animation1", "Animation2" } },
+	[55] = { "walk", { "WalkAnim" } },
+	[53] = { "run", { "RunAnim" } },
+	[52] = { "jump", { "JumpAnim" } },
+	[50] = { "fall", { "FallAnim" } },
+	[48] = { "climb", { "ClimbAnim" } },
+	[54] = { "swim", { "Swim" } },
+}
+
+local NAME2TID = {
+	Hat = 8, HairAccessory = 41, FaceAccessory = 42, NeckAccessory = 43, ShoulderAccessory = 44,
+	FrontAccessory = 45, BackAccessory = 46, WaistAccessory = 47, TShirtAccessory = 64, ShirtAccessory = 65,
+	PantsAccessory = 66, JacketAccessory = 67, SweaterAccessory = 68, ShortsAccessory = 69,
+	LeftShoeAccessory = 70, RightShoeAccessory = 71, DressSkirtAccessory = 72, EyebrowAccessory = 76,
+	EyelashAccessory = 77, Shirt = 11, Pants = 12, TShirt = 2, Face = 18, Head = 17, Torso = 27,
+	RightArm = 28, LeftArm = 29, LeftLeg = 30, RightLeg = 31, ClimbAnimation = 48, FallAnimation = 50,
+	IdleAnimation = 51, JumpAnimation = 52, RunAnimation = 53, SwimAnimation = 54, WalkAnimation = 55,
+	MoodAnimation = 78,
+}
+
+local SERIAL_PROPS = {
+	"Shirt", "Pants", "GraphicTShirt", "Face", "Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg",
+	"ClimbAnimation", "FallAnimation", "IdleAnimation", "JumpAnimation", "RunAnimation", "SwimAnimation",
+	"WalkAnimation", "MoodAnimation",
+	"HeadColor", "TorsoColor", "LeftArmColor", "RightArmColor", "LeftLegColor", "RightLegColor",
+	"HeightScale", "WidthScale", "DepthScale", "HeadScale", "ProportionScale", "BodyTypeScale",
+}
+
+local SCALE_VALUES = {
+	Height = "BodyHeightScale", Width = "BodyWidthScale", Depth = "BodyDepthScale",
+	Head = "HeadScale", Proportion = "BodyProportionScale", BodyType = "BodyTypeScale",
+}
+local SCALE_DESC = {
+	Height = "HeightScale", Width = "WidthScale", Depth = "DepthScale",
+	Head = "HeadScale", Proportion = "ProportionScale", BodyType = "BodyTypeScale",
+}
+local SKIN_NAME = "AS_Skin"
+local LIMBS = { "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+	"RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", "Torso",
+	"Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+local function isBodyPart(name)
+	if name == "Head" then
+		return true
+	end
+	for _, n in ipairs(LIMBS) do
+		if n == name then
+			return true
+		end
+	end
+	return false
+end
+local BODY_COLOR_PROPS = {
+	"HeadColor3", "TorsoColor3", "LeftArmColor3", "RightArmColor3", "LeftLegColor3", "RightLegColor3",
+}
+
+----------------------------------------------------------------------------
+-- [3] TEMA + HELPER UI
+----------------------------------------------------------------------------
+local function rgb(r, g, b)
+	return Color3.fromRGB(r, g, b)
+end
+
+local T = {
+	Bg = rgb(13, 14, 21), Surface = rgb(21, 23, 33), Surface2 = rgb(31, 34, 49),
+	Hover = rgb(42, 46, 66), Stroke = rgb(46, 50, 70), Text = rgb(240, 242, 250),
+	Dim = rgb(146, 152, 178), Accent = rgb(108, 118, 255), Ok = rgb(72, 199, 142),
+	Danger = rgb(238, 84, 100), Warn = rgb(245, 184, 68),
+}
+
+local function mk(class, props, kids)
+	local o = Instance.new(class)
+	local parent
+	for k, v in pairs(props or {}) do
+		if k == "Parent" then
+			parent = v
+		else
+			o[k] = v
+		end
+	end
+	for _, c in ipairs(kids or {}) do
+		c.Parent = o
+	end
+	if parent then
+		o.Parent = parent
+	end
+	return o
+end
+
+local function tween(o, props, t, style)
+	local tw = TweenService:Create(o, TweenInfo.new(t or 0.2, style or Enum.EasingStyle.Quint), props)
+	tw:Play()
+	return tw
+end
+
+local function corner(o, r)
+	return mk("UICorner", { CornerRadius = UDim.new(0, r or 8), Parent = o })
+end
+
+local function stroke(o, color, th, tr)
+	return mk("UIStroke", {
+		Color = color or T.Stroke, Thickness = th or 1, Transparency = tr or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = o,
+	})
+end
+
+local function pad(o, l, t, r, b)
+	return mk("UIPadding", {
+		PaddingLeft = UDim.new(0, l or 0), PaddingTop = UDim.new(0, t or l or 0),
+		PaddingRight = UDim.new(0, r or l or 0), PaddingBottom = UDim.new(0, b or t or l or 0),
+		Parent = o,
+	})
+end
+
+local function vlist(o, gap)
+	return mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, gap or 0), Parent = o,
+	})
+end
+
+local function label(parent, text, size, color, font, xalign)
+	return mk("TextLabel", {
+		BackgroundTransparency = 1, Text = text or "", TextSize = size or 14, TextColor3 = color or T.Text,
+		Font = font or Enum.Font.GothamMedium, TextXAlignment = xalign or Enum.TextXAlignment.Left,
+		Size = UDim2.new(1, 0, 0, (size or 14) + 6), Parent = parent,
+	})
+end
+
+local function button(parent, o)
+	local bg = o.bg or T.Surface2
+	local b = mk("TextButton", {
+		AutoButtonColor = false, Text = o.text or "", TextSize = o.textSize or 14, Font = Enum.Font.GothamBold,
+		TextColor3 = o.color or T.Text, BackgroundColor3 = bg, BorderSizePixel = 0,
+		Size = o.size or UDim2.new(1, 0, 0, 36), Position = o.position or UDim2.new(),
+		AnchorPoint = o.anchor or Vector2.zero, LayoutOrder = o.order or 0, Parent = parent,
+	})
+	corner(b, o.radius or 10)
+	b.MouseEnter:Connect(function()
+		tween(b, { BackgroundColor3 = bg:Lerp(Color3.new(1, 1, 1), 0.12) }, 0.12)
+	end)
+	b.MouseLeave:Connect(function()
+		tween(b, { BackgroundColor3 = bg }, 0.15)
+	end)
+	if o.onClick then
+		b.Activated:Connect(o.onClick)
+	end
+	return b
+end
+
+local function makeScroll(parent, size, position)
+	return mk("ScrollingFrame", {
+		Size = size or UDim2.new(1, 0, 1, 0), Position = position or UDim2.new(), BackgroundTransparency = 1,
+		BorderSizePixel = 0, ScrollBarThickness = 4, ScrollBarImageColor3 = T.Dim,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+		ScrollingDirection = Enum.ScrollingDirection.Y, Parent = parent,
+	})
+end
+
+local function thumbURL(kind, id, size)
+	size = size or 150
+	return string.format("rbxthumb://type=%s&id=%d&w=%d&h=%d", kind, id, size, size)
+end
+
+local function commas(n)
+	local s = tostring(math.floor(n))
+	local r = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return (r:gsub("^,", ""))
+end
+
+local function priceText(p)
+	if p == nil then
+		return "Tidak dijual"
+	elseif p == 0 then
+		return "Gratis"
+	end
+	return "R$ " .. commas(p)
+end
+
+local function safeEnum(enumType, name)
+	local ok, v = pcall(function()
+		return enumType[name]
+	end)
+	if ok then
+		return v
+	end
+	return nil
+end
+
+local function getProp(desc, key)
+	local ok, v = pcall(function()
+		return desc[key]
+	end)
+	if ok then
+		return v
+	end
+	return nil
+end
+
+local function setProp(desc, key, value)
+	pcall(function()
+		desc[key] = value
+	end)
+end
+
+----------------------------------------------------------------------------
+-- [3b] KOMPATIBILITAS API  (Roblox v702, Des 2025: banyak fungsi diganti *Async)
+----------------------------------------------------------------------------
+local function callAny(obj, names, ...)
+	local lastErr = "metode tidak ditemukan"
+	local args = table.pack(...)
+	for _, name in ipairs(names) do
+		local okF, f = pcall(function()
+			return obj[name]
+		end)
+		if okF and type(f) == "function" then
+			local ok, res = pcall(function()
+				return f(obj, table.unpack(args, 1, args.n))
+			end)
+			if ok then
+				return true, res, name
+			end
+			lastErr = name .. ": " .. tostring(res)
+		else
+			lastErr = name .. " tidak ada"
+		end
+	end
+	return false, lastErr
+end
+
+local function hasMember(obj, name)
+	local ok, v = pcall(function()
+		return obj[name]
+	end)
+	return ok and type(v) == "function"
+end
+
+local function productInfo(id, infoType)
+	local ok, res = callAny(MarketplaceService, { "GetProductInfoAsync", "GetProductInfo" }, id, infoType)
+	if ok then
+		return res
+	end
+	return nil
+end
+
+local function descFromUser(uid)
+	local ok, res = callAny(Players, { "GetHumanoidDescriptionFromUserIdAsync", "GetHumanoidDescriptionFromUserId" }, uid)
+	if ok and res then
+		return res
+	end
+	return nil, res
+end
+
+local function descFromOutfit(id)
+	local ok, res = callAny(Players, { "GetHumanoidDescriptionFromOutfitIdAsync", "GetHumanoidDescriptionFromOutfitId" }, id)
+	if ok and res then
+		return res
+	end
+	return nil
+end
+
+local function batchDetails(ids, itemType)
+	return callAny(AvatarEditorService, { "GetBatchItemDetailsAsync", "GetBatchItemDetails" }, ids, itemType)
+end
+
+local function appliedDesc(hum)
+	local ok, d = callAny(hum, { "GetAppliedDescriptionAsync", "GetAppliedDescription" })
+	if ok and d then
+		return d
+	end
+	local d2 = descFromUser(player.UserId)
+	if d2 then
+		return d2
+	end
+	return Instance.new("HumanoidDescription")
+end
+
+local function urlenc(str)
+	return (tostring(str):gsub("[^%w%-_%.~]", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end))
+end
+
+-- ambil URL lewat: game:HttpGet (executor) -> request/http_request -> HttpService
+local function httpGet(url)
+	local why = {}
+	local okG, body = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if okG and type(body) == "string" and #body > 0 then
+		return body
+	end
+	table.insert(why, "HttpGet: " .. tostring(okG and "kosong" or body))
+	local req = (syn and syn.request) or request or http_request or (http and http.request) or (fluxus and fluxus.request)
+	if req then
+		local okR, res = pcall(function()
+			return req({ Url = url, Method = "GET" })
+		end)
+		if okR and type(res) == "table" and res.Body and (res.Success or res.StatusCode == 200) then
+			return res.Body
+		end
+		table.insert(why, "request: " .. tostring(okR and ("status " .. tostring(res and res.StatusCode)) or res))
+	else
+		table.insert(why, "request: tidak ada")
+	end
+	local okH, b2 = pcall(function()
+		return HttpService:GetAsync(url)
+	end)
+	if okH and type(b2) == "string" then
+		return b2
+	end
+	table.insert(why, "HttpService: " .. tostring(b2))
+	return nil, table.concat(why, " | ")
+end
+
+----------------------------------------------------------------------------
+-- [4] TOAST
+----------------------------------------------------------------------------
+local LOG = {}
+local logHook = nil
+
+local function logf(fmt, ...)
+	local line
+	if select("#", ...) > 0 then
+		local ok, r = pcall(string.format, fmt, ...)
+		line = ok and r or tostring(fmt)
+	else
+		line = tostring(fmt)
+	end
+	line = os.date("%H:%M:%S") .. "  " .. line
+	table.insert(LOG, line)
+	while #LOG > 500 do
+		table.remove(LOG, 1)
+	end
+	print("[leon4951hub] " .. line)
+	if logHook then
+		pcall(logHook)
+	end
+end
+
+local toastHolder
+
+local function toast(text, kind)
+	logf("%s", tostring(text))
+	if not toastHolder then
+		return
+	end
+	local col = ({ danger = T.Danger, warn = T.Warn, ok = T.Ok })[kind or ""] or T.Accent
+	local f = mk("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.Surface2,
+		BackgroundTransparency = 1, TextColor3 = T.Text, TextTransparency = 1, Font = Enum.Font.GothamMedium,
+		TextSize = 14, TextWrapped = true, Text = tostring(text), Parent = toastHolder,
+	})
+	corner(f, 10)
+	pad(f, 14, 9, 14, 9)
+	local st = stroke(f, col, 2, 1)
+	tween(f, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.2)
+	tween(st, { Transparency = 0 }, 0.2)
+	task.delay((kind == "danger" or kind == "warn") and 7 or 3, function()
+		if f.Parent then
+			tween(f, { BackgroundTransparency = 1, TextTransparency = 1 }, 0.3)
+			tween(st, { Transparency = 1 }, 0.3)
+			task.wait(0.35)
+			f:Destroy()
+		end
+	end)
+end
+
+----------------------------------------------------------------------------
+-- [5] ENGINE AVATAR  (inti: membuat item benar-benar muncul di karakter)
+----------------------------------------------------------------------------
+local E = {
+	look = nil,
+	original = nil,
+	failed = {},
+	types = {}, names = {},
+	history = {}, redo = {},
+	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {},
+	scales = {}, skin = nil, origColors = nil,
+	listeners = {},
+}
+
+function E.onChanged(fn)
+	table.insert(E.listeners, fn)
+end
+
+local function fire()
+	for _, fn in ipairs(E.listeners) do
+		task.spawn(fn)
+	end
+end
+
+function E.humanoid()
+	local char = player.Character or player.CharacterAdded:Wait()
+	return char:WaitForChild("Humanoid"), char
+end
+
+function E.assetType(id)
+	if E.types[id] then
+		return E.types[id]
+	end
+	local info = productInfo(id, Enum.InfoType.Asset)
+	if info then
+		E.types[id] = info.AssetTypeId
+		E.names[id] = E.names[id] or info.Name
+		return info.AssetTypeId
+	end
+	return nil
+end
+
+function E.name(id)
+	if not E.names[id] then
+		E.assetType(id)
+	end
+	return E.names[id] or ("Item #" .. id)
+end
+
+local function collect(desc)
+	local set, list = {}, {}
+	if not desc then
+		return set, list
+	end
+	local ok, accs = pcall(function()
+		return desc:GetAccessories(true)
+	end)
+	if ok then
+		for _, a in ipairs(accs) do
+			set[a.AssetId] = true
+			table.insert(list, { Id = a.AssetId, Label = a.AccessoryType.Name .. (a.IsLayered and " (layered)" or "") })
+		end
+	end
+	for _, prop in pairs(CLASSIC) do
+		local v = getProp(desc, prop)
+		if type(v) == "number" and v > 0 and not set[v] then
+			set[v] = true
+			table.insert(list, { Id = v, Label = prop })
+		end
+	end
+	table.sort(list, function(a, b)
+		return a.Id < b.Id
+	end)
+	return set, list
+end
+
+function E.isWorn(id)
+	local set = collect(E.look)
+	return set[id] == true
+end
+
+function E.wornList()
+	local _, list = collect(E.look)
+	return list
+end
+
+local function removeFromDesc(desc, id)
+	local out = {}
+	for _, a in ipairs(desc:GetAccessories(true)) do
+		if a.AssetId ~= id then
+			table.insert(out, a)
+		end
+	end
+	desc:SetAccessories(out, true)
+	for _, prop in pairs(CLASSIC) do
+		if getProp(desc, prop) == id then
+			setProp(desc, prop, 0)
+		end
+	end
+end
+
+local function addToDesc(desc, id, tid)
+	local acc = ACC[tid]
+	if acc then
+		local typeName, layered = acc[1], acc[2]
+		local enumVal = safeEnum(Enum.AccessoryType, typeName)
+		if not enumVal then
+			return false
+		end
+		local out, order = {}, 1
+		for _, a in ipairs(desc:GetAccessories(true)) do
+			local drop = a.AssetId == id
+			if (layered or typeName == "Eyebrow" or typeName == "Eyelash") and a.AccessoryType == enumVal then
+				drop = true
+			end
+			if not drop then
+				table.insert(out, a)
+				if a.Order and a.Order >= order then
+					order = a.Order + 1
+				end
+			end
+		end
+		table.insert(out, { AssetId = id, AccessoryType = enumVal, IsLayered = layered, Order = order })
+		desc:SetAccessories(out, true)
+		return true
+	end
+	local prop = CLASSIC[tid]
+	if prop then
+		setProp(desc, prop, id)
+		return true
+	end
+	return false
+end
+
+local function mergeDescription(base, other)
+	for _, prop in pairs(CLASSIC) do
+		local v = getProp(other, prop)
+		if type(v) == "number" and v > 0 then
+			setProp(base, prop, v)
+		end
+	end
+	local okO, otherAccs = pcall(function()
+		return other:GetAccessories(true)
+	end)
+	if not okO then
+		return
+	end
+	local baseAccs = base:GetAccessories(true)
+	for _, oa in ipairs(otherAccs) do
+		local out = {}
+		for _, ba in ipairs(baseAccs) do
+			local sameSlot = oa.IsLayered and ba.IsLayered and ba.AccessoryType == oa.AccessoryType
+			if ba.AssetId ~= oa.AssetId and not sameSlot then
+				table.insert(out, ba)
+			end
+		end
+		table.insert(out, oa)
+		baseAccs = out
+	end
+	base:SetAccessories(baseAccs, true)
+end
+
+local function serialize(desc)
+	local t = { props = {}, accs = {} }
+	for _, k in ipairs(SERIAL_PROPS) do
+		local v = getProp(desc, k)
+		if v ~= nil then
+			t.props[k] = v
+		end
+	end
+	local ok, list = pcall(function()
+		return desc:GetAccessories(true)
+	end)
+	if ok then
+		for _, a in ipairs(list) do
+			table.insert(t.accs, {
+				AssetId = a.AssetId, AccessoryType = a.AccessoryType.Name,
+				IsLayered = a.IsLayered, Order = a.Order or 1,
+			})
+		end
+	end
+	return t
+end
+
+function E.withoutFailed(desc)
+	local d = desc:Clone()
+	for id in pairs(E.failed) do
+		removeFromDesc(d, id)
+	end
+	return d
+end
+
+------------------------------------------------------------------------
+-- INJECTOR (jalur cadangan): muat aset lalu pasang langsung ke karakter
+------------------------------------------------------------------------
+local function donorModel(desc)
+	local hum = E.humanoid()
+	local rig = (hum.RigType == Enum.HumanoidRigType.R6) and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
+	local ok, m = callAny(Players, { "CreateHumanoidModelFromDescriptionAsync", "CreateHumanoidModelFromDescription" }, desc, rig)
+	if ok and m then
+		return m
+	end
+	logf("donor rig gagal: %s", tostring(m))
+	return nil
+end
+
+local function loadAsset(id, tid)
+	if E.cap.getObjects ~= false then
+		local ok, objs = pcall(function()
+			return game:GetObjects("rbxassetid://" .. tostring(id))
+		end)
+		if ok and type(objs) == "table" and #objs > 0 then
+			return objs, "GetObjects"
+		end
+		logf("GetObjects gagal untuk %s: %s", tostring(id), ok and "hasil kosong" or tostring(objs))
+	end
+	if E.cap.insert ~= false then
+		local ok2, model = pcall(function()
+			return InsertService:LoadAsset(id)
+		end)
+		if ok2 and model then
+			return { model }, "LoadAsset"
+		end
+		logf("LoadAsset gagal untuk %s: %s", tostring(id), ok2 and "kosong" or tostring(model))
+	end
+	if E.cap.donor ~= false and tid then
+		local d = Instance.new("HumanoidDescription")
+		if addToDesc(d, id, tid) then
+			local m = donorModel(d)
+			if m then
+				return { m }, "donor"
+			end
+		end
+	end
+	return nil
+end
+
+local function findIn(objs, class)
+	for _, o in ipairs(objs) do
+		if o:IsA(class) then
+			return o
+		end
+		local d = o:FindFirstChildWhichIsA(class, true)
+		if d then
+			return d
+		end
+	end
+	return nil
+end
+
+local function restartAnimate(char, hum)
+	local animate = char:FindFirstChild("Animate")
+	if not animate then
+		return
+	end
+	pcall(function()
+		animate.Disabled = true
+		local animator = hum:FindFirstChildOfClass("Animator")
+		if animator then
+			for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
+				tr:Stop(0)
+			end
+		end
+		task.wait()
+		animate.Disabled = false
+	end)
+end
+
+local function findBodyAttachment(char, name)
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("Attachment") and d.Name == name and d.Parent and d.Parent:IsA("BasePart") then
+			return d
+		end
+	end
+	return nil
+end
+
+local function attachAccessory(acc, char)
+	local handle = acc:FindFirstChild("Handle")
+	if not handle or not handle:IsA("BasePart") then
+		acc.Parent = char
+		return false, "Accessory tidak punya Handle"
+	end
+	for _, w in ipairs(handle:GetChildren()) do
+		if w.Name == "AccessoryWeld" then
+			w:Destroy()
+		end
+	end
+	handle.Anchored = false
+	handle.CanCollide = false
+	handle.Massless = true
+	local part1, c0, c1
+	for _, att in ipairs(handle:GetChildren()) do
+		if att:IsA("Attachment") then
+			local target = findBodyAttachment(char, att.Name)
+			if target then
+				part1, c0, c1 = target.Parent, att.CFrame, target.CFrame
+				break
+			end
+		end
+	end
+	local how = "attachment"
+	if not part1 then
+		how = "cadangan"
+		local layered = acc:FindFirstChildWhichIsA("WrapLayer", true) ~= nil
+		if layered then
+			part1 = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+			c0, c1 = CFrame.new(), CFrame.new()
+		else
+			part1 = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+			if part1 then
+				c0, c1 = CFrame.new(), CFrame.new(0, part1.Size.Y / 2, 0)
+			end
+		end
+		if not part1 then
+			acc.Parent = char
+			return false, "tidak ada bagian tubuh untuk dilas"
+		end
+	end
+	local w = Instance.new("Weld")
+	w.Name = "AccessoryWeld"
+	w.Part0 = handle
+	w.Part1 = part1
+	w.C0 = c0
+	w.C1 = c1
+	handle.CFrame = part1.CFrame * c1 * c0:Inverse()
+	acc.Parent = char
+	w.Parent = handle
+	return true, how
+end
+
+local function harvestAccessory(donorAcc, char)
+	local c = donorAcc:Clone()
+	c:SetAttribute("ASU", true)
+	local dh, ch = donorAcc:FindFirstChild("Handle"), c:FindFirstChild("Handle")
+	local wired = false
+	if dh and ch then
+		local dw = dh:FindFirstChild("AccessoryWeld") or dh:FindFirstChildWhichIsA("Weld")
+		local cw = ch:FindFirstChild("AccessoryWeld") or ch:FindFirstChildWhichIsA("Weld")
+		if dw and cw and dw.Part1 then
+			local tgt = char:FindFirstChild(dw.Part1.Name) or char:FindFirstChild(dw.Part1.Name, true)
+			if tgt and tgt:IsA("BasePart") then
+				cw.Part0 = ch
+				cw.Part1 = tgt
+				wired = true
+			end
+		end
+	end
+	if wired then
+		c.Parent = char
+	else
+		local ok, how = attachAccessory(c, char)
+		if not ok then
+			logf("las aksesori gagal: %s", tostring(how))
+		end
+	end
+	return c
+end
+
+local function copyBodyParts(model, char)
+	for _, dp in ipairs(model:GetChildren()) do
+		if dp:IsA("MeshPart") and dp.Name ~= "HumanoidRootPart" then
+			local cp = char:FindFirstChild(dp.Name)
+			if cp and cp:IsA("MeshPart") then
+				pcall(function()
+					if dp.MeshId ~= "" and cp.MeshId ~= dp.MeshId then
+						cp.MeshId = dp.MeshId
+					end
+					cp.TextureID = dp.TextureID
+				end)
+				pcall(function()
+					for _, x in ipairs(cp:GetChildren()) do
+						if x:IsA("SurfaceAppearance") then
+							x:Destroy()
+						end
+					end
+					local sa = dp:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						sa:Clone().Parent = cp
+					end
+				end)
+			end
+		end
+	end
+end
+
+local function pickAnim(anims, name, i)
+	local lname = string.lower(name)
+	for _, a in ipairs(anims) do
+		if string.lower(a.Name) == lname then
+			return a
+		end
+	end
+	return anims[i] or anims[1]
+end
+
+local function injectCore(id, tid, objs, kind)
+	local hum, char = E.humanoid()
+	local tag = "AS_" .. tostring(id)
+
+	if ACC[tid] then
+		local acc = findIn(objs, "Accessory")
+		if not acc then
+			E.lastInjectErr = "aset bukan Accessory"
+			return false
+		end
+		local c
+		if kind == "donor" then
+			c = harvestAccessory(acc, char)
+			c:SetAttribute("ASU", nil)
+		else
+			c = acc:Clone()
+			local okA, how = attachAccessory(c, char)
+			if not okA then
+				E.lastInjectErr = tostring(how)
+			end
+		end
+		c.Name = tag
+		c:SetAttribute("AS", id)
+		return c.Parent == char
+	elseif tid == 11 or tid == 12 or tid == 2 then
+		local class = (tid == 11 and "Shirt") or (tid == 12 and "Pants") or "ShirtGraphic"
+		local inst = findIn(objs, class)
+		if not inst then
+			return false
+		end
+		for _, ch in ipairs(char:GetChildren()) do
+			if ch:IsA(class) then
+				ch:Destroy()
+			end
+		end
+		local c = inst:Clone()
+		c.Name = tag
+		c:SetAttribute("AS", id)
+		c.Parent = char
+		return true
+	elseif tid == 18 then
+		local decal = findIn(objs, "Decal")
+		local head = char:FindFirstChild("Head")
+		if not decal or not head then
+			return false
+		end
+		local face = head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal")
+		if not face then
+			face = Instance.new("Decal")
+			face.Name = "face"
+			face.Parent = head
+		end
+		face.Texture = decal.Texture
+		char:SetAttribute("ASX_" .. tostring(id), true)
+		return true
+	elseif ANIM_SLOT[tid] then
+		local animate = char:FindFirstChild("Animate")
+		if not animate then
+			return false
+		end
+		local slot = ANIM_SLOT[tid]
+		local folder = animate:FindFirstChild(slot[1])
+		if not folder then
+			E.lastInjectErr = "karakter tidak punya folder animasi '" .. slot[1] .. "'"
+			return false
+		end
+		if kind == "donor" then
+			local dan = objs[1]:FindFirstChild("Animate")
+			local df = dan and dan:FindFirstChild(slot[1])
+			if not df then
+				E.lastInjectErr = "donor rig tanpa Animate"
+				return false
+			end
+			E.animState = E.animState or {}
+			local rec2 = {}
+			for _, name in ipairs(slot[2]) do
+				local src, target = df:FindFirstChild(name), folder:FindFirstChild(name)
+				if src and target and src:IsA("Animation") then
+					target.AnimationId = src.AnimationId
+					table.insert(rec2, { target, src.AnimationId })
+				end
+			end
+			if #rec2 == 0 then
+				E.lastInjectErr = "slot animasi kosong"
+				return false
+			end
+			E.animState[id] = rec2
+			restartAnimate(char, hum)
+			char:SetAttribute("ASX_" .. tostring(id), true)
+			return true
+		end
+		local anims = {}
+		for _, o in ipairs(objs) do
+			if o:IsA("Animation") then
+				table.insert(anims, o)
+			end
+			for _, d in ipairs(o:GetDescendants()) do
+				if d:IsA("Animation") then
+					table.insert(anims, d)
+				end
+			end
+		end
+		if #anims == 0 then
+			return false
+		end
+		E.animState = E.animState or {}
+		local rec = {}
+		for i, name in ipairs(slot[2]) do
+			local target = folder:FindFirstChild(name)
+			local src = pickAnim(anims, name, i)
+			if target and src then
+				target.AnimationId = src.AnimationId
+				table.insert(rec, { target, src.AnimationId })
+			end
+		end
+		E.animState[id] = rec
+		restartAnimate(char, hum)
+		char:SetAttribute("ASX_" .. tostring(id), true)
+		return true
+	end
+	E.lastInjectErr = "tipe item ini tidak bisa dipasang lewat injector (bodypart hanya native/server)"
+	return false
+end
+
+function E.inject(id, tid)
+	E.lastInjectErr = nil
+	local objs, kind = loadAsset(id, tid)
+	if not objs then
+		E.lastInjectErr = "semua pemuat gagal (GetObjects, LoadAsset, donor rig)"
+		logf("inject %s gagal: %s", tostring(id), E.lastInjectErr)
+		return false
+	end
+	local ok, res = pcall(injectCore, id, tid, objs, kind)
+	if kind == "donor" then
+		pcall(function()
+			objs[1]:Destroy()
+		end)
+	end
+	if not ok then
+		E.lastInjectErr = tostring(res)
+		res = false
+	end
+	if not res and not E.lastInjectErr then
+		E.lastInjectErr = "aset termuat tapi bentuknya tidak sesuai / tidak menempel di karakter"
+	end
+	logf("inject %s (tipe %s) via %s -> %s%s", tostring(id), tostring(tid), kind, res and "BERHASIL" or "GAGAL",
+		(not res and E.lastInjectErr) and (" : " .. E.lastInjectErr) or "")
+	return res and true or false
+end
+
+function E.cleanInjected(char)
+	for _, ch in ipairs(char:GetChildren()) do
+		if ch:GetAttribute("AS") then
+			ch:Destroy()
+		end
+	end
+	for name in pairs(char:GetAttributes()) do
+		if string.sub(name, 1, 4) == "ASX_" then
+			char:SetAttribute(name, nil)
+		end
+	end
+end
+
+function E.hookChar(char)
+	local pending = false
+	char.ChildRemoved:Connect(function(ch)
+		if ch:GetAttribute("AS") and not pending then
+			pending = true
+			task.delay(0.15, function()
+				pending = false
+				if E.injectFirst and not E.remote and not E.busy then
+					pcall(E.guard)
+				end
+			end)
+		end
+	end)
+end
+
+function E.guard()
+	if stale() then
+		return
+	end
+	local char = player.Character
+	if E.busy or not char or not char:FindFirstChildOfClass("Humanoid") or not E.look then
+		return
+	end
+	local nowSet = collect(E.look)
+	local present = {}
+	for _, ch in ipairs(char:GetChildren()) do
+		local a = ch:GetAttribute("AS")
+		if a then
+			present[a] = true
+		end
+	end
+	for id in pairs(E.failed) do
+		local intact = present[id] or (char:GetAttribute("ASX_" .. tostring(id)) ~= nil)
+		local rec = E.animState and E.animState[id]
+		if rec and char:GetAttribute("ASX_" .. tostring(id)) then
+			for _, r in ipairs(rec) do
+				if not r[1]:IsDescendantOf(char) or r[1].AnimationId ~= r[2] then
+					intact = false
+					char:SetAttribute("ASX_" .. tostring(id), nil)
+					break
+				end
+			end
+		end
+		if nowSet[id] and not intact then
+			local tid = E.assetType(id)
+			if tid then
+				E.inject(id, tid)
+			end
+		end
+	end
+	if not E.remote and E.skinActive and not char:FindFirstChild(SKIN_NAME) and os.clock() - (E.lastRenderAt or 0) > 6 then
+		E.lastRenderAt = os.clock()
+		task.spawn(E.rerender)
+	end
+	if not E.remote and (E.rendered or 0) > 0 and os.clock() - (E.lastRenderAt or 0) > 6 then
+		local have = 0
+		for _, ch in ipairs(char:GetChildren()) do
+			if ch:IsA("Accessory") and ch:GetAttribute("ASU") then
+				have = have + 1
+			end
+		end
+		if have < E.rendered then
+			E.lastRenderAt = os.clock()
+			task.spawn(E.rerender)
+		end
+	end
+end
+
+local function countAccessories(char)
+	local n = 0
+	for _, ch in ipairs(char:GetChildren()) do
+		if ch:IsA("Accessory") and not ch:GetAttribute("AS") then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+local function waitAccessories(char, expected, timeout)
+	local t0 = os.clock()
+	local have = countAccessories(char)
+	while have < expected and os.clock() - t0 < timeout do
+		task.wait(0.2)
+		have = countAccessories(char)
+	end
+	return have
+end
+
+------------------------------------------------------------------------
+-- COMMIT: terapkan "look" baru ke karakter + verifikasi
+------------------------------------------------------------------------
+local function serverApply(desc)
+	local okI, r = pcall(function()
+		return E.remote:InvokeServer(serialize(desc))
+	end)
+	if okI and type(r) == "table" and r.ok then
+		if r.missing then
+			for _, mid in ipairs(r.missing) do
+				E.failed[mid] = true
+			end
+		end
+		return true
+	end
+	return false, okI and (type(r) == "table" and r.err or tostring(r)) or tostring(r)
+end
+
+local function matchAttachment(cp, dp)
+	for _, da in ipairs(dp:GetChildren()) do
+		if da:IsA("Attachment") and string.sub(da.Name, -13) == "RigAttachment" then
+			local ca = cp:FindFirstChild(da.Name)
+			if ca and ca:IsA("Attachment") then
+				return ca, da
+			end
+		end
+	end
+	for _, da in ipairs(dp:GetChildren()) do
+		if da:IsA("Attachment") then
+			local ca = cp:FindFirstChild(da.Name)
+			if ca and ca:IsA("Attachment") then
+				return ca, da
+			end
+		end
+	end
+	return nil
+end
+
+function E.snapAnim(char)
+	E.animOrig = {}
+	local an = char:FindFirstChild("Animate")
+	if not an then
+		return
+	end
+	for _, slot in pairs(ANIM_SLOT) do
+		local f = an:FindFirstChild(slot[1])
+		if f then
+			for _, name in ipairs(slot[2]) do
+				local a = f:FindFirstChild(name)
+				if a and a:IsA("Animation") then
+					E.animOrig[slot[1] .. "/" .. name] = a.AnimationId
+				end
+			end
+		end
+	end
+end
+
+local function copyAnimations(model, char, hum, desc)
+	local dan, can = model:FindFirstChild("Animate"), char:FindFirstChild("Animate")
+	if not (dan and can) then
+		return
+	end
+	E.animChanged = E.animChanged or {}
+	local changed = false
+	for tid, slot in pairs(ANIM_SLOT) do
+		local prop = CLASSIC[tid]
+		local v = prop and getProp(desc, prop)
+		local cf = can:FindFirstChild(slot[1])
+		if cf then
+			if type(v) == "number" and v > 0 then
+				local df = dan:FindFirstChild(slot[1])
+				if df then
+					local srcList = {}
+					for _, a in ipairs(df:GetChildren()) do
+						if a:IsA("Animation") then
+							table.insert(srcList, a)
+						end
+					end
+					for i, name in ipairs(slot[2]) do
+						local b = cf:FindFirstChild(name)
+						local a = df:FindFirstChild(name)
+						if not (a and a:IsA("Animation")) then
+							a = srcList[i] or srcList[1]
+						end
+						if a and b and b:IsA("Animation") then
+							b.AnimationId = a.AnimationId
+							changed = true
+						end
+					end
+					E.animChanged[slot[1]] = true
+				end
+			elseif E.animChanged[slot[1]] then
+				for _, name in ipairs(slot[2]) do
+					local b = cf:FindFirstChild(name)
+					local orig = E.animOrig and E.animOrig[slot[1] .. "/" .. name]
+					if b and orig and b:IsA("Animation") then
+						b.AnimationId = orig
+						changed = true
+					end
+				end
+				E.animChanged[slot[1]] = nil
+			end
+		end
+	end
+	if changed then
+		restartAnimate(char, hum)
+	end
+end
+
+function E.removeSkin()
+	if E.skinConn then
+		E.skinConn:Disconnect()
+		E.skinConn = nil
+	end
+	local char = player.Character
+	if char then
+		local sk = char:FindFirstChild(SKIN_NAME)
+		if sk then
+			sk:Destroy()
+		end
+	end
+	for part, tr in pairs(E.hidden or {}) do
+		pcall(function()
+			part.Transparency = tr
+		end)
+	end
+	if char then
+		for _, d in ipairs(char:GetDescendants()) do
+			local ot = d:GetAttribute("AS_OT")
+			if ot ~= nil then
+				pcall(function()
+					d.Transparency = ot
+				end)
+				d:SetAttribute("AS_OT", nil)
+			end
+		end
+	end
+	E.hidden = {}
+	E.skinActive = false
+end
+
+function E.renderSkinWeld(desc)
+	local hum, char = E.humanoid()
+	local model = donorModel(desc)
+	if not model then
+		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
+	end
+	copyAnimations(model, char, hum, desc)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Motor6D") or d:IsA("LuaSourceContainer") then
+			d:Destroy()
+		end
+	end
+	local nAcc = 0
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			nAcc = nAcc + 1
+		end
+	end
+	local dh = model:FindFirstChildOfClass("Humanoid")
+	if dh then
+		pcall(function()
+			dh.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			dh.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			dh.RequiresNeck = false
+			dh.BreakJointsOnDeath = false
+			dh.EvaluateStateMachine = false
+		end)
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+			d.Massless = true
+		end
+	end
+	E.removeSkin()
+	local welded = 0
+	for _, dp in ipairs(model:GetChildren()) do
+		if dp:IsA("BasePart") then
+			local cp = char:FindFirstChild(dp.Name)
+			if cp and cp:IsA("BasePart") then
+				local c0, c1 = CFrame.new(), CFrame.new()
+				local ca, da = matchAttachment(cp, dp)
+				if ca then
+					c0, c1 = ca.CFrame, da.CFrame
+				end
+				dp.CFrame = cp.CFrame * c0 * c1:Inverse()
+				local w = Instance.new("Weld")
+				w.Name = "AS_SkinWeld"
+				w.Part0 = cp
+				w.Part1 = dp
+				w.C0 = c0
+				w.C1 = c1
+				w.Parent = dp
+				welded = welded + 1
+			else
+				dp.Transparency = 1
+			end
+		end
+	end
+	if welded == 0 then
+		model:Destroy()
+		return false, "tidak ada bagian tubuh yang cocok untuk dilas (rig berbeda?)"
+	end
+	E.hidden = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and not d:FindFirstAncestorOfClass("Tool") then
+			local ot = d:GetAttribute("AS_OT")
+			if ot == nil then
+				ot = d.Transparency
+				d:SetAttribute("AS_OT", ot)
+			end
+			E.hidden[d] = ot
+			d.Transparency = 1
+		end
+	end
+	model.Name = SKIN_NAME
+	model.Parent = char
+	E.skinActive = true
+	E.skinAcc = nAcc
+	E.rendered = 0
+	E.lastRenderAt = os.clock()
+	logf("skin overlay: %d bagian dilas, %d aksesori", welded, nAcc)
+	task.delay(0.2, E.reapplyTweaks)
+	return true
+end
+
+function E.attachDirect(id, host)
+	if not host then
+		return false
+	end
+	local objs
+	local ok, o = pcall(function()
+		return game:GetObjects("rbxassetid://" .. tostring(id))
+	end)
+	if ok and type(o) == "table" and #o > 0 then
+		objs = o
+	else
+		local ok2, m = pcall(function()
+			return InsertService:LoadAsset(id)
+		end)
+		if ok2 and m then
+			objs = { m }
+		end
+	end
+	if not objs then
+		logf("muat langsung %s gagal (GetObjects & LoadAsset ditolak)", tostring(id))
+		return false
+	end
+	local acc = findIn(objs, "Accessory")
+	if not acc then
+		logf("muat langsung %s: aset bukan Accessory", tostring(id))
+		return false
+	end
+	local c = acc:Clone()
+	c.Name = "AS_" .. tostring(id)
+	local okA, how = attachAccessory(c, host)
+	logf("muat langsung %s -> %s (%s)", tostring(id), tostring(okA), tostring(how))
+	return okA
+end
+
+local function donorHas(id, tid)
+	local d = Instance.new("HumanoidDescription")
+	if not addToDesc(d, id, tid) then
+		return false
+	end
+	local m = donorModel(d)
+	if not m then
+		return false
+	end
+	local has = m:FindFirstChildOfClass("Accessory") ~= nil
+	pcall(function()
+		m:Destroy()
+	end)
+	return has
+end
+
+local function directFallback(desc, added, model, nAcc)
+	local expected = #desc:GetAccessories(true)
+	if nAcc >= expected then
+		return 0, {}
+	end
+	local dset = collect(desc)
+	local cand = {}
+	for id in pairs(E.directIds) do
+		if dset[id] then
+			cand[id] = true
+		end
+	end
+	for _, id in ipairs(added or {}) do
+		cand[id] = true
+	end
+	local n, failed = 0, {}
+	for id in pairs(cand) do
+		local tid = E.assetType(id)
+		if tid and ACC[tid] then
+			if not E.directIds[id] and donorHas(id, tid) then
+				logf("aksesori %s dimuat donor sendiri", tostring(id))
+			elseif E.attachDirect(id, model) then
+				E.directIds[id] = true
+				n = n + 1
+			else
+				logf("aksesori %s DITOLAK: donor membuangnya & muat langsung gagal", tostring(id))
+				table.insert(failed, id)
+			end
+		end
+	end
+	return n, failed
+end
+
+function E.renderSkinPuppet(desc, added)
+	local hum, char = E.humanoid()
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return false, "karakter tanpa HumanoidRootPart"
+	end
+	local model = donorModel(desc)
+	if not model then
+		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
+	end
+	local dhrp = model:FindFirstChild("HumanoidRootPart")
+	if not dhrp then
+		model:Destroy()
+		return false, "donor tanpa HumanoidRootPart"
+	end
+	copyAnimations(model, char, hum, desc)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("LuaSourceContainer") then
+			d:Destroy()
+		end
+	end
+	local nAcc = 0
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			nAcc = nAcc + 1
+		end
+	end
+	local dh = model:FindFirstChildOfClass("Humanoid")
+	if dh then
+		pcall(function()
+			dh.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			dh.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			dh.BreakJointsOnDeath = false
+			dh.EvaluateStateMachine = false
+		end)
+		pcall(function()
+			dh:ChangeState(Enum.HumanoidStateType.Physics)
+		end)
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+			d.Massless = true
+		end
+	end
+	local offY = 0
+	if hum.RigType == Enum.HumanoidRigType.R15 and dh then
+		local okH, v = pcall(function()
+			return (dh.HipHeight + dhrp.Size.Y / 2) - (hum.HipHeight + hrp.Size.Y / 2)
+		end)
+		if okH and type(v) == "number" and math.abs(v) <= 6 then
+			offY = v
+		end
+	end
+	E.removeSkin()
+	if not model.PrimaryPart then
+		model.PrimaryPart = dhrp
+	end
+	model:PivotTo(hrp.CFrame * CFrame.new(0, offY, 0))
+	local w = Instance.new("Weld")
+	w.Name = "AS_SkinWeld"
+	w.Part0 = hrp
+	w.Part1 = dhrp
+	w.C0 = CFrame.new(0, offY, 0)
+	w.C1 = CFrame.new()
+	w.Parent = dhrp
+	local ours = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("Motor6D") and not ours[d.Name] then
+			ours[d.Name] = d
+		end
+	end
+	local links = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("Motor6D") and ours[d.Name] then
+			table.insert(links, { ours[d.Name], d })
+		end
+	end
+	if #links == 0 then
+		model:Destroy()
+		return false, "tidak ada sendi (Motor6D) yang cocok antara karakter dan donor"
+	end
+	E.hidden = {}
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and not d:FindFirstAncestorOfClass("Tool") then
+			local ot = d:GetAttribute("AS_OT")
+			if ot == nil then
+				ot = d.Transparency
+				d:SetAttribute("AS_OT", ot)
+			end
+			E.hidden[d] = ot
+			d.Transparency = 1
+		end
+	end
+	model.Name = SKIN_NAME
+	model.Parent = char
+	E.skinConn = RunService.RenderStepped:Connect(function()
+		for _, l in ipairs(links) do
+			l[2].Transform = l[1].Transform
+		end
+	end)
+	E.skinActive = true
+	E.skinAcc = nAcc
+	E.rendered = 0
+	E.lastRenderAt = os.clock()
+	local direct, bad = directFallback(desc, added, model, nAcc)
+	E.lastFailedIds = bad
+	E.skinAcc = nAcc + direct
+	logf("skin boneka: %d sendi disalin, %d aksesori dari donor, %d dimuat langsung, offset tinggi %.2f", #links, nAcc, direct, offY)
+	task.delay(0.2, E.reapplyTweaks)
+	return true
+end
+
+function E.skinRender(desc, added)
+	E.lastFailedIds = {}
+	if E.skinMode == "weld" then
+		return E.renderSkinWeld(desc)
+	end
+	local ok, err = E.renderSkinPuppet(desc, added)
+	if ok then
+		return true
+	end
+	logf("skin boneka gagal: %s -> coba las per-bagian", tostring(err))
+	return E.renderSkinWeld(desc)
+end
+
+function E.apply(desc)
+	if E.useSkin and E.cap.donor ~= false then
+		local ok, err = E.skinRender(desc)
+		if ok then
+			return true
+		end
+		logf("skin gagal: %s -> pakai render donor biasa", tostring(err))
+	end
+	E.removeSkin()
+	return E.renderLook(desc)
+end
+
+function E.scheduleRerender()
+	E.rrToken = (E.rrToken or 0) + 1
+	local t = E.rrToken
+	task.delay(0.7, function()
+		if t == E.rrToken then
+			E.rerender()
+		end
+	end)
+end
+
+function E.renderLook(desc)
+	local hum, char = E.humanoid()
+	local model = donorModel(desc)
+	if not model then
+		return false, "donor rig gagal dibuat (CreateHumanoidModelFromDescriptionAsync ditolak/diblokir)"
+	end
+	E.cleanInjected(char)
+	for _, ch in ipairs(char:GetChildren()) do
+		if ch:IsA("Accessory") or ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") then
+			ch:Destroy()
+		end
+	end
+	local nAcc = 0
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("Accessory") then
+			harvestAccessory(ch, char)
+			nAcc = nAcc + 1
+		elseif ch:IsA("Shirt") or ch:IsA("Pants") or ch:IsA("ShirtGraphic") or ch:IsA("BodyColors") then
+			if ch:IsA("BodyColors") then
+				local oldBC = char:FindFirstChildOfClass("BodyColors")
+				if oldBC then
+					oldBC:Destroy()
+				end
+			end
+			local c = ch:Clone()
+			c.Parent = char
+		end
+	end
+	local faceId = getProp(desc, "Face")
+	local mh, head = model:FindFirstChild("Head"), char:FindFirstChild("Head")
+	if mh and head and type(faceId) == "number" and faceId > 0 then
+		local mf, f = mh:FindFirstChildOfClass("Decal"), head:FindFirstChildOfClass("Decal")
+		if mf and f then
+			f.Texture = mf.Texture
+		end
+	end
+	copyAnimations(model, char, hum, desc)
+	if E.copyBody then
+		copyBodyParts(model, char)
+	end
+	model:Destroy()
+	E.rendered = nAcc
+	E.lastRenderAt = os.clock()
+	logf("render donor: %d aksesori dipasang", nAcc)
+	return true
+end
+
+function E.rerender()
+	if E.busy or not E.look or E.remote then
+		return
+	end
+	E.busy = true
+	local ok, err = pcall(function()
+		local r, e = E.apply(E.look)
+		if not r then
+			logf("render ulang gagal: %s", tostring(e))
+		end
+		E.failed = {}
+	end)
+	if not ok then
+		logf("render ulang error: %s", tostring(err))
+	end
+	E.busy = false
+	E.reapplyTweaks()
+end
+
+local function isInjectable(t)
+	return t and (ACC[t] or t == 11 or t == 12 or t == 2 or t == 18 or ANIM_SLOT[t])
+end
+
+function E._commit(newLook, text, skipHist, force)
+	local hum, char = E.humanoid()
+	local prevSet = collect(E.look)
+	local nowSet = collect(newLook)
+	local added, removed = {}, {}
+	for id in pairs(nowSet) do
+		if not prevSet[id] then
+			table.insert(added, id)
+		end
+	end
+	for id in pairs(prevSet) do
+		if not nowSet[id] then
+			table.insert(removed, id)
+		end
+	end
+
+	local how
+	if E.remote then
+		E.cleanInjected(char)
+		local ok, err = serverApply(newLook)
+		if ok then
+			how = "server"
+			for id in pairs(E.failed) do
+				if nowSet[id] then
+					local tid = E.assetType(id)
+					if tid then
+						E.inject(id, tid)
+					end
+				end
+			end
+		else
+			logf("server menolak (%s) -> jalur klien", tostring(err))
+		end
+	end
+
+	if not how and E.useSkin and E.cap.donor ~= false then
+		local okS, errS = E.skinRender(newLook, added)
+		if okS then
+			how = "skin"
+			E.failed = {}
+			for _, bid in ipairs(E.lastFailedIds or {}) do
+				removeFromDesc(newLook, bid)
+				toast("\"" .. E.name(bid) .. "\" ditolak Roblox (sering: item off-sale/UGC terbatas di rig klien) dan muat langsung juga gagal. Coba item lain.", "warn")
+			end
+			local expected = #newLook:GetAccessories(true)
+			if (E.skinAcc or 0) < expected then
+				toast(string.format("Hanya %d dari %d aksesori yang berhasil dirender (sisanya diblokir Roblox/map).",
+					E.skinAcc or 0, expected), "warn")
+			end
+		else
+			logf("skin gagal: %s (pakai jalur cadangan)", tostring(errS))
+		end
+	end
+
+	if not how then
+		if not force and (#added + #removed) > 0 then
+			local canInc = true
+			for _, id in ipairs(removed) do
+				if not E.failed[id] then
+					canInc = false
+				end
+			end
+			for _, id in ipairs(added) do
+				if not isInjectable(E.assetType(id)) then
+					canInc = false
+				end
+			end
+			if canInc then
+				for _, id in ipairs(removed) do
+					E.failed[id] = nil
+					for _, ch in ipairs(char:GetChildren()) do
+						if ch:GetAttribute("AS") == id then
+							ch:Destroy()
+						end
+					end
+					char:SetAttribute("ASX_" .. tostring(id), nil)
+				end
+				local bad = 0
+				for _, id in ipairs(added) do
+					E.failed[id] = true
+					if not E.inject(id, E.assetType(id)) then
+						E.failed[id] = nil
+						bad = bad + 1
+					end
+				end
+				if bad == 0 then
+					how = "injector"
+				else
+					logf("injector gagal untuk %d item -> coba render donor", bad)
+				end
+			end
+		end
+		if not how then
+			local ok, err = E.renderLook(newLook)
+			if not ok then
+				toast("Gagal memasang: " .. tostring(err) .. (E.lastInjectErr and (" | injector: " .. E.lastInjectErr) or ""), "danger")
+				return false
+			end
+			E.failed = {}
+			how = "donor-render"
+			local expected = #newLook:GetAccessories(true)
+			if (E.rendered or 0) < expected then
+				toast(string.format("Hanya %d dari %d aksesori yang berhasil dirender (sisanya diblokir Roblox/map).",
+					E.rendered or 0, expected), "warn")
+			end
+		end
+	end
+
+	E.lastMethod = how
+	if not skipHist and E.look then
+		table.insert(E.history, E.look)
+		while #E.history > 40 do
+			table.remove(E.history, 1)
+		end
+		E.redo = {}
+	end
+	E.look = newLook
+	task.delay(0.3, E.reapplyTweaks)
+	fire()
+	return true
+end
+
+function E.commit(newLook, text, skipHist, force)
+	if E.busy then
+		toast("Tunggu sebentar, avatar masih diproses...", "warn")
+		return false
+	end
+	E.busy = true
+	local ok, res = pcall(E._commit, newLook, text, skipHist, force)
+	E.busy = false
+	if not ok then
+		toast("Error: " .. tostring(res), "danger")
+		return false
+	end
+	return res
+end
+
+------------------------------------------------------------------------
+-- API tingkat tinggi
+------------------------------------------------------------------------
+function E.toggleAsset(id, itemName)
+	local tid = E.assetType(id)
+	if not tid then
+		toast("Tidak bisa membaca info item ini", "danger")
+		return false
+	end
+	if not ACC[tid] and not CLASSIC[tid] then
+		toast("Tipe item ini belum didukung", "warn")
+		return false
+	end
+	local worn = E.isWorn(id)
+	local nl = E.look:Clone()
+	if worn then
+		removeFromDesc(nl, id)
+	else
+		addToDesc(nl, id, tid)
+	end
+	local ok = E.commit(nl, itemName)
+	if ok then
+		if worn then
+			toast("Dilepas: " .. tostring(itemName or id), "warn")
+		elseif E.isWorn(id) then
+			toast("Dipakai: " .. tostring(itemName or id) .. "  (" .. E.lastMethod .. ")", "ok")
+		end
+	end
+	return ok
+end
+
+function E.removeAsset(id)
+	local nl = E.look:Clone()
+	removeFromDesc(nl, id)
+	return E.commit(nl, "lepas")
+end
+
+function E.equipBundle(bundleId, bundleName)
+	local info = productInfo(bundleId, Enum.InfoType.Bundle)
+	if not info or not info.Items then
+		toast("Gagal membaca isi bundle", "danger")
+		return false
+	end
+	local nl = E.look:Clone()
+	for _, item in ipairs(info.Items) do
+		if item.Type == "UserOutfit" then
+			local od = descFromOutfit(item.Id)
+			if od then
+				mergeDescription(nl, od)
+			end
+		elseif item.Type == "Asset" then
+			local tid = E.assetType(item.Id)
+			if tid then
+				addToDesc(nl, item.Id, tid)
+			end
+		end
+	end
+	local done = E.commit(nl, bundleName)
+	if done then
+		toast("Bundle dipakai: " .. tostring(bundleName or bundleId), "ok")
+	end
+	return done
+end
+
+function E.applyUserVisual(userId, displayName, keepLook)
+	local desc, derr = descFromUser(userId)
+	if not desc then
+		logf("ambil avatar %s gagal: %s", tostring(userId), tostring(derr))
+		return false, "gagal mengambil avatar: " .. tostring(derr)
+	end
+	local ok, err = E.apply(desc)
+	if not ok then
+		logf("render avatar %s gagal: %s", tostring(userId), tostring(err))
+		return false, err
+	end
+	if not keepLook then
+		if E.look then
+			table.insert(E.history, E.look)
+			E.redo = {}
+		end
+		E.look = desc
+		E.failed = {}
+		E.userVisual = userId
+		fire()
+	end
+	task.delay(0.3, E.reapplyTweaks)
+	return true
+end
+
+function E.applyUser(userId, displayName)
+	if E.busy then
+		toast("Tunggu sebentar, avatar masih diproses...", "warn")
+		return false
+	end
+	if E.remote then
+		local desc = descFromUser(userId)
+		if not desc then
+			toast("Avatar pemain tidak bisa dimuat", "danger")
+			return false
+		end
+		local done = E.commit(desc, displayName)
+		if done then
+			toast("Avatar dipakai: " .. tostring(displayName or userId), "ok")
+		end
+		return done
+	end
+	E.busy = true
+	local ok, res, why = pcall(E.applyUserVisual, userId, displayName)
+	E.busy = false
+	if ok and res then
+		E.lastMethod = "donor-render"
+		toast("Avatar dipakai: " .. tostring(displayName or userId) .. "  (donor-render)", "ok")
+		return true
+	end
+	toast("Avatar tidak bisa dipasang: " .. tostring(ok and why or res) .. "  (lihat output/console)", "danger")
+	return false
+end
+
+function E.removeAll()
+	local nl = E.look:Clone()
+	nl:SetAccessories({}, true)
+	E.failed = {}
+	return E.commit(nl, "lepas semua")
+end
+
+function E.undo()
+	local entry = table.remove(E.history)
+	if not entry then
+		toast("Tidak ada yang bisa di-undo", "warn")
+		return
+	end
+	table.insert(E.redo, E.look)
+	E.commit(entry, "undo", true)
+end
+
+function E.doRedo()
+	local entry = table.remove(E.redo)
+	if not entry then
+		toast("Tidak ada yang bisa di-redo", "warn")
+		return
+	end
+	table.insert(E.history, E.look)
+	E.commit(entry, "redo", true)
+end
+
+function E.reset()
+	if E.skinActive then
+		E.removeSkin()
+		E.userVisual = nil
+		E.failed = {}
+		E.resetScales()
+		E.resetSkin()
+		E.look = E.original:Clone()
+		E.history, E.redo = {}, {}
+		fire()
+		toast("Avatar dikembalikan seperti semula", "ok")
+		return
+	end
+	pcall(E.restoreBody)
+	E.userVisual = nil
+	E.failed = {}
+	E.resetScales()
+	E.resetSkin()
+	E.commit(E.original:Clone(), "reset")
+	toast("Avatar dikembalikan seperti semula", "ok")
+end
+
+function E.setScale(key, value, noRender)
+	E.scales[key] = value
+	local hum = E.humanoid()
+	local nv = hum:FindFirstChild(SCALE_VALUES[key])
+	if nv and nv:IsA("NumberValue") then
+		nv.Value = value
+	end
+	if E.skinActive and E.look and not noRender then
+		setProp(E.look, SCALE_DESC[key], value)
+		E.scheduleRerender()
+	end
+end
+
+function E.resetScales()
+	E.scales = {}
+	if E.original then
+		local hum = E.humanoid()
+		for key, prop in pairs(SCALE_DESC) do
+			local v = getProp(E.original, prop)
+			local nv = hum:FindFirstChild(SCALE_VALUES[key])
+			if v and nv and nv:IsA("NumberValue") then
+				nv.Value = v
+			end
+			if E.skinActive and E.look and v then
+				setProp(E.look, prop, v)
+			end
+		end
+		if E.skinActive then
+			E.scheduleRerender()
+		end
+	end
+end
+
+function E.setSkin(color)
+	E.skin = color
+	local _, char = E.humanoid()
+	local bc = char:FindFirstChildOfClass("BodyColors")
+	if bc then
+		for _, prop in ipairs(BODY_COLOR_PROPS) do
+			bc[prop] = color
+		end
+	end
+	local sk = char:FindFirstChild(SKIN_NAME)
+	if sk then
+		for _, p in ipairs(sk:GetChildren()) do
+			if p:IsA("BasePart") and isBodyPart(p.Name) then
+				p.Color = color
+			end
+		end
+	end
+end
+
+function E.resetSkin()
+	E.skin = nil
+	if E.skinActive then
+		E.scheduleRerender()
+	end
+	if E.origColors then
+		local _, char = E.humanoid()
+		local bc = char:FindFirstChildOfClass("BodyColors")
+		if bc then
+			for _, prop in ipairs(BODY_COLOR_PROPS) do
+				bc[prop] = E.origColors[prop]
+			end
+		end
+	end
+end
+
+function E.reapplyTweaks()
+	for k, v in pairs(E.scales) do
+		E.setScale(k, v, true)
+	end
+	if E.skin then
+		E.setSkin(E.skin)
+	end
+end
+
+function E.diagnose()
+	local hum = E.humanoid()
+	toast("Rig: " .. hum.RigType.Name .. "  |  Server script: " .. (E.remote and "ADA" or "tidak ada"), "info")
+	local ok = pcall(function()
+		return game:GetObjects("rbxassetid://1028606")
+	end)
+	toast("Mode inject-first: " .. (E.injectFirst and "AKTIF" or "mati") .. "  |  game:GetObjects: " .. (ok and "tersedia" or "tidak tersedia")
+		.. "  |  Mode terakhir: " .. (E.lastMethod ~= "" and E.lastMethod or "-"), "info")
+end
+
+function E.probe()
+	local cap = {}
+	local ok, r = pcall(function()
+		return game:GetObjects("rbxassetid://1028606")
+	end)
+	if not ok then
+		cap.getObjects = false
+	elseif type(r) == "table" and #r > 0 then
+		cap.getObjects = true
+	end
+	local ok2, m2 = pcall(function()
+		return InsertService:LoadAsset(1028606)
+	end)
+	if not ok2 then
+		cap.insert = false
+	elseif m2 then
+		cap.insert = true
+		pcall(function()
+			m2:Destroy()
+		end)
+	end
+	local d = Instance.new("HumanoidDescription")
+	addToDesc(d, 1028606, 8)
+	local dm = donorModel(d)
+	if dm then
+		cap.donor = dm:FindFirstChildOfClass("Accessory") ~= nil or nil
+		pcall(function()
+			dm:Destroy()
+		end)
+	else
+		cap.donor = false
+	end
+	E.cap = cap
+	E.injectFirst = (cap.getObjects ~= false) or (cap.insert ~= false) or (cap.donor ~= false)
+	logf("probe: GetObjects=%s LoadAsset=%s Donor=%s -> inject-first=%s", tostring(cap.getObjects), tostring(cap.insert),
+		tostring(cap.donor), tostring(E.injectFirst))
+end
+
+function E.snapBody(char)
+	E.bodySnap = {}
+	for _, n in ipairs(LIMBS) do
+		local p = char:FindFirstChild(n)
+		if p and p:IsA("BasePart") then
+			local rec = { Transparency = p.Transparency }
+			if p:IsA("MeshPart") then
+				rec.MeshId = p.MeshId
+				rec.TextureID = p.TextureID
+			end
+			local sa = p:FindFirstChildOfClass("SurfaceAppearance")
+			if sa then
+				rec.SA = sa:Clone()
+			end
+			E.bodySnap[n] = rec
+		end
+	end
+end
+
+function E.restoreBody()
+	local _, char = E.humanoid()
+	for n, rec in pairs(E.bodySnap or {}) do
+		local p = char:FindFirstChild(n)
+		if p and p:IsA("BasePart") then
+			pcall(function()
+				p.Transparency = rec.Transparency
+				if rec.MeshId and p:IsA("MeshPart") then
+					p.MeshId = rec.MeshId
+					p.TextureID = rec.TextureID
+				end
+				for _, x in ipairs(p:GetChildren()) do
+					if x:IsA("SurfaceAppearance") then
+						x:Destroy()
+					end
+				end
+				if rec.SA then
+					rec.SA:Clone().Parent = p
+				end
+			end)
+		end
+	end
+	toast("Badan/tangan/kaki dipulihkan ke bentuk awal", "ok")
+end
+
+function E.init()
+	local hum, char = E.humanoid()
+	E.snapBody(char)
+	E.snapAnim(char)
+	E.hookChar(char)
+	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
+	E.probe()
+	local d = appliedDesc(hum)
+	E.original = d:Clone()
+	E.look = d:Clone()
+	E.origColors = {}
+	local bc = char:FindFirstChildOfClass("BodyColors")
+	if bc then
+		for _, prop in ipairs(BODY_COLOR_PROPS) do
+			E.origColors[prop] = bc[prop]
+		end
+	end
+	player.CharacterAdded:Connect(function(newChar)
+		newChar:WaitForChild("Humanoid")
+		if stale() then
+			return
+		end
+		E.hookChar(newChar)
+		E.skinActive = false
+		E.hidden = {}
+		task.wait(1)
+		if E.look then
+			if E.remote then
+				E.commit(E.look:Clone(), "respawn", true, true)
+			elseif not E.busy then
+				E.busy = true
+				pcall(function()
+					E.apply(E.look)
+					E.failed = {}
+				end)
+				E.busy = false
+				E.reapplyTweaks()
+			end
+		end
+	end)
+	task.spawn(function()
+		while task.wait(0.75) do
+			if stale() then
+				break
+			end
+			if E.injectFirst and not E.remote and not E.busy then
+				pcall(E.guard)
+			end
+		end
+	end)
+	fire()
+end
+
+----------------------------------------------------------------------------
+-- [6] KATALOG  (hanya: Karakter/Tubuh, Animasi, Sepatu)
+----------------------------------------------------------------------------
+local CATEGORIES = {}
+local function C(group, id, name, kind, list)
+	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list })
+end
+
+C("SET & BUNDLE", "b_body", "Karakter / Tubuh", "bundle", { "BodyParts" })
+C("SET & BUNDLE", "b_anim", "Animasi", "bundle", { "Animations" })
+C("SET & BUNDLE", "b_shoes", "Sepatu", "bundle", { "Shoes" })
+
+local SORTS = {
+	{ name = "Relevansi", enum = "Relevance" },
+	{ name = "Terfavorit", enum = "MostFavorited" },
+	{ name = "Terlaris", enum = "Bestselling" },
+	{ name = "Terbaru", enum = "RecentlyCreated" },
+	{ name = "Termurah", enum = "PriceLowToHigh" },
+	{ name = "Termahal", enum = "PriceHighToLow" },
+}
+
+for _, c in ipairs(CATEGORIES) do
+	if c.id == "b_body" then
+		c.httpCat = 4
+	elseif c.id == "b_anim" then
+		c.httpCat = 12
+	elseif c.id == "b_shoes" then
+		c.httpCat = 3
+	end
+end
+
+local function httpCategoryFor(tid)
+	if tid == 8 or (tid and tid >= 41 and tid <= 47) or tid == 76 or tid == 77 then
+		return 11
+	elseif tid == 11 or tid == 12 or tid == 2 or (tid and tid >= 64 and tid <= 72) then
+		return 3
+	elseif tid == 18 or tid == 17 or (tid and tid >= 27 and tid <= 31) then
+		return 4
+	elseif tid and (tid >= 48 and tid <= 55 or tid == 78) then
+		return 12
+	end
+	return 1
+end
+
+local function fetchDetails(ids, itemType)
+	local out = {}
+	if #ids == 0 then
+		return out
+	end
+	local ok, res = batchDetails(ids, itemType)
+	if ok and type(res) == "table" then
+		for _, d in ipairs(res) do
+			out[d.Id] = d
+		end
+	end
+	return out
+end
+
+local Query = {}
+Query.__index = Query
+
+local function newQuery(cat, keyword, sortIdx, freeOnly)
+	local okP, params = pcall(function()
+		return CatalogSearchParams.new()
+	end)
+	if not okP then
+		params = nil
+	end
+	setProp(params, "SearchKeyword", keyword or "")
+	local se = safeEnum(Enum.CatalogSortType, SORTS[sortIdx].enum)
+	if se then
+		setProp(params, "SortType", se)
+	end
+	local assetTypes, bundleTypes = {}, {}
+	if cat.kind == "asset" then
+		for _, n in ipairs(cat.list) do
+			local e = safeEnum(Enum.AvatarAssetType, n)
+			if e then
+				table.insert(assetTypes, e)
+			end
+		end
+	elseif cat.kind == "bundle" then
+		for _, n in ipairs(cat.list) do
+			local e = safeEnum(Enum.BundleType, n)
+			if e then
+				table.insert(bundleTypes, e)
+			end
+		end
+	end
+	setProp(params, "AssetTypes", assetTypes)
+	setProp(params, "BundleTypes", bundleTypes)
+	setProp(params, "IncludeOffSale", false)
+	if freeOnly then
+		setProp(params, "MaxPrice", 0)
+	end
+	setProp(params, "Limit", PAGE_SIZE)
+	local tid = (cat.kind == "asset" and cat.list and #cat.list == 1) and NAME2TID[cat.list[1]] or nil
+	return setmetatable({ params = params, finished = false, pages = nil, total = 0, tid = tid, cat = cat,
+		keyword = keyword or "", sortNum = (sortIdx or 1) - 1, freeOnly = freeOnly }, Query)
+end
+
+function Query:aesPage()
+	if self.finished then
+		return {}
+	end
+	if not self.params then
+		return nil, "CatalogSearchParams tidak tersedia di lingkungan ini"
+	end
+	local ok, res = pcall(function()
+		if not self.pages then
+			local okS, r = callAny(AvatarEditorService, { "SearchCatalogAsync", "SearchCatalog" }, self.params)
+			if not okS then
+				local p2 = CatalogSearchParams.new()
+				setProp(p2, "SearchKeyword", getProp(self.params, "SearchKeyword") or "")
+				setProp(p2, "AssetTypes", getProp(self.params, "AssetTypes") or {})
+				setProp(p2, "BundleTypes", getProp(self.params, "BundleTypes") or {})
+				local ok2, r2 = callAny(AvatarEditorService, { "SearchCatalogAsync", "SearchCatalog" }, p2)
+				if not ok2 then
+					error(tostring(r) .. " | ulang: " .. tostring(r2))
+				end
+				r = r2
+			end
+			self.pages = r
+		else
+			self.pages:AdvanceToNextPageAsync()
+		end
+		return self.pages:GetCurrentPage()
+	end)
+	if not ok then
+		return nil, tostring(res)
+	end
+	if self.pages.IsFinished then
+		self.finished = true
+	end
+	local assetIds, bundleIds = {}, {}
+	for _, it in ipairs(res) do
+		if it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle then
+			table.insert(bundleIds, it.Id)
+		else
+			table.insert(assetIds, it.Id)
+		end
+	end
+	local aD = fetchDetails(assetIds, Enum.AvatarItemType.Asset)
+	local bD = fetchDetails(bundleIds, Enum.AvatarItemType.Bundle)
+	local items = {}
+	for _, it in ipairs(res) do
+		local isBundle = it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle
+		local d = (isBundle and bD or aD)[it.Id] or {}
+		self.total = self.total + 1
+		local nm = d.Name or it.Name or ("Item #" .. it.Id)
+		table.insert(items, {
+			Id = it.Id, Type = isBundle and "Bundle" or "Asset", Name = nm,
+			Price = d.PriceInRobux, Order = self.total,
+		})
+		if not isBundle then
+			E.names[it.Id] = E.names[it.Id] or nm
+			if self.tid then
+				E.types[it.Id] = self.tid
+			end
+		end
+	end
+	return items
+end
+
+function Query:httpPage()
+	local cat = self.cat
+	local common = "&Limit=" .. PAGE_SIZE .. "&SortType=" .. tostring(self.sortNum or 0)
+	if self.keyword ~= "" then
+		common = common .. "&Keyword=" .. urlenc(self.keyword)
+	end
+	if self.freeOnly then
+		common = common .. "&MaxPrice=0"
+	end
+	if self.cursor then
+		common = common .. "&cursor=" .. urlenc(self.cursor)
+	end
+	local urls = {}
+	for _, host in ipairs({ "https://catalog.roblox.com", "https://catalog.roproxy.com" }) do
+		if cat.kind == "asset" and self.tid then
+			table.insert(urls, host .. "/v2/search/items/details?assetTypeIds=" .. self.tid .. common)
+			table.insert(urls, host .. "/v1/search/items/details?Category=" .. httpCategoryFor(self.tid) .. common)
+		else
+			table.insert(urls, host .. "/v1/search/items/details?Category=" .. tostring(cat.httpCat or 1) .. common)
+		end
+	end
+	local a, b = 1, #urls
+	if self.httpIdx then
+		a, b = self.httpIdx, self.httpIdx
+	end
+	local lastErr = "tidak ada URL"
+	for i = a, b do
+		local body, herr = httpGet(urls[i])
+		if body then
+			local okJ, data = pcall(function()
+				return HttpService:JSONDecode(body)
+			end)
+			if okJ and type(data) == "table" and type(data.data) == "table" then
+				local items = {}
+				for _, d in ipairs(data.data) do
+					local at = tonumber(d.assetType)
+					local isBundle = d.itemType == "Bundle"
+					local keep
+					if cat.kind == "bundle" then
+						keep = isBundle
+					else
+						keep = (not isBundle) and (at == nil or self.tid == nil or at == self.tid)
+					end
+					if keep and tonumber(d.id) then
+						self.total = self.total + 1
+						local price = d.price
+						if price == nil then
+							price = d.lowestPrice
+						end
+						table.insert(items, {
+							Id = tonumber(d.id), Type = isBundle and "Bundle" or "Asset", Name = tostring(d.name or ("Item #" .. d.id)),
+							Price = price, Order = self.total,
+						})
+						if not isBundle then
+							E.names[tonumber(d.id)] = E.names[tonumber(d.id)] or tostring(d.name)
+							E.types[tonumber(d.id)] = at or self.tid or E.types[tonumber(d.id)]
+						end
+					end
+				end
+				if #items > 0 or data.nextPageCursor or self.total > 0 or i == b then
+					self.httpIdx = i
+					self.cursor = data.nextPageCursor
+					if not self.cursor then
+						self.finished = true
+					end
+					return items
+				end
+				lastErr = "hasil kosong dari " .. urls[i]
+			else
+				lastErr = "JSON tidak valid dari " .. urls[i]
+			end
+		else
+			lastErr = tostring(herr)
+		end
+	end
+	return nil, lastErr
+end
+
+function Query:nextPage()
+	if self.finished then
+		return {}
+	end
+	local errs = {}
+	if self.backend ~= "http" then
+		local items, err = self:aesPage()
+		if items and not (#items == 0 and self.total == 0 and self.backend == nil) then
+			self.backend = "aes"
+			return items
+		end
+		if self.backend == "aes" then
+			return nil, err
+		end
+		table.insert(errs, "AvatarEditorService: " .. tostring(err or "hasil kosong"))
+		self.finished = false
+	end
+	local items2, err2 = self:httpPage()
+	if items2 then
+		self.backend = "http"
+		return items2
+	end
+	table.insert(errs, "Web: " .. tostring(err2))
+	return nil, table.concat(errs, "\n")
+end
+
+----------------------------------------------------------------------------
+
+
+
+----------------------------------------------------------------------------
+-- LEON4951 UI SHELL (theme + window)
+----------------------------------------------------------------------------
 local Theme = {
     Background = Color3.fromRGB(7, 10, 17),
-    SidebarBg = Color3.fromRGB(10, 15, 24),            
-    CardBg = Color3.fromRGB(14, 20, 32),              
-    CardBorder = Color3.fromRGB(34, 48, 73),          
-
-    Accent = Color3.fromRGB(0, 122, 255),            -- Warna Biru Utama
-    AccentBlue = Color3.fromRGB(0, 122, 255),         -- Alias untuk Accent
-    AccentLight = Color3.fromRGB(82, 151, 255),       
-    TabActiveBg = Color3.fromRGB(18, 32, 54),         
-    TabActiveBorder = Color3.fromRGB(0, 122, 255),     
-
-    FilterActiveBg = Color3.fromRGB(18, 38, 65),     -- Latar belakang saat filter dipilih
-
-    BadgeBg = Color3.fromRGB(14, 20, 32),
-    RunPillBg = Color3.fromRGB(20, 35, 60),
-
-    TextPrimary = Color3.fromRGB(245, 247, 255),       
-    TextSecondary = Color3.fromRGB(180, 195, 220),     
-    TextMuted = Color3.fromRGB(130, 145, 175),         
-    BorderColor = Color3.fromRGB(0, 122, 255),        
-
-    GoldBadge = Color3.fromRGB(255, 185, 0),
-    KeyTagBg = Color3.fromRGB(255, 75, 90),            
-    KeyTagPill = Color3.fromRGB(50, 18, 22),
-    NoKeyTagBg = Color3.fromRGB(46, 146, 116),         
-    NoKeyTagPill = Color3.fromRGB(18, 48, 43),         
+    CardBg = Color3.fromRGB(14, 20, 32),
+    CardBorder = Color3.fromRGB(34, 48, 73),
+    Accent = Color3.fromRGB(0, 122, 255),
+    AccentBlue = Color3.fromRGB(0, 122, 255),
+    TabActiveBg = Color3.fromRGB(18, 32, 54),
+    TabActiveBorder = Color3.fromRGB(0, 122, 255),
+    TextPrimary = Color3.fromRGB(245, 247, 255),
+    TextMuted = Color3.fromRGB(130, 145, 175),
+    BorderColor = Color3.fromRGB(0, 122, 255),
     WaGreen = Color3.fromRGB(37, 211, 102),
-    WaDarkGreen = Color3.fromRGB(18, 38, 28)
+    WaDarkGreen = Color3.fromRGB(18, 38, 28),
+    Surface = Color3.fromRGB(14, 20, 32),
+    Surface2 = Color3.fromRGB(20, 28, 42),
 }
+-- Map engine T colors to hub Theme for shared look
+T.Bg = Theme.Background
+T.Surface = Theme.CardBg
+T.Surface2 = Theme.Surface2
+T.Accent = Theme.Accent
+T.Text = Theme.TextPrimary
+T.Dim = Theme.TextMuted
+T.Stroke = Theme.CardBorder
 
 local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
--- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
-local RawScriptDataStealAnEgg = {
-    {"SOURCES HUB","No Key",true,"loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
-    {"DHII'S HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
-    {"Lych x putra hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
-    {"VIREX HUB","No Key",true,"loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
-    {"TEDDY HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
-    {"GOHA HUB","No Key",true,"loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
-    {"Night Hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
-    {"REALKID HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
-    {"CODIUM HUB","No Key",true,"loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
-    {"NO-LAG X HUB","No Key",true,"loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
-    {"LINKHIVE HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
-    {"Chilli hub v5","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
-    {"VENYX HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
-    {"LUKZ HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
-    {"SENA EXCLUSIVE","Key",true,"loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
-    {"PET SPAWNER TERBAGUS","No Key",true,"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner"},
-    {"YANTO HUB KEY : YANTOHUB","Key",true,"https://raw.githubusercontent.com/YantoRoblox/Script-Free-YantoHUB/refs/heads/main/YantoHUB"},
-    {"FYY HUB","No Key",true,"https://FyyCommunity.my.id"},
-    {"SPEED HUB","Key",false,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
-    {"BIGFROOT HUB","Key",false,"https://raw.githubusercontent.com/hanniii1/Loader/refs/heads/main/BFLoader.lua"},
-    {"CHIYO HUB","Key",false,"https://raw.githubusercontent.com/kaisenlmao/loader/refs/heads/main/chiyo.lua"},
-    {"CLOVER HUB","Key",true,"https://cloverhub.app/clover.lua"},
-    {"ZERO POINT HUB","No Key",false,"https://raw.githubusercontent.com/JaxRol/ZeroPoint/refs/heads/main/KeySystem"},
-    {"UB HUB","No Key",false,"https://raw.githubusercontent.com/TeamUBHub/UBLoader/refs/heads/main/Loader.lua"},
-    {"VALINC HUB","No Key",false,"https://api.valincsyndicate.com/v1/releases/5502cba03703f4a3628d522d396b80d8.lua"},
-    {"OUROBOROS HUB","No Key",false,"https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua"},
-    {"OMG HUB","Key",false,"https://raw.githubusercontent.com/Omgshit/Scripts/main/MainLoader.lua"},
-    {"NASI RENDANG LUA","Key",true,"https://raw.githubusercontent.com/JualNasiRendang/loader/refs/heads/main/main.lua"},
-    {"UNKNOWN HUB","Key",false,"https://unknownhub.win/api/projects/54474b4c5d5a4f459909c4cb70e7b4f3/loader"},
-    {"RIFT","Key",false,"https://rifton.top/loader.lua"},
-    {"AIR FLOW","Key",false,"https://airflowscript.com/loader"},
-    {"SOLIX HUB","Key",false,"https://raw.githubusercontent.com/bao8jl/solixhub/main/loader"},
-    {"HOSHI HUB","No Key",false,"https://hoshihub.site/loader.lua"},
-    {"ZERO IMPACT","Key",false,"https://www.zeroimpact.online/raw/loader"},
-    {"SNOWY HUB","Key",false,"https://flowauth.net/v1/ui/a87f00d9adf63658655fcd02ab86a4ef.lua"},
-    {"AJJANS HUB","Key",true,"https://raw.githubusercontent.com/virtuososvisualedits-prog/Ww/refs/heads/main/final-obfuscated.lua"},
-    {"NEMESIS HUB","Key",false,"https://raw.githubusercontent.com/x2zu/loader/main/freeloader.lua"},
-    {"NIGHT HUB","No Key",false,"https://pastefy.app/J29hE5fR/raw"},
-    {"LUMIN HUB","No Key",false,"http://luminon.top/loader.lua"},
-    {"CIAO HUB SERVER HOP","No Key",false,"https://pastefy.app/YoZocJ8O/raw"},
-    {"ZHENN HUB SPAWNER","Key",false,"https://raw.githubusercontent.com/ZhennHub/PetSpawner/refs/heads/main/lua"},
-    {"DECODEX","No Key",false,"https://raw.githubusercontent.com/ItzYumi/Decode/refs/heads/main/DE%3ACODE.lua"},
-    {"CRZ HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
-    {"KEXXE HUB","Key",false,"https://raw.githubusercontent.com/premiumbuddy/kex/refs/heads/main/kexxxx"},
-    {"NOVA HUB","Key",false,"https://raw.githubusercontent.com/NovaHubRBLX/NovaHub/refs/heads/main/novahub.lua"},
-    {"VANTAGE","Key",false,"https://raw.githubusercontent.com/MisterNovitski/Vantage/refs/heads/main/mm2.txt"},
-    {"SPORTSCLUB HUB","Key",false,"https://loader.sportsclub.fun/loader.luau"},
-    {"SCRIPTVERSE HUB","Key",false,"https://scriptversekey.xyz/s/steal-an-egg"},
-    {"GS HUB","Key",false,"https://gist.githubusercontent.com/spiritualgaming1123-beep/46ef55c5f8284e076aafc5ebd12233f4/raw/5b24749c3931c1838a76e64c9af508dcdd03700a/gistfile1.lua"},
-    {"PROBEST","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/0199b576f5c2d5a34159f0f9f4e1de0a566b4d1da5b1cfa5d2f71ade9bdcaa24/download"},
-    {"SYSHUB FUN","Key",false,"https://syshub.fun/free"},
-    {"FOXNAME","No Key",true,"https://raw.githubusercontent.com/caomod2077/Script/refs/heads/main/Fn-stealanegg.lua"},
-    {"DUPE EGG + DUPE PET","No Key",false,"https://raw.githubusercontent.com/INF-Hub-PL/StealAEggScript/refs/heads/main/Pet_SpawnerV1"},
-    {"RONNEI HUB","No Key",true,"https://raw.githubusercontent.com/elonmod/skibidi/refs/heads/main/Ronneihub-keyless.lua"},
-    {"AXONIC HUB","Key",false,"https://raw.githubusercontent.com/Kenniel123/Steal-A-Egg/refs/heads/main/Steal%20A%20Egg"},
-    {"NEOX HUB","Key",false,"https://raw.githubusercontent.com/hassanxzayn-lua/NEOXHUBMAIN/refs/heads/main/loader"},
-    {"LENNON V5","No Key",true,"https://api.luarmor.net/files/v4/loaders/4595fe31a5f7a8b4f4dd7071f3119ef7.lua"},
-    {"SAIOPS HUB","Key",false,"https://api.saiops.cc/scripts/Steal-An-Egg-Script.lua"},
-    {"ZEROIN HUB","Key",false,"https://zeroinhub.com/api/script"},
-    {"ONHUB VIET","Key",false,"https://raw.githubusercontent.com/ronnei/freemium/refs/heads/main/loader.lua"},
-    {"MIRANDA HUB V4","No Key",true,"https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/stealeggies"},
-    {"PROJECT-MADARA","No Key",false,"https://raw.githubusercontent.com/IsThisMe01/Project-Madara/refs/heads/main/stealanegg"},
-    {"NEVERLOSE","Key",false,"https://raw.githubusercontent.com/inrate1337/NeverloseLoaderRoblox/refs/heads/main/main.luau"},
-    {"SPIRITUAL GAMING HUB","Key",false,"https://gist.githubusercontent.com/spiritualgaming1123-beep/f2c8c4009b2c4d4dda1b3d5fcb263ef3/raw/121ff8c9b59476a7a362b543edc61499e5832937/gistfile1.lua"},
-    {"CRYSTALIZED HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/a62237c6a75399adc9add4151ebeeb91c1f965fab665a650dcbc699a5622b37f/download"},
-    {"OCTOPUS HUB","Key",false,"https://www.octopushub.xyz/loader"},
-    {"SYSNEROX","Key",false,"https://raw.githubusercontent.com/DrakarDev/Hud/refs/heads/main/steal_an_egg.lua"},
-    {"JINHUB","Key",false,"https://jinhub.my.id/scripts/Universal.lua"},
-    {"OVERFLOW","Key",false,"https://overflow.cx/loader.lua"},
-    {"BLYXO HUB","No Key",true,"https://flowauth.net/v1/loaders/69d3463240384f3a73fbe32c178093a2.lua"},
-    {"SENA beta","No Key",true,"https://senahub.xyz/raw/loader"},
-    {"TOOLBOX","No Key",false,"https://raw.githubusercontent.com/Abdullahking20/loader-lua/main/loader"},
-    {"SOLVEXGUI HUB","Key",false,"https://raw.githubusercontent.com/Solvexxxx/Scripts/refs/heads/main/SolvexGUI_SAE.lua"},
-    {"SPEED BYPASS","No Key",false,"https://pastefy.app/iedWaiQX/raw"},
-    {"SAKURA HUB","Key",false,"https://flowauth.net/v1/ui/d00ec69382de97372fc9559efc722298.lua"},
-    {"LUNARIS HUB","Key",false,"https://jnkie.com/loaders/lunaris"},
-    {"FORGE HUB","Key",false,"https://cdn.forgehub.store/loader"},
-    {"BASEMENT HUB","Key",false,"https://thebsmt.xyz/BSMT"},
-    {"KALI HUB","Key",false,"https://kalihub.xyz/loader.lua"},
-    {"CORE HUB","Key",false,"https://getcore.lol/loader.lua"},
-    {"INDRA HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/2b7d97ed2525cef705b26f22d6964b87dd4b64a1bf533ac61d9edf6df14e8471/download"},
-    {"PET/EGG SPAWNER","No Key",false,"https://api.luarmor.net/files/v4/loaders/d8f1c691a58edb11ef782849f80e9b61.lua"},
-    {"APEL HUB","Key",false,"https://apelhub.com/loader.lua"},
-    {"PANDA HUB","Key",false,"https://raw.githubusercontent.com/Muhammad6196/Project-Infinity-X/refs/heads/main/main.lua"},
-    {"LUCID HUB","Key",false,"https://gist.githubusercontent.com/IlyassSama/d4c20dcabe62c225b3e96a43cdb0eae9/raw/82020fd08fbff2ad69731e650d960f7d59a07fac/notifier.lua"},
-    {"FISHY","Key",false,"https://jnkie.com/loaders/fishyhub"},
-    {"SCRIPTFARMER","Key",false,"https://scriptfarmer.dpdns.org/loader/stealanegg-serverhoper"},
-    {"VIVID LUA","Key",false,"https://vivid.vividhub.workers.dev/loader.lua"},
-    {"BERRI HUB","Key",false,"https://raw.githubusercontent.com/moshixzn/ahhagdienavd/refs/heads/main/loader.lua.txt"},
-    {"NOCTRUNHUB","Key",false,"https://raw.githubusercontent.com/insanecontenty2k-blip/scriptss/main/universalscriptsofop"},
-    {"CITRA HUB","No Key",false,"https://raw.githubusercontent.com/gilgameshfate59/ohbfoosk8tid/main/CitraLoader.lua"},
-    {"VINCI HUB","No Key",true,"https://raw.githubusercontent.com/tutorkah104-rgb/Steal-an-Egg/refs/heads/main/Vincitore.luau"},
-    {"HORIZON HUB ANTI HIT","No Key",false,"script_key = \"Trial\"; loadstring(game:HttpGet(\"https://api.getpolsec.com/scripts/hosted/6582551b42d21c6b7eb55f1d76d8d50ce53cb35592093d6615b5e83437594dc0.lua\"))()"},
-    {"CHILLI HUB","No Key",true,"https://raw.githubusercontent.com/tienkhanh1/spicy/main/Chilli.lua"},
-    {"TSUO HUB","No Key",true,"https://raw.githubusercontent.com/Tsuo7/TsuoHub/main/stealanegg"},
-    {"LKZ HUB","No Key",true,"https://raw.githubusercontent.com/LucasggkX/LKZ-Hub/refs/heads/main/Loader.lua"},
-    {"REZZY HUB","Key",false,"https://raw.githubusercontent.com/Roman666Cabj/Nether/refs/heads/main/RezzyStealAnEgg.lua"},
-    {"RAVANGE HUB","Key",false,"https://raw.githubusercontent.com/Revenge-Hub-Roblox/Scripts/refs/heads/main/Loader.lua"},
-    {"ZNEX HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/181cfe2bd5df35ce78607b5ffb37c6666abd76eda11ff33b0f24a1b2d8ee935f/download"},
-    {"ASVARA HUB","Key",false,"https://raw.githubusercontent.com/asvraRoblox/stealegg/refs/heads/main/main"},
-    {"VSN","No Key",false,"https://raw.githubusercontent.com/NetNullv1/VSN/refs/heads/main/HUB"},
-    {"SHADOW HUB","Key",false,"https://pastebin.com/raw/QAvDbBKa"},
-    {"VELOX HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/f0b3ce85f588800ae7e46415fc4dd79ff2b0d09c9b6a8e19cea8a67b47f1bcbd/download"},
-    {"KING VYPER (KEY: KV-FREE-TRIAL-WOKS)","Key",false,"https://kingvypers.site/raw/TrialLoader"},
-    {"HIP-HUP","Key",true,"https://hiphub.cloud/api/script-roblox/loader"},
-    {"BK HUB","No Key",true,"https://api.luarmor.net/files/v4/loaders/9ee4edde227ac85f50872bf9e4226508.lua"},
-    {"AXURS","No Key",false,"https://raw.githubusercontent.com/XE3Scripts/Axur-sGamesHub/refs/heads/main/StealAnEgg"},
-    {"POTATO HUB","Key",false,"https://raw.githubusercontent.com/potatohub67/potatoscripts/refs/heads/main/stealaegg.lua"},
-    {"JANE HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
-    {"WIS HUB","No Key",true,"https://api.wishub.cloud/files/loader.lua"},
-    {"SENA V7 NEW","Key",true,"https://senahub.xyz/senaloader"},
-    {"VOIDHUB","No Key",false,"loadstring(game:HttpGet(\"https://voidon.top/api/loader/main\"))()"},
-    {"LIMBO HUB","No Key",false,"loadstring(game:HttpGet(\"https://limbohub.my.id/loader.lua\"))()"},
-    {"OXIDE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua\"))()"},
-    {"PULSE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PulseZax/Loader/refs/heads/main/.lua\"))()"},
-    {"YARHM HUB","No Key",false,"loadstring(game:HttpGet(\"https://yarhm.com\"))()"},
-    {"RIFT GOHA","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
-    {"ATHERHUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v3/loaders/2529a5f9dfddd5523ca4e22f21cceffa.lua\"))()"},
-    {"VANITY HUB","Key",false,"loadstring(game:HttpGet(\"https://vanityscript.xyz/loader\"))()"},
-    {"RONIX HUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v3/loaders/fda9babd071d6b536a745774b6bc681c.lua\"))()"},
-    {"MONARCHH","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/nobuxy/monarch.win/refs/heads/main/Monarch.lua\"))()"},
-    {"UNREXL","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/unrexl/Scripts/refs/heads/main/StealaEgg\"))()"},
-    {"WADIDIS HUB","Key",false,"loadstring(game:HttpGet(\"https://api.jnkie.com/api/v1/luascripts/public/809c81e15814d1c016f44d9fe56587f5f38c55a97f203f11bc1a3f7cc3725c5f/download\"))()"},
-    {"H4XSCRIPTS","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/H4xScripts/Loader/refs/heads/main/loader.lua\", true))()"},
-    {"RBX LIFE / DIVINE EGG","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/SynergyNetworkz/VULN/refs/heads/main/STEALANEGG.lua\"))()"},
-    {"THAN HUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/d1c82862a093e64c6bd82bb6d6f7a46b.lua\"))()"},
-    {"TOKINU","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Tokinu-Scripts/Steal-An-Egg/refs/heads/main/Instant/Tp\"))()"},
-    {"NEVA HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/VEZ2/NEVAHUB/main/2\"))()"},
-    {"LEVON HUB","No Key",false,"loadstring(game:HttpGet('https://pastefy.app/nasHhfko/raw'))()"},
+local Categories = {
+    { key = "Avatar",   name = "avatar",   page = "avatars" },
+    { key = "Karakter", name = "karakter", page = "karakter" },
+    { key = "Animasi",  name = "animasi",  page = "animasi" },
+    { key = "Sepatu",   name = "sepatu",   page = "sepatu" },
+    { key = "Dipakai",  name = "sedang di pakai", page = "worn" },
 }
-
-local RawNewScriptsData = {
-    {"OTC","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Aerlro/OTC/refs/heads/main/Steal%20an%20Egg/main.lua\"))()"},
-    {"AKIPOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/akipox/Roblox/main/Mods/Games/StealanEgg.lua\"))()"},
-    {"MENGHUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/GrexXMeng/Mengs/refs/heads/main/StealAnEgg.lua\"))()"},
-    {"MY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/pespapankon-del/MyHub/main/Games/StealAnEgg.lua\"))()"},
-    {"TUROK JAPAN HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lvjunling/r-s-zh/refs/heads/main/stealegg/lua_zh_mobile.lua\"))()"},
-    {"FROST","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Frost-GG-Hud/Loader/main/src/Loader.luau\"))()"},
-    {"SOLARIS","Key",false,"loadstring(game:HttpGet(\"https://api.obscuravm.com/scripts/1231452106622100334\"))()"},
-    {"SEISEN V1","Key",false,"loadstring(game:HttpGet(\"https://api.jnkie.com/api/v1/luascripts/public/8ac2e97282ac0718aeeb3bb3856a2821d71dc9e57553690ab508ebdb0d1569da/download\"))()"},
-    {"SELUX","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/seltonmt012/sel01-rbx/main/loader.lua\"))()"},
-    {"SYSCALL","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/enzukaix/Syscall/refs/heads/main/Loader.lua\"))()"},
-    {"RBXZ HUB","Key",false,"loadstring(game:HttpGet(\"https://rbxscriptz.fun/RBXZ-HUB\"))()"},
-    {"SEISEN V2","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Mentos4/roblox/refs/heads/main/Script/Steal%20an%20Egg\"))()"},
-    {"VOID SHELL HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/VoidShell-null/VoidShell-Hub/refs/heads/main/Scripts/StealAnEgg.luau\"))()"},
-    {"NOYCHOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/yNopaak/STEAL-AN-EGG-NOYCHOX/main/main.lua\"))()"},
-    {"PELATICO","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PELATICO/steal-an-egg-hub/main/main.lua\"))()"},
-    {"XENON BYTE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/fivetagz-prog/xenon-byte-steal-an-egg/refs/heads/main/xenon-byte-sac.lua\"))()"},
-    {"VORTEX X SAGE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Israel-Vortex/vortex-x-scripts/refs/heads/main/Official-Vortex-Software/Dev-Project/StealAnEgg.lua\"))()"},
-    {"PHUCMAX VIET","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/phucmax/THANHPHUC/refs/heads/main/PHUCMAX(2).lua\"))()"},
-    {"DRAGON SECURITY HUB V2.5","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/conmemaynguhsjs/scrip/refs/heads/main/gemini-code-1789308407861.lua.txt\"))()"},
-    {"BUGXIE Visual Spawner","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner\"))()"},
-    {"BUGXIE Hit Aura","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/steal%20an%20egg%20hit%20aura-obfuscated.lua\"))()"},
-    {"CLOUT HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ClouthubOnTop/Loader/main/main.lua\"))()"},
-    {"LUXY","No Key",false,"loadstring(game:HttpGet(\"https://flowauth.net/v1/loaders/16b55b285584ec6d065913f5d59fb105.lua\"))()"},
-    {"OJIASA","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
-    {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
-    {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
-
-    -- [ SCRIPT BARU ]
-    {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
-    {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
-    {"TRIPSHUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TripNation/Trips-Hub/main/games/steal_an_egg.lua\"))()"},
-    {"VANTABLACK","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tranduykhanh08428-web/VantablackHub/refs/heads/main/Stealanegg.lua.txt\"))()"},
-    {"YOKUDO HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/betdoyvaka/stealanegg/main/Loader.lua\"))()"},
-    {"LSS HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/LSSHub_Steal_An_Hub.lua\"))()"},
-    {"CYRUS HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/CyrusOffc/scriptcyrus/refs/heads/main/loader\"))()"},
-    {"TITANIC HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TITANIC-HUB/StealAnEgg/main/Loader.lua\"))()"},
-    {"ASTRAL HUB","No Key",false,"loadstring(game:HttpGet(\"https://api.polsec.sh/loader/57d088befe906a8e/76f9bde1349c5eb9\"))()"},
-    {"THANHDUY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Game/refs/heads/main/Steal-An-Egg.lua\"))()"},
-    {"LEON HOP SERVER","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/leon4951.lua\"))()"},
-    {"CM HUB","Key",false,"loadstring(game:HttpGet(\"https://cmhub-key-system.vercel.app/roblox/loader.lua\"))()"},
-    {"SYNEXHUD","Key",false,"loadstring(game:HttpGet(\"https://synex.lat/loaders/stealegg.lua\"))()"},
-    {"POLLUTED HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PollutedHub/Sae/refs/heads/main/SaePolluted\"))()"},
-    {"NOX HUB","No Key",false,"loadstring(game:HttpGet(\"https://noxscript.com/loader\"))()"},
-    {"SIGIL HUB V3","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Curu/refs/heads/main/Steal-An-Egg-V3.lua\"))()"},
-    {"SKRR HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/skrrhubontop-design/skrrhub/main/skrrhub.txt\"))()"},
-}
-
-local function NormalizeScriptData(raw)
-    local result = {}
-    for i, entry in ipairs(raw) do
-        local name = entry[1]
-        local isRec = entry[3]
-        -- strip any leading "! " we may have put in raw data
-        name = name:gsub("^!%s*", "")
-        if isRec and not string.find(name, "REC") then
-            -- red ! on the RIGHT + gold REC badge
-            name = name .. ' <font color="rgb(255, 50, 50)"><b>!</b></font> <font color="rgb(255, 185, 0)"><b>REC</b></font> 🔥'
-        end
-        result[i] = {
-            name = name,
-            status = entry[2],
-            recommended = isRec,
-            url = entry[4],
-        }
-    end
-    return result
-end
-
-local ScriptDataStealAnEgg = NormalizeScriptData(RawScriptDataStealAnEgg)
--- permanently fold previous "new scripts" into main list
-local _prevNew = NormalizeScriptData(RawNewScriptsData)
-for _, s in ipairs(_prevNew) do
-    table.insert(ScriptDataStealAnEgg, s)
-end
-
-local CleanedScripts = ScriptDataStealAnEgg
-
--- [ SYSTEM CONFIG FAVORITE & HISTORY ]
-local FavoriteConfigName = "leon4951hub_favorites.json"
-local FavoriteList = {}
-
-local function LoadFavorites()
-    if not readfile then return end
-    local success, raw = pcall(readfile, FavoriteConfigName)
-    if not success or type(raw) ~= "string" or raw == "" then return end
-    local decodedOk, decoded = pcall(function()
-        return HttpService:JSONDecode(raw)
-    end)
-    if decodedOk and type(decoded) == "table" then
-        FavoriteList = decoded
-    end
-end
-
-local function SaveFavorites()
-    if writefile then
-        pcall(function()
-            writefile(FavoriteConfigName, HttpService:JSONEncode(FavoriteList))
-        end)
-    end
-end
-
-LoadFavorites()
-
-local FavoriteScriptsData = {}
-local function RefreshFavoritesData()
-    FavoriteScriptsData = {}
-    for _, s in ipairs(CleanedScripts) do
-        local id = s.name .. "|" .. s.url
-        if FavoriteList[id] then
-            table.insert(FavoriteScriptsData, s)
-        end
-    end
-end
-RefreshFavoritesData()
-
-local HistoryConfigName = "leon4951hub_history.json"
-local HistoryList = {}
-
-local function LoadHistory()
-    if not readfile then return end
-    local success, raw = pcall(readfile, HistoryConfigName)
-    if not success or type(raw) ~= "string" or raw == "" then return end
-    local decodedOk, decoded = pcall(function()
-        return HttpService:JSONDecode(raw)
-    end)
-    if decodedOk and type(decoded) == "table" then
-        HistoryList = decoded
-    end
-end
-
-local function SaveHistory()
-    if writefile then
-        pcall(function()
-            writefile(HistoryConfigName, HttpService:JSONEncode(HistoryList))
-        end)
-    end
-end
-
-LoadHistory()
-
-local MonthShortNames = {
-    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
-    "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
-}
-
-local RenderContent
-local Categories
-
-local function AddToHistory(scriptEntry)
-    local t = os.date("*t")
-    local monthStr = MonthShortNames[t.month] or tostring(t.month)
-
-    local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
-
-    for i = #HistoryList, 1, -1 do
-        if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
-            table.remove(HistoryList, i)
-        end
-    end
-
-    table.insert(HistoryList, 1, {
-        name = scriptEntry.name,
-        status = scriptEntry.status,
-        recommended = scriptEntry.recommended,
-        url = scriptEntry.url,
-        time = timeStr
-    })
-
-    if #HistoryList > 30 then
-        table.remove(HistoryList)
-    end
-
-    SaveHistory()
-    if Categories and Categories[2] then
-        Categories[2].scripts = HistoryList
-    end
-end
-
-Categories = {
-    {
-        key = "StealAnEgg",
-        name = "steal an egg",
-        type = "script_list",
-        scripts = CleanedScripts,
-    },
-    {
-        key = "History",
-        name = "histori",
-        type = "history_list",
-        scripts = HistoryList,
-    },
-    {
-        key = "Favorite",
-        name = "favorite",
-        type = "script_list",
-        scripts = FavoriteScriptsData,
-    },
-    {
-        key = "InfoAllScript",
-        name = "info/all script",
-        type = "info",
-        scripts = CleanedScripts,
-    },
-    {
-        key = "GantiAvatar",
-        name = "Ganti ke avatar",
-        type = "empty",
-        scripts = {},
-        tabHeight = 84, -- 2x tab biasa (42)
-    },
-}
-
 local activeCategoryIndex = 1
-local activeFilter = "ALL"
 
--- [ 4. ROOT UI ]
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "leon4951HubGuiV2"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
 pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+if not ScreenGui.Parent then ScreenGui.Parent = playerGui end
 
--- [ ONE-TIME NEW SCRIPT NOTIFICATION ]
-local NotifConfigName = "leon4951hub_newscript_notif_v17.json"
-local NEW_SCRIPTS = {
-    {name = "SOURCES HUB", status = "No Key", url = "https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew"},
-    {name = "DHII'S HUB", status = "No Key", url = "https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua"},
-    {name = "Lych x putra hub", status = "No Key", url = "https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua"},
-    {name = "VIREX HUB", status = "No Key", url = "https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD"},
-    {name = "TEDDY HUB", status = "No Key", url = "https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua"},
-    {name = "GOHA HUB", status = "No Key", url = "https://api.goha.dev/loader"},
-    {name = "Night Hub", status = "No Key", url = "https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau"},
-    {name = "REALKID HUB", status = "No Key", url = "https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua"},
-    {name = "CODIUM HUB", status = "No Key", url = "https://getcodium.xyz/loader.luau"},
-    {name = "NO-LAG X HUB", status = "No Key", url = "https://nolag.wtf/script.lua"},
-    {name = "LINKHIVE HUB", status = "No Key", url = "https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua"},
-    {name = "Chilli hub v5", status = "No Key", url = "https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua"},
-    {name = "VENYX HUB", status = "No Key", url = "https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub"},
-    {name = "LUKZ HUB", status = "No Key", url = "https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua"},
-    {name = "SENA EXCLUSIVE", status = "Key", url = "https://senahub.xyz/senaexclusive"},
-}
-
-
-local function HasSeenNewScriptNotif()
-    if not readfile then return false end
-    local ok, raw = pcall(readfile, NotifConfigName)
-    if not ok or type(raw) ~= "string" or raw == "" then return false end
-    local dok, data = pcall(function() return HttpService:JSONDecode(raw) end)
-    return dok and type(data) == "table" and data.seen == true
-end
-
-local function MarkNewScriptNotifSeen()
-    if writefile then
-        pcall(function()
-            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 17}))
-        end)
-    end
-end
-
-local function ShowNewScriptNotification()
-    if HasSeenNewScriptNotif() then return end
-
-    local NotifFrame = Instance.new("Frame")
-    NotifFrame.Name = "NewScriptNotif"
-    NotifFrame.Size = UDim2.fromOffset(340, 260)
-    NotifFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    NotifFrame.Position = UDim2.fromScale(0.5, 0.5)
-    NotifFrame.BackgroundColor3 = Theme.Background
-    NotifFrame.BorderSizePixel = 0
-    NotifFrame.ZIndex = 200
-    NotifFrame.Parent = ScreenGui
-    Instance.new("UICorner", NotifFrame).CornerRadius = UDim.new(0, 12)
-
-    local nStroke = Instance.new("UIStroke")
-    nStroke.Color = Theme.Accent
-    nStroke.Thickness = 2
-    nStroke.Parent = NotifFrame
-
-    local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 30)
-    titleBar.BackgroundColor3 = Theme.CardBg
-    titleBar.BorderSizePixel = 0
-    titleBar.Parent = NotifFrame
-    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
-
-    local titleFix = Instance.new("Frame")
-    titleFix.Size = UDim2.new(1, 0, 0, 12)
-    titleFix.Position = UDim2.new(0, 0, 1, -12)
-    titleFix.BackgroundColor3 = Theme.CardBg
-    titleFix.BorderSizePixel = 0
-    titleFix.Parent = titleBar
-
-    local titleLbl = Instance.new("TextLabel")
-    titleLbl.Font = Enum.Font.GothamBold
-    titleLbl.TextSize = 13
-    titleLbl.TextColor3 = Theme.Accent
-    titleLbl.BackgroundTransparency = 1
-    titleLbl.Size = UDim2.new(1, -40, 1, 0)
-    titleLbl.Position = UDim2.new(0, 12, 0, 0)
-    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    titleLbl.Text = "New Script"
-    titleLbl.Parent = titleBar
-
-    local closeX = Instance.new("TextButton")
-    closeX.Size = UDim2.fromOffset(24, 24)
-    closeX.Position = UDim2.new(1, -28, 0, 3)
-    closeX.BackgroundColor3 = Theme.CardBg
-    closeX.Text = "X"
-    closeX.Font = Enum.Font.GothamBold
-    closeX.TextSize = 12
-    closeX.TextColor3 = Theme.TextPrimary
-    closeX.AutoButtonColor = false
-    closeX.Parent = titleBar
-    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 6)
-
-    local listScroll = Instance.new("ScrollingFrame")
-    listScroll.Size = UDim2.new(1, -12, 1, -38)
-    listScroll.Position = UDim2.new(0, 6, 0, 34)
-    listScroll.BackgroundTransparency = 1
-    listScroll.BorderSizePixel = 0
-    listScroll.ScrollBarThickness = 2
-    listScroll.ScrollBarImageColor3 = Theme.Accent
-    listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    listScroll.Parent = NotifFrame
-
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 4)
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Parent = listScroll
-
-    local function runScript(entry)
-        if not entry or not entry.url or entry.url == "" then
-            warn("[LEON4951] Notif: entry kosong")
-            return
-        end
-        MarkNewScriptNotifSeen()
-        pcall(function()
-            if NotifFrame and NotifFrame.Parent then NotifFrame:Destroy() end
-        end)
-        pcall(function()
-            if ToggleMainUI then ToggleMainUI(false) end
-        end)
-        local targetUrl = entry.url
-        task.defer(function()
-            local ok, err = pcall(function()
-                local src = game:HttpGet(targetUrl)
-                local fn, cerr = loadstring(src)
-                if not fn then error(cerr or "compile fail") end
-                fn()
-            end)
-            if not ok then
-                warn("[LEON4951] Notif gagal: " .. tostring(entry.name) .. " | " .. tostring(err))
-            end
-        end)
-    end
-
-    for i = 1, #NEW_SCRIPTS, 2 do
-        local left = NEW_SCRIPTS[i]
-        local right = NEW_SCRIPTS[i + 1]
-
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 46)
-        row.BackgroundTransparency = 1
-        row.LayoutOrder = i
-        row.Parent = listScroll
-
-        local function makeCard(parent, entry, xScale)
-            if not entry then return end
-            local card = Instance.new("Frame")
-            card.Size = UDim2.new(0.485, 0, 1, 0)
-            card.Position = UDim2.new(xScale, 0, 0, 0)
-            card.BackgroundColor3 = Theme.CardBg
-            card.Parent = parent
-            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 7)
-
-            local cStroke = Instance.new("UIStroke")
-            cStroke.Color = Theme.CardBorder
-            cStroke.Thickness = 1
-            cStroke.Parent = card
-
-            local isKey = (entry.status == "Key")
-            local statusColor = isKey and "rgb(255, 75, 90)" or "rgb(46, 146, 116)"
-
-            local nameLbl = Instance.new("TextLabel")
-            nameLbl.Font = Enum.Font.GothamBold
-            nameLbl.TextSize = 9
-            nameLbl.TextColor3 = Theme.TextPrimary
-            nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(1, -8, 0, 14)
-            nameLbl.Position = UDim2.new(0, 5, 0, 3)
-            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-            nameLbl.RichText = true
-            -- name + status side by side + red !
-            nameLbl.Text = entry.name .. ' <font color="' .. statusColor .. '">(' .. entry.status .. ')</font> <font color="rgb(255, 50, 50)"><b>!</b></font>'
-            nameLbl.Parent = card
-
-            local execBtn = Instance.new("TextButton")
-            execBtn.Size = UDim2.new(1, -10, 0, 18)
-            execBtn.Position = UDim2.new(0, 5, 1, -22)
-            execBtn.BackgroundColor3 = Theme.RunPillBg
-            execBtn.Text = "Run"
-            execBtn.Font = Enum.Font.GothamBold
-            execBtn.TextSize = 10
-            execBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            execBtn.AutoButtonColor = true
-            execBtn.Active = true
-            execBtn.ZIndex = 210
-            execBtn.Parent = card
-            Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 5)
-
-            local fired = false
-            local function doRun()
-                if fired then return end
-                fired = true
-                runScript(entry)
-            end
-            execBtn.MouseButton1Click:Connect(doRun)
-            execBtn.Activated:Connect(doRun)
-        end
-
-        makeCard(row, left, 0)
-        if right then
-            makeCard(row, right, 0.515)
-        end
-    end
-
-    local function closeNotif()
-        MarkNewScriptNotifSeen()
-        TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
-        task.delay(0.16, function()
-            if NotifFrame then NotifFrame:Destroy() end
-        end)
-    end
-
-    closeX.MouseButton1Click:Connect(closeNotif)
-end
-
+-- toast on ScreenGui
+toastHolder = mk("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(440, 300),
+	BackgroundTransparency = 1, ZIndex = 200, Parent = ScreenGui,
+})
+mk("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = toastHolder,
+})
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
@@ -639,37 +2470,29 @@ MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 MainFrame.Position = UDim2.fromScale(0.5, 0.5)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = false
 MainFrame.Active = true
 MainFrame.Visible = false
 MainFrame.Parent = ScreenGui
-
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
-
--- OUTLINE UTAMA UI
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Color = Theme.BorderColor
 MainStroke.Thickness = 6
 MainStroke.Parent = MainFrame
-
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = 0
 MainScale.Parent = MainFrame
 
--- [ 5. LOGO VEKTOR "F" BARU ]
 local function CreateFLogo(size, rotation)
     local container = Instance.new("Frame")
     container.Size = size
     container.BackgroundTransparency = 1
     container.Rotation = rotation or -12
-
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))
     topBar.BackgroundColor3 = Theme.AccentBlue
     topBar.BorderSizePixel = 0
     topBar.Parent = container
     Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 2)
-
     local midBar = Instance.new("Frame")
     midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))
     midBar.Position = UDim2.new(0.2, 0, 0.4, 0)
@@ -677,7 +2500,6 @@ local function CreateFLogo(size, rotation)
     midBar.BorderSizePixel = 0
     midBar.Parent = container
     Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 2)
-
     local stem = Instance.new("Frame")
     stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)
     stem.Position = UDim2.new(0.08, 0, 0, 0)
@@ -685,41 +2507,36 @@ local function CreateFLogo(size, rotation)
     stem.BorderSizePixel = 0
     stem.Parent = container
     Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 2)
-
     return container
 end
 
 local ToggleMainUI
-local RunAndClose
-
--- [ 6. HEADER ]
 local Header = Instance.new("Frame")
-Header.Name = "Header"
 Header.Size = UDim2.new(1, 0, 0, 52)
 Header.BackgroundTransparency = 1
 Header.Active = true
 Header.Parent = MainFrame
-
 local LogoF = CreateFLogo(UDim2.fromOffset(26, 26), -12)
 LogoF.Position = UDim2.new(0, 16, 0, 13)
 LogoF.Parent = Header
-
 local Title = Instance.new("TextLabel")
-Title.Name = "Title"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 20
 Title.TextColor3 = Theme.Accent
 Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(0, 200, 0, 26)
+Title.Size = UDim2.new(0, 160, 0, 26)
 Title.Position = UDim2.new(0, 50, 0, 13)
 Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.RichText = true
 Title.Text = "LEON4951 HUB"
 Title.Parent = Header
 
--- TOMBOL X (CLOSE) DIPERBESAR UKURANNYA
+-- undo/redo di header
+local UndoBtn = button(Header, { text = "↶", size = UDim2.fromOffset(28, 28), position = UDim2.new(1, -200, 0, 12), textSize = 14,
+	onClick = function() task.spawn(E.undo) end })
+local RedoBtn = button(Header, { text = "↷", size = UDim2.fromOffset(28, 28), position = UDim2.new(1, -168, 0, 12), textSize = 14,
+	onClick = function() task.spawn(E.doRedo) end })
+
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.fromOffset(36, 36)
 CloseBtn.Position = UDim2.new(1, -44, 0, 8)
 CloseBtn.BackgroundColor3 = Theme.CardBg
@@ -729,53 +2546,23 @@ CloseBtn.TextSize = 16
 CloseBtn.TextColor3 = Theme.TextPrimary
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Header
-
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 10)
-
-local CloseStroke = Instance.new("UIStroke")
-CloseStroke.Color = Theme.CardBorder
-CloseStroke.Thickness = 1.5
-CloseStroke.Parent = CloseBtn
-
-CloseBtn.MouseButton1Click:Connect(function()
-    if ToggleMainUI then
-        ToggleMainUI(false)
-    end
-end)
+Instance.new("UIStroke", CloseBtn).Color = Theme.CardBorder
+CloseBtn.MouseButton1Click:Connect(function() if ToggleMainUI then ToggleMainUI(false) end end)
 
 local WaBtn = Instance.new("TextButton")
-WaBtn.Name = "WaChannelBtn"
-WaBtn.Size = UDim2.fromOffset(120, 26)
-WaBtn.Position = UDim2.new(1, -175, 0, 13)
+WaBtn.Size = UDim2.fromOffset(100, 26)
+WaBtn.Position = UDim2.new(1, -150, 0, 13)
 WaBtn.BackgroundColor3 = Theme.WaGreen
-WaBtn.Text = "💬 SALURAN WA"
+WaBtn.Text = "💬 WA"
 WaBtn.Font = Enum.Font.GothamBold
 WaBtn.TextSize = 9
 WaBtn.TextColor3 = Theme.TextPrimary
 WaBtn.AutoButtonColor = false
 WaBtn.Parent = Header
-
 Instance.new("UICorner", WaBtn).CornerRadius = UDim.new(0, 8)
-
-local WaStroke = Instance.new("UIStroke")
-WaStroke.Color = Theme.WaDarkGreen
-WaStroke.Thickness = 1.5
-WaStroke.Parent = WaBtn
-
 WaBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(WA_CHANNEL_LINK)
-    elseif toclipboard then
-        toclipboard(WA_CHANNEL_LINK)
-    end
-
-    local origText = WaBtn.Text
-    WaBtn.Text = "✓ COPIED!"
-    task.delay(1.5, function()
-        if WaBtn and WaBtn.Parent then
-            WaBtn.Text = origText
-        end
-    end)
+	if setclipboard then setclipboard(WA_CHANNEL_LINK) elseif toclipboard then toclipboard(WA_CHANNEL_LINK) end
 end)
 
 local HeaderLine = Instance.new("Frame")
@@ -785,1017 +2572,932 @@ HeaderLine.BackgroundColor3 = Theme.CardBorder
 HeaderLine.BorderSizePixel = 0
 HeaderLine.Parent = MainFrame
 
--- [ 7. BODY: SIDEBAR + KONTEN ]
 local Body = Instance.new("Frame")
-Body.Name = "Body"
 Body.Size = UDim2.new(1, -32, 1, -56)
 Body.Position = UDim2.new(0, 16, 0, 52)
 Body.BackgroundTransparency = 1
 Body.Parent = MainFrame
 
 local Sidebar = Instance.new("ScrollingFrame")
-Sidebar.Name = "Sidebar"
 Sidebar.Size = UDim2.new(0, 135, 1, 0)
 Sidebar.BackgroundTransparency = 1
 Sidebar.BorderSizePixel = 0
 Sidebar.ScrollBarThickness = 0
 Sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Sidebar.CanvasSize = UDim2.new(0, 0, 0, 0)
 Sidebar.Parent = Body
-
-local SidebarLayout = Instance.new("UIListLayout")
-SidebarLayout.Padding = UDim.new(0, 6)
-SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-SidebarLayout.Parent = Sidebar
+Instance.new("UIListLayout", Sidebar).Padding = UDim.new(0, 6)
+Sidebar:FindFirstChildOfClass("UIListLayout").SortOrder = Enum.SortOrder.LayoutOrder
 
 local Content = Instance.new("Frame")
-Content.Name = "Content"
 Content.Size = UDim2.new(1, -145, 1, 0)
 Content.Position = UDim2.new(0, 145, 0, 0)
 Content.BackgroundTransparency = 1
+Content.ClipsDescendants = true
 Content.Parent = Body
-
-local ContentHeader = Instance.new("Frame")
-ContentHeader.Name = "ContentHeader"
-ContentHeader.Size = UDim2.new(1, 0, 0, 54)
-ContentHeader.BackgroundTransparency = 1
-ContentHeader.Parent = Content
 
 local ContentTitle = Instance.new("TextLabel")
 ContentTitle.Font = Enum.Font.GothamBold
-ContentTitle.TextSize = 16
+ContentTitle.TextSize = 14
 ContentTitle.TextColor3 = Theme.TextPrimary
 ContentTitle.BackgroundTransparency = 1
-ContentTitle.Size = UDim2.new(0, 130, 0, 20)
+ContentTitle.Size = UDim2.new(1, 0, 0, 18)
 ContentTitle.Position = UDim2.new(0, 0, 0, 0)
 ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
-ContentTitle.Text = "SCRIPTS"
-ContentTitle.Parent = ContentHeader
-
--- [ PENCARIAN: LATAR GELAP DENGAN OUTLINE HITAM TIPIS ]
-local SearchBox = Instance.new("TextBox")
-SearchBox.Name = "SearchBox"
-SearchBox.Size = UDim2.new(1, -140, 0, 26)
-SearchBox.Position = UDim2.new(0, 135, 0, -3)
-SearchBox.BackgroundColor3 = Theme.CardBg                     
-SearchBox.PlaceholderText = "🔍 Cari nama script..."
-SearchBox.PlaceholderColor3 = Color3.fromRGB(180, 195, 220)
-SearchBox.Text = ""
-SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)         
-SearchBox.Font = Enum.Font.GothamBold
-SearchBox.TextSize = 10
-SearchBox.Visible = false
-SearchBox.Parent = ContentHeader
-
-Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(1, 0)
-
--- OUTLINE KOTAK PENCARIAN DIUBAH MENJADI HITAM TIPIS
-local SearchBoxBorder = Instance.new("UIStroke")
-SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)
-SearchBoxBorder.Thickness = 1
-SearchBoxBorder.Parent = SearchBox
-
-local ContentSub = Instance.new("TextLabel")
-ContentSub.Font = Enum.Font.Gotham
-ContentSub.TextSize = 10
-ContentSub.TextColor3 = Theme.TextMuted
-ContentSub.BackgroundTransparency = 1
-ContentSub.Size = UDim2.new(1, 0, 0, 14)
-ContentSub.Position = UDim2.new(0, 0, 0, 20)
-ContentSub.TextXAlignment = Enum.TextXAlignment.Left
-ContentSub.Text = "Click run to execute a script!"
-ContentSub.Parent = ContentHeader
-
-local FilterContainer = Instance.new("Frame")
-FilterContainer.Size = UDim2.new(1, 0, 0, 20)
-FilterContainer.Position = UDim2.new(0, 0, 0, 36)
-FilterContainer.BackgroundTransparency = 1
-FilterContainer.Parent = ContentHeader
-
-local FilterLayout = Instance.new("UIListLayout")
-FilterLayout.FillDirection = Enum.FillDirection.Horizontal
-FilterLayout.Padding = UDim.new(0, 6)
-FilterLayout.SortOrder = Enum.SortOrder.LayoutOrder
-FilterLayout.Parent = FilterContainer
-
-local filterButtons = {}
-
-local ScriptScroll = Instance.new("ScrollingFrame")
-ScriptScroll.Size = UDim2.new(1, 0, 1, -60)
-ScriptScroll.Position = UDim2.new(0, 0, 0, 60)
-ScriptScroll.BackgroundTransparency = 1
-ScriptScroll.BorderSizePixel = 0
-ScriptScroll.ScrollBarThickness = 3
-ScriptScroll.ScrollBarImageColor3 = Theme.Accent
-ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ScriptScroll.Parent = Content
-
-local RenderSidebarTabs 
-
--- [ 8. RENDER KONTEN ]
-RenderContent = function(categoryIndex)
-    local category = Categories[categoryIndex]
-
-    for _, child in ipairs(ScriptScroll:GetChildren()) do
-        if not child:IsA("UIListLayout") and not child:IsA("UIGridLayout") then
-            child:Destroy()
-        end
-    end
-
-    local oldLayout = ScriptScroll:FindFirstChildOfClass("UIListLayout") or ScriptScroll:FindFirstChildOfClass("UIGridLayout")
-    if oldLayout then oldLayout:Destroy() end
-
-    ContentTitle.Text = string.upper(category.name)
-
-    if category.type == "empty" then
-        FilterContainer.Visible = false
-        SearchBox.Visible = false
-        ContentSub.Text = ""
-        -- tab sengaja dikosongkan untuk sementara
-        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
-        return
-    end
-
-    if category.type == "info" then
-        FilterContainer.Visible = false
-        SearchBox.Visible = false
-        ContentSub.Text = "Database Overview & Statistics"
-
-        local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim.new(0, 8)
-        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        ListLayout.Parent = ScriptScroll
-
-        local totalCount = #CleanedScripts
-        local keyCount = 0
-        local noKeyCount = 0
-
-        for _, s in ipairs(CleanedScripts) do
-            if s.status == "Key" then keyCount = keyCount + 1
-            elseif s.status == "No Key" then noKeyCount = noKeyCount + 1 end
-        end
-
-        local StatsBanner = Instance.new("Frame")
-        StatsBanner.Name = "StatsBanner"
-        StatsBanner.Size = UDim2.new(1, 0, 0, 32)
-        StatsBanner.BackgroundColor3 = Theme.CardBg
-        StatsBanner.LayoutOrder = 1
-        StatsBanner.Parent = ScriptScroll
-        Instance.new("UICorner", StatsBanner).CornerRadius = UDim.new(0, 8)
-
-        local BannerStroke = Instance.new("UIStroke")
-        BannerStroke.Color = Theme.CardBorder
-        BannerStroke.Thickness = 1
-        BannerStroke.Parent = StatsBanner
-
-        local StatsText = Instance.new("TextLabel")
-        StatsText.Font = Enum.Font.GothamBold
-        StatsText.TextSize = 10
-        StatsText.TextColor3 = Theme.TextSecondary
-        StatsText.BackgroundTransparency = 1
-        StatsText.Size = UDim2.new(1, -16, 1, 0)
-        StatsText.Position = UDim2.new(0, 8, 0, 0)
-        StatsText.TextXAlignment = Enum.TextXAlignment.Left
-        StatsText.RichText = true
-        StatsText.Text = "📊 <font color=\"rgb(245, 247, 255)\">TOTAL:</font> " .. totalCount .. "   |   <font color=\"rgb(255, 75, 90)\">🔑 KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(46, 146, 116)\">🔓 NO KEY:</font> " .. noKeyCount
-        StatsText.Parent = StatsBanner
-
-        local GridContainer = Instance.new("Frame")
-        GridContainer.Name = "GridContainer"
-        GridContainer.Size = UDim2.new(1, 0, 0, 0)
-        GridContainer.AutomaticSize = Enum.AutomaticSize.Y
-        GridContainer.BackgroundTransparency = 1
-        GridContainer.LayoutOrder = 2
-        GridContainer.Parent = ScriptScroll
-
-        local GridLayout = Instance.new("UIGridLayout")
-        GridLayout.CellSize = UDim2.new(0.485, 0, 0, 36)
-        GridLayout.CellPadding = UDim2.new(0.03, 0, 0, 6)
-        GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        GridLayout.Parent = GridContainer
-
-        for idx, scriptEntry in ipairs(CleanedScripts) do
-            local card = Instance.new("Frame")
-            card.Name = "Card_" .. idx
-            card.BackgroundColor3 = Theme.CardBg
-            card.Parent = GridContainer
-            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
-
-            local cardStroke = Instance.new("UIStroke")
-            cardStroke.Color = Theme.CardBorder
-            cardStroke.Thickness = 1
-            cardStroke.Parent = card
-
-            local indicator = Instance.new("Frame")
-            indicator.Size = UDim2.new(0, 3, 0, 16)
-            indicator.Position = UDim2.new(0, 6, 0.5, -8)
-            indicator.BackgroundColor3 = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
-            indicator.BorderSizePixel = 0
-            indicator.Parent = card
-            Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
-
-            local nameLbl = Instance.new("TextLabel")
-            nameLbl.Font = Enum.Font.GothamBold
-            nameLbl.TextSize = 10
-            nameLbl.TextColor3 = Theme.TextPrimary
-            nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(1, -16, 1, 0)
-            nameLbl.Position = UDim2.new(0, 14, 0, 0)
-            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-            nameLbl.RichText = true
-            nameLbl.Text = scriptEntry.name
-            nameLbl.Parent = card
-        end
-
-        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
-        return
-    end
-
-    if category.key == "StealAnEgg" or category.key == "Favorite" then
-        FilterContainer.Visible = true
-        SearchBox.Visible = true
-    else
-        FilterContainer.Visible = true
-        SearchBox.Visible = false
-    end
-
-    ContentSub.Text = "Click run to execute a script!"
-
-    if category.key == "History" then
-        FilterContainer.Visible = false
-        SearchBox.Visible = false
-        ContentSub.Text = "Recently executed scripts history"
-
-        local ListLayout = Instance.new("UIListLayout")
-        ListLayout.Padding = UDim.new(0, 8)
-        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        ListLayout.Parent = ScriptScroll
-
-        if #category.scripts == 0 then
-            local empty = Instance.new("TextLabel")
-            empty.Font = Enum.Font.GothamBold
-            empty.TextSize = 11
-            empty.TextColor3 = Theme.TextMuted
-            empty.BackgroundTransparency = 1
-            empty.Size = UDim2.new(1, 0, 0, 40)
-            empty.Text = "Belum ada histori eksekusi script."
-            empty.Parent = ScriptScroll
-            return
-        end
-
-        for i, scriptEntry in ipairs(category.scripts) do
-            local card = Instance.new("Frame")
-            card.Name = "HistCard_" .. i
-            card.Size = UDim2.new(1, 0, 0, 52)
-            card.BackgroundColor3 = Theme.CardBg
-            card.LayoutOrder = i
-            card.Parent = ScriptScroll
-            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
-
-            local cardStroke = Instance.new("UIStroke")
-            cardStroke.Color = Theme.CardBorder
-            cardStroke.Thickness = 1
-            cardStroke.Parent = card
-
-            local nameLbl = Instance.new("TextLabel")
-            nameLbl.Font = Enum.Font.GothamBold
-            nameLbl.TextSize = 11
-            nameLbl.TextColor3 = Theme.TextPrimary
-            nameLbl.BackgroundTransparency = 1
-            nameLbl.Size = UDim2.new(1, -70, 0, 18)
-            nameLbl.Position = UDim2.new(0, 10, 0, 6)
-            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-            nameLbl.RichText = true
-            nameLbl.Text = scriptEntry.name
-            nameLbl.Parent = card
-
-            local isKey = (scriptEntry.status == "Key")
-            local tagPill = Instance.new("Frame")
-            tagPill.Size = isKey and UDim2.fromOffset(40, 16) or UDim2.fromOffset(52, 16)
-            tagPill.Position = UDim2.new(0, 10, 0, 28)
-            tagPill.BackgroundColor3 = isKey and Theme.KeyTagPill or Theme.NoKeyTagPill
-            tagPill.Parent = card
-            Instance.new("UICorner", tagPill).CornerRadius = UDim.new(0, 4)
-
-            local tagStroke = Instance.new("UIStroke")
-            tagStroke.Color = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
-            tagStroke.Thickness = 1
-            tagStroke.Parent = tagPill
-
-            local statusText = Instance.new("TextLabel")
-            statusText.Font = Enum.Font.GothamBold
-            statusText.TextSize = 8
-            statusText.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
-            statusText.BackgroundTransparency = 1
-            statusText.Size = UDim2.fromScale(1, 1)
-            statusText.Text = string.upper(scriptEntry.status)
-            statusText.Parent = tagPill
-
-            local timeLbl = Instance.new("TextLabel")
-            timeLbl.Font = Enum.Font.GothamBold
-            timeLbl.TextSize = 10
-            timeLbl.TextColor3 = Theme.AccentLight
-            timeLbl.BackgroundTransparency = 1
-            timeLbl.Size = UDim2.new(1, -135, 0, 16)
-            timeLbl.Position = UDim2.new(0, 68, 0, 28)
-            timeLbl.TextXAlignment = Enum.TextXAlignment.Left
-            timeLbl.TextTruncate = Enum.TextTruncate.None
-            timeLbl.Text = scriptEntry.time or "-"
-            timeLbl.Parent = card
-
-            local runBtn = Instance.new("TextButton")
-            runBtn.Name = "RunButton"
-            runBtn.Size = UDim2.fromOffset(54, 24)
-            runBtn.Position = UDim2.new(1, -62, 0.5, -12)
-            runBtn.BackgroundColor3 = Theme.RunPillBg
-            runBtn.Text = "RUN"
-            runBtn.Font = Enum.Font.GothamBold
-            runBtn.TextSize = 11
-            runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            runBtn.AutoButtonColor = false
-            runBtn.Parent = card
-            Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
-
-            local runStroke = Instance.new("UIStroke")
-            runStroke.Color = Color3.fromRGB(20, 20, 20)
-            runStroke.Thickness = 1
-            runStroke.Parent = runBtn
-
-            runBtn.MouseEnter:Connect(function()
-                TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
-            end)
-            runBtn.MouseLeave:Connect(function()
-                TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
-            end)
-
-            runBtn.MouseButton1Click:Connect(function()
-                RunAndClose(scriptEntry)
-            end)
-        end
-
-        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
-        return
-    end
-
-    local GridLayout = Instance.new("UIGridLayout")
-    GridLayout.CellSize = UDim2.new(0.485, 0, 0, 68)
-    GridLayout.CellPadding = UDim2.new(0.03, 0, 0, 8)
-    GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    GridLayout.Parent = ScriptScroll
-
-    local searchText = string.lower(SearchBox.Text)
-    local filteredScripts = {}
-
-    for _, scriptEntry in ipairs(category.scripts) do
-        local matchesFilter = false
-        if activeFilter == "ALL" then
-            matchesFilter = true
-        elseif activeFilter == "Key" then
-            matchesFilter = (scriptEntry.status == "Key")
-        elseif activeFilter == "No Key" then
-            matchesFilter = (scriptEntry.status == "No Key")
-        elseif activeFilter == "Recommended" then
-            matchesFilter = (scriptEntry.recommended == true)
-        end
-
-        local matchesSearch = (searchText == "") or (string.find(string.lower(scriptEntry.name), searchText, 1, true) ~= nil)
-
-        if matchesFilter and matchesSearch then
-            table.insert(filteredScripts, scriptEntry)
-        end
-    end
-
-    if #filteredScripts == 0 then
-        GridLayout:Destroy()
-        local empty = Instance.new("TextLabel")
-        empty.Font = Enum.Font.GothamBold
-        empty.TextSize = 11
-        empty.TextColor3 = Theme.TextMuted
-        empty.BackgroundTransparency = 1
-        empty.Size = UDim2.new(1, 0, 0, 40)
-        empty.Text = "Tidak ada script yang cocok."
-        empty.Parent = ScriptScroll
-        return
-    end
-
-    for i, scriptEntry in ipairs(filteredScripts) do
-        local card = Instance.new("Frame")
-        card.Name = "Card_" .. i
-        card.BackgroundColor3 = Theme.CardBg
-        card.LayoutOrder = i
-        card.Parent = ScriptScroll
-        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
-
-        local cardStroke = Instance.new("UIStroke")
-        cardStroke.Color = Theme.CardBorder
-        cardStroke.Thickness = 1.5
-        cardStroke.Parent = card
-
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 11
-        nameLabel.TextColor3 = Theme.TextPrimary
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Size = UDim2.new(1, -36, 0, 22)
-        nameLabel.Position = UDim2.new(0, 10, 0, 6)
-        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        nameLabel.RichText = true
-        nameLabel.Text = scriptEntry.name
-        nameLabel.Parent = card
-
-        local isKey = (scriptEntry.status == "Key")
-        local tagPill = Instance.new("Frame")
-        tagPill.Size = isKey and UDim2.fromOffset(42, 18) or UDim2.fromOffset(56, 18)
-        tagPill.Position = UDim2.new(0, 10, 0, 36)
-        tagPill.BackgroundColor3 = isKey and Theme.KeyTagPill or Theme.NoKeyTagPill
-        tagPill.Parent = card
-        Instance.new("UICorner", tagPill).CornerRadius = UDim.new(0, 5)
-
-        local tagStroke = Instance.new("UIStroke")
-        tagStroke.Color = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
-        tagStroke.Thickness = 1
-        tagStroke.Parent = tagPill
-
-        local statusText = Instance.new("TextLabel")
-        statusText.Font = Enum.Font.GothamBold
-        statusText.TextSize = 9
-        statusText.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
-        statusText.BackgroundTransparency = 1
-        statusText.Size = UDim2.fromScale(1, 1)
-        statusText.Text = string.upper(scriptEntry.status)
-        statusText.Parent = tagPill
-
-        local runBtn = Instance.new("TextButton")
-        runBtn.Name = "RunButton"
-        runBtn.Size = UDim2.fromOffset(54, 22)
-        runBtn.Position = UDim2.new(1, -62, 1, -30)
-        runBtn.BackgroundColor3 = Theme.RunPillBg
-        runBtn.Text = "RUN"
-        runBtn.Font = Enum.Font.GothamBold
-        runBtn.TextSize = 11
-        runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        runBtn.AutoButtonColor = false
-        runBtn.Parent = card
-        Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
-
-        local runStroke = Instance.new("UIStroke")
-        runStroke.Color = Color3.fromRGB(20, 20, 20)
-        runStroke.Thickness = 1
-        runStroke.Parent = runBtn
-
-        runBtn.MouseEnter:Connect(function()
-            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
-        end)
-        runBtn.MouseLeave:Connect(function()
-            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
-        end)
-
-        runBtn.MouseButton1Click:Connect(function()
-            RunAndClose(scriptEntry)
-        end)
-
-        local favBtn = Instance.new("TextButton")
-        favBtn.Name = "FavoriteBtn"
-        favBtn.Size = UDim2.fromOffset(24, 24)
-        favBtn.Position = UDim2.new(1, -28, 0, 4)
-        favBtn.BackgroundTransparency = 1
-        local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url
-        favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"
-        favBtn.Font = Enum.Font.GothamBold
-        favBtn.TextSize = 16
-        favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextMuted
-        favBtn.AutoButtonColor = false
-        favBtn.Parent = card
-
-        favBtn.MouseButton1Click:Connect(function()
-            if FavoriteList[fKeyId] then
-                FavoriteList[fKeyId] = nil
-                favBtn.Text = "☆"
-                favBtn.TextColor3 = Theme.TextMuted
-            else
-                FavoriteList[fKeyId] = true
-                favBtn.Text = "★"
-                favBtn.TextColor3 = Theme.GoldBadge
-            end
-            SaveFavorites()
-            RefreshFavoritesData()
-            Categories[3].scripts = FavoriteScriptsData
-        end)
-    end
-
-    ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+ContentTitle.Text = "AVATAR"
+ContentTitle.Parent = Content
+
+local ContentHost = Instance.new("Frame")
+ContentHost.Name = "ContentHost"
+ContentHost.Size = UDim2.new(1, 0, 1, -22)
+ContentHost.Position = UDim2.new(0, 0, 0, 22)
+ContentHost.BackgroundTransparency = 1
+ContentHost.ClipsDescendants = true
+ContentHost.Parent = Content
+
+-- page frames (one per tab, built once)
+local PageFrames = {}
+local PageBuilt = {}
+for _, cat in ipairs(Categories) do
+	local p = Instance.new("Frame")
+	p.Name = "Page_" .. cat.key
+	p.Size = UDim2.new(1, 0, 1, 0)
+	p.BackgroundTransparency = 1
+	p.Visible = false
+	p.Parent = ContentHost
+	PageFrames[cat.page] = p
 end
 
--- [ 9. CREATING FILTER TABS ]
-local filterDefs = {
-    { id = "ALL", text = "ALL" },
-    { id = "Key", text = "🔑 KEY" },
-    { id = "No Key", text = "🔓 NO KEY" },
-    { id = "Recommended", text = "🌟 REC" }
-}
-
-for _, fDef in ipairs(filterDefs) do
-    local isSelected = (activeFilter == fDef.id)
-    local fBtn = Instance.new("TextButton")
-    fBtn.Name = "Filter_" .. fDef.id
-    fBtn.Size = UDim2.fromOffset(66, 20)
-    fBtn.BackgroundColor3 = isSelected and Theme.FilterActiveBg or Theme.CardBg
-    fBtn.Text = fDef.text
-    fBtn.Font = Enum.Font.GothamBold
-    fBtn.TextSize = 8
-    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    fBtn.AutoButtonColor = false
-    fBtn.Parent = FilterContainer
-    Instance.new("UICorner", fBtn).CornerRadius = UDim.new(0, 5)
-
-    -- OUTLINE HITAM TIPIS PADA TOMBOL FILTER
-    local fStroke = Instance.new("UIStroke")
-    fStroke.Color = Color3.fromRGB(0, 0, 0)
-    fStroke.Thickness = 1
-    fStroke.Parent = fBtn
-
-    filterButtons[fDef.id] = { btn = fBtn, stroke = fStroke }
-
-    fBtn.MouseButton1Click:Connect(function()
-        activeFilter = fDef.id
-        for id, item in pairs(filterButtons) do
-            local active = (id == activeFilter)
-            TweenService:Create(item.btn, TweenInfo.new(0.12), {
-                BackgroundColor3 = active and Theme.FilterActiveBg or Theme.CardBg
-            }):Play()
-            item.btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        end
-        RenderContent(activeCategoryIndex)
-    end)
-end
-
-SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-    RenderContent(activeCategoryIndex)
-end)
-
--- [ 10. RENDER TAB SIDEBAR ]
 local sidebarTabButtons = {}
+local function showPage(pageKey)
+	for k, fr in pairs(PageFrames) do
+		fr.Visible = (k == pageKey)
+	end
+end
 
 local function SetActiveCategory(index)
-    activeCategoryIndex = index
-
-    RefreshFavoritesData()
-    Categories[2].scripts = HistoryList
-    Categories[3].scripts = FavoriteScriptsData
-
-    for i, btnData in ipairs(sidebarTabButtons) do
-        local isActive = (i == index)
-        local isSpecial = (Categories[i].key == "GantiAvatar")
-
-        if isSpecial then
-            -- tab besar: background tetap terlihat supaya outline bisa render
-            TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
-                BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(12, 22, 38)
-            }):Play()
-            btnData.frame.BackgroundTransparency = isActive and 0 or 0.35
-            btnData.stroke.Color = Color3.fromRGB(130, 200, 255)
-            btnData.stroke.Thickness = 1.5
-            btnData.stroke.Transparency = 0.15
-            btnData.stroke.Enabled = true
-        else
-            TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
-                BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
-            }):Play()
-            btnData.frame.BackgroundTransparency = isActive and 0 or 1
-            btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-            btnData.stroke.Thickness = 1.5
-            btnData.stroke.Transparency = 0
-            btnData.stroke.Enabled = isActive
-        end
-
-        btnData.label.TextColor3 = isActive and Theme.TextPrimary or Theme.TextMuted
-        btnData.indicator.Visible = isActive
-
-        if isActive and Categories[i].hasNotification then
-            Categories[i].hasNotification = false
-            if btnData.notifBadge then
-                TweenService:Create(btnData.notifBadge, TweenInfo.new(0.15), { TextTransparency = 1 }):Play()
-                task.delay(0.15, function()
-                    if btnData.notifBadge then btnData.notifBadge:Destroy() end
-                end)
-            end
-        end
-    end
-
-    RenderContent(index)
+	activeCategoryIndex = index
+	local cat = Categories[index]
+	for i, bd in ipairs(sidebarTabButtons) do
+		local on = (i == index)
+		bd.frame.BackgroundTransparency = on and 0 or 1
+		bd.frame.BackgroundColor3 = on and Theme.TabActiveBg or Color3.fromRGB(0,0,0)
+		bd.stroke.Enabled = on
+		bd.stroke.Color = on and Theme.TabActiveBorder or Color3.fromRGB(0,0,0)
+		bd.label.TextColor3 = on and Theme.TextPrimary or Theme.TextMuted
+		bd.indicator.Visible = on
+	end
+	ContentTitle.Text = string.upper(cat.name)
+	showPage(cat.page)
+	if not PageBuilt[cat.page] then
+		PageBuilt[cat.page] = true
+		if cat.page == "avatars" and UI and UI.builders and UI.builders.avatars then
+			UI.builders.avatars(PageFrames.avatars)
+		elseif cat.page == "worn" and UI and UI.builders and UI.builders.worn then
+			UI.builders.worn(PageFrames.worn)
+		elseif (cat.page == "karakter" or cat.page == "animasi" or cat.page == "sepatu") and buildCatalogPage then
+			buildCatalogPage(PageFrames[cat.page], cat.page)
+		end
+	end
+	if UI and UI.onShow and UI.onShow[cat.page] then
+		pcall(UI.onShow[cat.page])
+	end
 end
 
-RenderSidebarTabs = function()
-    for _, child in ipairs(Sidebar:GetChildren()) do
-        if not child:IsA("UIListLayout") then
-            child:Destroy()
-        end
-    end
-    sidebarTabButtons = {}
-
-    for i, category in ipairs(Categories) do
-        local tabHeight = category.tabHeight or 42
-        local isSpecialTab = (category.key == "GantiAvatar")
-        local tabBtn = Instance.new("TextButton")
-        tabBtn.Name = "Tab_" .. category.key
-        tabBtn.Size = UDim2.new(1, 0, 0, tabHeight)
-        if isSpecialTab then
-            -- background semi-opaque agar UIStroke terlihat
-            tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(12, 22, 38)
-            tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 0.35
-        else
-            tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
-            tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
-        end
-        tabBtn.Text = ""
-        tabBtn.AutoButtonColor = false
-        tabBtn.LayoutOrder = i
-        tabBtn.Parent = Sidebar
-        Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
-
-        local tabStroke = Instance.new("UIStroke")
-        if isSpecialTab then
-            -- outline biru muda tipis hanya di tab besar
-            tabStroke.Color = Color3.fromRGB(130, 200, 255)
-            tabStroke.Thickness = 1.5
-            tabStroke.Transparency = 0.15
-            tabStroke.Enabled = true
-            tabStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        else
-            tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-            tabStroke.Thickness = 1.5
-            tabStroke.Enabled = (i == activeCategoryIndex)
-        end
-        tabStroke.Parent = tabBtn
-
-        local indicator = Instance.new("Frame")
-        indicator.Name = "Indicator"
-        indicator.Size = UDim2.new(0, 4, 0, math.max(20, tabHeight - 16))
-        indicator.Position = UDim2.new(0, 5, 0.5, -math.floor(math.max(20, tabHeight - 16) / 2))
-        indicator.BackgroundColor3 = Theme.Accent
-        indicator.BorderSizePixel = 0
-        indicator.Visible = (i == activeCategoryIndex)
-        indicator.Parent = tabBtn
-        Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
-
-        local label = Instance.new("TextLabel")
-        label.Font = Enum.Font.GothamBold
-        label.TextSize = 11
-        label.TextColor3 = (i == activeCategoryIndex) and Theme.TextPrimary or Theme.TextMuted
-        label.BackgroundTransparency = 1
-        label.Size = UDim2.new(1, -22, 1, 0)
-        label.Position = UDim2.new(0, 15, 0, 0)
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.TextWrapped = true
-        label.Text = string.upper(category.name)
-        label.Parent = tabBtn
-
-        local notifBadge = nil
-        if category.hasNotification then
-            notifBadge = Instance.new("TextLabel")
-            notifBadge.Name = "NotifBadge"
-            notifBadge.Size = UDim2.fromOffset(14, 14)
-            notifBadge.AnchorPoint = Vector2.new(1, 0.5)
-            notifBadge.Position = UDim2.new(1, -6, 0.5, 0)
-            notifBadge.BackgroundColor3 = Theme.Accent
-            notifBadge.Text = "!"
-            notifBadge.Font = Enum.Font.GothamBold
-            notifBadge.TextSize = 9
-            notifBadge.TextColor3 = Theme.Background
-            notifBadge.Parent = tabBtn
-            Instance.new("UICorner", notifBadge).CornerRadius = UDim.new(1, 0)
-        end
-
-        table.insert(sidebarTabButtons, { frame = tabBtn, stroke = tabStroke, label = label, indicator = indicator, notifBadge = notifBadge })
-
-        tabBtn.MouseButton1Click:Connect(function()
-            SetActiveCategory(i)
-        end)
-    end
+local function RenderSidebarTabs()
+	for _, c in ipairs(Sidebar:GetChildren()) do
+		if not c:IsA("UIListLayout") then c:Destroy() end
+	end
+	sidebarTabButtons = {}
+	for i, category in ipairs(Categories) do
+		local tabBtn = Instance.new("TextButton")
+		tabBtn.Size = UDim2.new(1, 0, 0, 42)
+		tabBtn.BackgroundColor3 = (i == 1) and Theme.TabActiveBg or Color3.fromRGB(0,0,0)
+		tabBtn.BackgroundTransparency = (i == 1) and 0 or 1
+		tabBtn.Text = ""
+		tabBtn.AutoButtonColor = false
+		tabBtn.LayoutOrder = i
+		tabBtn.Parent = Sidebar
+		Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
+		local tabStroke = Instance.new("UIStroke")
+		tabStroke.Color = Theme.TabActiveBorder
+		tabStroke.Thickness = 1.5
+		tabStroke.Enabled = (i == 1)
+		tabStroke.Parent = tabBtn
+		local indicator = Instance.new("Frame")
+		indicator.Size = UDim2.new(0, 4, 0, 26)
+		indicator.Position = UDim2.new(0, 5, 0.5, -13)
+		indicator.BackgroundColor3 = Theme.Accent
+		indicator.BorderSizePixel = 0
+		indicator.Visible = (i == 1)
+		indicator.Parent = tabBtn
+		Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
+		local label = Instance.new("TextLabel")
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 11
+		label.TextColor3 = (i == 1) and Theme.TextPrimary or Theme.TextMuted
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.new(1, -22, 1, 0)
+		label.Position = UDim2.new(0, 15, 0, 0)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Text = string.upper(category.name)
+		label.Parent = tabBtn
+		table.insert(sidebarTabButtons, { frame = tabBtn, stroke = tabStroke, label = label, indicator = indicator })
+		tabBtn.MouseButton1Click:Connect(function() SetActiveCategory(i) end)
+	end
 end
 
-RenderSidebarTabs()
-RenderContent(activeCategoryIndex)
+-- Stub UI table for builders compatibility
+UI = UI or {}
+UI.builders = UI.builders or {}
+UI.onShow = UI.onShow or {}
+UI.refreshCards = nil
+UI.refreshWorn = nil
+State = State or { tab = "avatars", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, favorites = {}, favOrder = {}, recent = {}, token = 0 }
 
--- [ 11. DRAG SYSTEM ]
-local isDragging = false
-local dragStartPos = Vector3.new()
-local startFramePos = UDim2.new()
-local currentDragInput = nil
+-- Catalog page builder adapted for karakter/animasi/sepatu
+function buildCatalogPage(page, which)
+	local catMap = {
+		karakter = CATEGORIES[1], -- b_body
+		animasi = CATEGORIES[2],
+		sepatu = CATEGORIES[3],
+	}
+	local fixedCat = catMap[which]
+	if not fixedCat then return end
+	State.cat = fixedCat
+	State.keyword = ""
+	State.sortIdx = 1
+	State.freeOnly = false
 
-Header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = true
-        dragStartPos = input.Position
-        startFramePos = MainFrame.Position
-        currentDragInput = input
-    end
-end)
+	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -140, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row2 })
+	corner(sbFrame, 8)
+	stroke(sbFrame, T.Stroke, 1)
+	local sbBox = mk("TextBox", {
+		Size = UDim2.new(1, -12, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Cari...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = sbFrame,
+	})
+	local startQuery
+	local sortBtn = button(row2, { text = "↕", size = UDim2.fromOffset(32, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -70, 0, 0), textSize = 12, onClick = function()
+			State.sortIdx = State.sortIdx % #SORTS + 1
+			startQuery()
+		end })
+	local freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(56, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -6, 0, 0), textSize = 11, onClick = function()
+			State.freeOnly = not State.freeOnly
+			startQuery()
+		end })
+	sbBox.FocusLost:Connect(function(enter)
+		if enter then State.keyword = sbBox.Text startQuery() end
+	end)
 
-UserInputService.InputEnded:Connect(function(input)
-    if input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = false
-        currentDragInput = nil
-    end
-end)
+	local grid = makeScroll(page, UDim2.new(1, 0, 1, -34), UDim2.fromOffset(0, 34))
+	mk("UIGridLayout", {
+		CellSize = UDim2.fromOffset(98, 116), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
+	})
+	local msg = mk("TextLabel", {
+		Size = UDim2.new(1, -10, 0, 40), Position = UDim2.fromOffset(5, 40), BackgroundTransparency = 1, Text = "",
+		TextColor3 = T.Dim, TextSize = 11, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false, Parent = page,
+	})
+	local currentQuery, loading, activeCards = nil, false, {}
 
-UserInputService.InputChanged:Connect(function(input)
-    if isDragging and (input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartPos
-        MainFrame.Position = UDim2.new(
-            startFramePos.X.Scale,
-            startFramePos.X.Offset + delta.X,
-            startFramePos.Y.Scale,
-            startFramePos.Y.Offset + delta.Y
-        )
-    end
-end)
+	local function clearGrid()
+		msg.Visible = false
+		activeCards = {}
+		for _, c in ipairs(grid:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+	end
+	local function loadPage(token)
+		if loading or not currentQuery or currentQuery.finished then return end
+		loading = true
+		local q = currentQuery
+		task.spawn(function()
+			local items, err = q:nextPage()
+			if token ~= State.token then return end
+			loading = false
+			if not items then
+				msg.Text = "Gagal: " .. tostring(err)
+				msg.Visible = true
+				return
+			end
+			for _, it in ipairs(items) do
+				table.insert(activeCards, makeCard(grid, it))
+			end
+			if q.total == 0 then
+				msg.Text = "Tidak ada hasil."
+				msg.Visible = true
+			end
+		end)
+	end
+	startQuery = function()
+		State.token = (State.token or 0) + 1
+		local token = State.token
+		loading = false
+		clearGrid()
+		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
+		currentQuery = newQuery(fixedCat, State.keyword, State.sortIdx, State.freeOnly)
+		loadPage(token)
+	end
+	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
+			loadPage(State.token)
+		end
+	end)
+	UI.refreshCards = function()
+		for _, c in ipairs(activeCards) do if c.update then c.update() end end
+	end
+	startQuery()
+end
 
--- [ 11.5 RESIZE SYSTEM ]
-local ResizeHandle = Instance.new("TextButton")
-ResizeHandle.Name = "ResizeHandle"
-ResizeHandle.Size = UDim2.fromOffset(18, 18)
-ResizeHandle.AnchorPoint = Vector2.new(1, 1)
-ResizeHandle.Position = UDim2.new(1, 0, 1, 0)
-ResizeHandle.BackgroundColor3 = Theme.Accent
-ResizeHandle.Text = "◢"
-ResizeHandle.Font = Enum.Font.GothamBold
-ResizeHandle.TextSize = 9
-ResizeHandle.TextColor3 = Theme.Background
-ResizeHandle.AutoButtonColor = false
-ResizeHandle.Parent = MainFrame
 
-Instance.new("UICorner", ResizeHandle).CornerRadius = UDim.new(0, 5)
+local function makeCard(parent, item, onFav)
+	local isBundle = item.Type == "Bundle"
+	local card = mk("TextButton", {
+		AutoButtonColor = false, Text = "", BackgroundColor3 = T.Surface, BorderSizePixel = 0,
+		LayoutOrder = item.Order or 0, Parent = parent,
+	})
+	corner(card, 10)
+	local st = stroke(card, T.Stroke, 1.5, 0.3)
+	local img = mk("ImageLabel", {
+		Size = UDim2.new(1, -10, 0, 72), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
+		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
+		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
+	})
+	corner(img, 8)
+	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
+	nm.Position = UDim2.fromOffset(6, 80)
+	nm.Size = UDim2.new(1, -12, 0, 14)
+	nm.TextTruncate = Enum.TextTruncate.AtEnd
+	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
+	pr.Position = UDim2.fromOffset(6, 96)
+	pr.Size = UDim2.new(1, -12, 0, 12)
 
-local isResizing = false
-local resizeStartPos = Vector3.new()
-local startSize = UDim2.new()
+	local badge = mk("TextLabel", {
+		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
+		BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
+		BorderSizePixel = 0, Visible = false, ZIndex = 3, Parent = card,
+	})
+	corner(badge, 9)
+	local fav = mk("TextButton", {
+		Size = UDim2.fromOffset(22, 22), Position = UDim2.fromOffset(8, 8), BackgroundTransparency = 0.35,
+		BackgroundColor3 = Color3.new(0, 0, 0), Text = "♡", TextSize = 13, Font = Enum.Font.GothamBold,
+		TextColor3 = Color3.new(1, 1, 1), AutoButtonColor = false, ZIndex = 3, Parent = card,
+	})
+	corner(fav, 11)
+	local overlay = mk("TextLabel", {
+		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45,
+		Text = "⏳", TextSize = 22, Visible = false, ZIndex = 6, Parent = card,
+	})
+	corner(overlay, 10)
 
-ResizeHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isResizing = true
-        resizeStartPos = input.Position
-        startSize = MainFrame.Size
-    end
-end)
+	local obj = { card = card, item = item, loading = false }
+	function obj.update()
+		local worn = (not isBundle) and E.isWorn(item.Id)
+		badge.Visible = worn
+		st.Color = worn and T.Ok or T.Stroke
+		st.Transparency = worn and 0 or 0.3
+		local isFav = State.favorites[item.Id] ~= nil
+		fav.Text = isFav and "♥" or "♡"
+		fav.TextColor3 = isFav and T.Danger or Color3.new(1, 1, 1)
+	end
+	obj.update()
 
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isResizing = false
-    end
-end)
+	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
+	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
+	fav.Activated:Connect(function()
+		toggleFavorite(item)
+		obj.update()
+		if onFav then
+			onFav()
+		end
+	end)
+	card.Activated:Connect(function()
+		if obj.loading then
+			return
+		end
+		obj.loading = true
+		overlay.Visible = true
+		task.spawn(function()
+			local ok
+			if isBundle then
+				ok = E.equipBundle(item.Id, item.Name)
+			else
+				ok = E.toggleAsset(item.Id, item.Name)
+			end
+			if ok and (isBundle or E.isWorn(item.Id)) then
+				addRecent(item)
+			end
+			overlay.Visible = false
+			obj.loading = false
+		end)
+	end)
+	return obj
+end
 
-UserInputService.InputChanged:Connect(function(input)
-    if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - resizeStartPos
-        local newWidth = math.clamp(startSize.X.Offset + delta.X, 480, 950)
-        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 300, 650)
-        MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)
-    end
-end)
+UI.builders.catalog = function(page)
+	-- baris 1: kategori (3 tombol)
+	local catRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = catRow,
+	})
 
--- [ 12. FLOATING TOGGLE BUTTON BARU ]
+	-- baris 2: cari, sort, gratis, refresh
+	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -206, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row2 })
+	corner(sbFrame, 8)
+	stroke(sbFrame, T.Stroke, 1)
+	local sbBox = mk("TextBox", {
+		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Cari (Enter)...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = sbFrame,
+	})
+	local startQuery
+	sbBox.FocusLost:Connect(function(enter)
+		if enter then
+			State.keyword = sbBox.Text
+			startQuery()
+		end
+	end)
+	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(96, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -104, 0, 0), textSize = 12,
+		onClick = function()
+			State.sortIdx = State.sortIdx % #SORTS + 1
+			startQuery()
+		end })
+	local freeBtn
+	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(62, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -38, 0, 0), textSize = 12,
+		onClick = function()
+			State.freeOnly = not State.freeOnly
+			startQuery()
+		end })
+	button(row2, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
+		textSize = 17, onClick = function() startQuery() end })
+
+	-- jumlah item (disembunyikan karena ruang sempit, dipakai logika bawah)
+	local countL = label(page, "", 11, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
+	countL.Visible = false
+
+	-- grid
+	local grid = makeScroll(page, UDim2.new(1, 0, 1, -70), UDim2.fromOffset(0, 70))
+	mk("UIGridLayout", {
+		CellSize = UDim2.fromOffset(98, 116), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
+	})
+	pad(grid, 0, 2, 0, 10)
+	local msg = mk("TextLabel", {
+		Size = UDim2.new(1, -20, 0, 70), Position = UDim2.fromOffset(10, 100), BackgroundTransparency = 1, Text = "",
+		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
+		ZIndex = 5, Parent = page,
+	})
+
+	local currentQuery, loading = nil, false
+
+	local function clearGrid()
+		msg.Visible = false
+		activeCards = {}
+		for _, c in ipairs(grid:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+		grid.CanvasPosition = Vector2.new(0, 0)
+	end
+
+	local function addCard(item)
+		table.insert(activeCards, makeCard(grid, item, function()
+			if State.cat.kind == "fav" then
+				startQuery()
+			end
+		end))
+	end
+
+	local function showMsg(text)
+		msg.Text = text
+		msg.Visible = true
+	end
+
+	local function loadPage(token)
+		if loading or not currentQuery or currentQuery.finished then
+			return
+		end
+		loading = true
+		local q = currentQuery
+		task.spawn(function()
+			local items, err = q:nextPage()
+			if token ~= State.token then
+				return
+			end
+			loading = false
+			if not items then
+				logf("katalog gagal: %s", tostring(err))
+				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
+				countL.Text = ""
+				return
+			end
+			msg.Visible = false
+			for _, it in ipairs(items) do
+				addCard(it)
+			end
+			if q.total == 0 then
+				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
+			end
+			countL.Text = q.total .. " item" .. (q.finished and "" or "+") .. (q.backend and ("  •  " .. q.backend) or "")
+		end)
+	end
+
+	startQuery = function()
+		State.token = State.token + 1
+		local token = State.token
+		loading = false
+		clearGrid()
+		sortBtn.Text = "↕ " .. SORTS[State.sortIdx].name
+		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
+		freeBtn.Text = (State.freeOnly and "✓ " or "") .. "Gratis"
+		currentQuery = newQuery(State.cat, State.keyword, State.sortIdx, State.freeOnly)
+		loadPage(token)
+	end
+
+	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
+			loadPage(State.token)
+		end
+	end)
+
+	-- tombol kategori
+	local catBtns = {}
+	local function markCat()
+		for id, b in pairs(catBtns) do
+			b.BackgroundColor3 = (id == State.cat.id) and T.Accent or T.Surface2
+		end
+	end
+	local function selectCat(cat)
+		State.cat = cat
+		State.keyword = ""
+		sbBox.Text = ""
+		markCat()
+		startQuery()
+	end
+	for i, cat in ipairs(CATEGORIES) do
+		local b = mk("TextButton", {
+			Size = UDim2.new(1 / #CATEGORIES, -4, 1, 0), BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
+			Text = cat.name, TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
+			AutoButtonColor = false, LayoutOrder = i, Parent = catRow,
+		})
+		corner(b, 8)
+		catBtns[cat.id] = b
+		b.Activated:Connect(function()
+			selectCat(cat)
+		end)
+	end
+
+	UI.refreshCards = function()
+		for _, c in ipairs(activeCards) do
+			c.update()
+		end
+	end
+	UI.onShow.catalog = UI.refreshCards
+
+	selectCat(CATEGORIES[1])
+end
+
+----------------------------------------------------------------------------
+-- [9] HALAMAN DIPAKAI
+----------------------------------------------------------------------------
+
+UI.builders.worn = function(page)
+	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
+	label(head, "Sedang dipakai", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
+	local sub = label(head, "", 11, T.Dim, Enum.Font.Gotham)
+	sub.Position = UDim2.fromOffset(0, 20)
+	sub.Size = UDim2.new(0.5, 0, 0, 14)
+	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
+		onClick = function() task.spawn(E.removeAll) end })
+	button(head, { text = "↺ Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
+
+	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
+	vlist(list, 6)
+	pad(list, 0, 0, 8, 10)
+
+	UI.refreshWorn = function()
+		for _, c in ipairs(list:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+		local items = E.wornList()
+		sub.Text = #items .. " item aktif pada karakter"
+		for n, e in ipairs(items) do
+			local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
+			corner(row, 10)
+			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
+				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = row })
+			corner(img, 8)
+			local nameL = label(row, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
+			nameL.Position = UDim2.fromOffset(50, 6)
+			nameL.Size = UDim2.new(1, -124, 0, 18)
+			nameL.TextTruncate = Enum.TextTruncate.AtEnd
+			local typeL = label(row, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
+			typeL.Position = UDim2.fromOffset(50, 26)
+			typeL.Size = UDim2.new(1, -124, 0, 14)
+			button(row, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
+				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
+			task.spawn(function()
+				local nm = E.name(e.Id)
+				if nameL.Parent then
+					nameL.Text = nm
+				end
+			end)
+		end
+	end
+	UI.onShow.worn = UI.refreshWorn
+	UI.refreshWorn()
+end
+
+----------------------------------------------------------------------------
+-- [10] HALAMAN AVATAR  (cari semua pemain Roblox + preset + server + teman)
+----------------------------------------------------------------------------
+local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
+
+local function userCard(parent, userId, name, order, sub)
+	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
+	corner(card, 12)
+	local img = mk("ImageLabel", { Size = UDim2.fromOffset(60, 60), Position = UDim2.new(0.5, -30, 0, 6), BackgroundColor3 = T.Surface2,
+		BorderSizePixel = 0, Image = thumbURL("AvatarHeadShot", userId, 150), Parent = card })
+	corner(img, 30)
+	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+	nm.Position = UDim2.fromOffset(4, 68)
+	nm.Size = UDim2.new(1, -8, 0, 14)
+	nm.TextTruncate = Enum.TextTruncate.AtEnd
+	local idleText = sub or "klik untuk pakai"
+	local hint = label(card, idleText, 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+	hint.Position = UDim2.fromOffset(4, 83)
+	hint.Size = UDim2.new(1, -8, 0, 12)
+	hint.TextTruncate = Enum.TextTruncate.AtEnd
+	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
+	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
+	local busyCard = false
+	card.Activated:Connect(function()
+		if busyCard then
+			return
+		end
+		busyCard = true
+		hint.Text = "memuat..."
+		task.spawn(function()
+			if userId == player.UserId then
+				E.reset()
+			else
+				E.applyUser(userId, name)
+			end
+			hint.Text = idleText
+			busyCard = false
+		end)
+	end)
+	return card
+end
+
+local function userGrid(parent, order)
+	local g = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = order, Parent = parent })
+	mk("UIGridLayout", { CellSize = UDim2.fromOffset(92, 100), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = g })
+	return g
+end
+
+-- pencarian pemain Roblox mana pun (tanpa harus satu server / berteman)
+local function searchUsers(keyword, cursor)
+	local path = "/v1/users/search?keyword=" .. urlenc(keyword) .. "&limit=25"
+	if cursor then
+		path = path .. "&cursor=" .. urlenc(cursor)
+	end
+	local lastErr = "tidak ada URL"
+	for _, host in ipairs({ "https://users.roblox.com", "https://users.roproxy.com" }) do
+		local bodyTxt, err = httpGet(host .. path)
+		if bodyTxt then
+			local ok, data = pcall(function()
+				return HttpService:JSONDecode(bodyTxt)
+			end)
+			if ok and type(data) == "table" and type(data.data) == "table" then
+				return data.data, data.nextPageCursor
+			end
+			lastErr = "JSON tidak valid dari " .. host
+		else
+			lastErr = tostring(err)
+		end
+	end
+	return nil, lastErr
+end
+
+local function nameFromId(uid)
+	local ok, n = callAny(Players, { "GetNameFromUserIdAsync" }, uid)
+	if ok and type(n) == "string" then
+		return n
+	end
+	return nil
+end
+
+local function idFromName(name)
+	local ok, id = callAny(Players, { "GetUserIdFromNameAsync" }, name)
+	if ok and type(id) == "number" and id > 0 then
+		return id
+	end
+	return nil
+end
+
+
+UI.builders.avatars = function(page)
+	local scroll = makeScroll(page)
+	vlist(scroll, 8)
+	pad(scroll, 0, 0, 8, 12)
+
+	-- baris pencarian
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = 1, Parent = scroll })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+	corner(sbFrame, 8)
+	stroke(sbFrame, T.Stroke, 1)
+	local box = mk("TextBox", {
+		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Username / nama / UserId (semua Roblox)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = sbFrame,
+	})
+	local searchBtn = button(row, { text = "Cari", size = UDim2.fromOffset(60, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -42, 0, 0), bg = T.Accent, textSize = 12 })
+	local randBtn = button(row, { text = "🎲", size = UDim2.fromOffset(36, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 0), textSize = 15 })
+
+	local status = label(scroll, "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak.", 11, T.Dim, Enum.Font.Gotham)
+	status.LayoutOrder = 2
+	status.Size = UDim2.new(1, 0, 0, 14)
+
+	local resultGrid = userGrid(scroll, 3)
+	local moreBtn = button(scroll, { text = "Muat lebih banyak", size = UDim2.new(1, 0, 0, 28), order = 4, textSize = 12 })
+	moreBtn.Visible = false
+
+	local token, nextCursor, keyword, loading, count, seen = 0, nil, "", false, 0, {}
+
+	local function clearResults()
+		for _, c in ipairs(resultGrid:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+		count, seen = 0, {}
+		moreBtn.Visible = false
+	end
+
+	local function addUser(id, name, sub, front)
+		if seen[id] then
+			return
+		end
+		seen[id] = true
+		count = count + 1
+		userCard(resultGrid, id, name, front and (-1000 + count) or count, sub)
+	end
+
+	local function doSearch()
+		local kw = box.Text:match("^%s*(.-)%s*$")
+		token = token + 1
+		local myToken = token
+		clearResults()
+		nextCursor = nil
+		if kw == "" then
+			status.Text = "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak."
+			return
+		end
+		keyword, loading = kw, true
+		status.Text = "Mencari \"" .. kw .. "\"..."
+		task.spawn(function()
+			local exactId = tonumber(kw)
+			local exactName
+			if exactId then
+				exactName = nameFromId(exactId)
+			else
+				exactId = idFromName(kw)
+				if exactId then
+					exactName = nameFromId(exactId) or kw
+				end
+			end
+			if myToken ~= token then
+				return
+			end
+			if exactId and exactName then
+				addUser(exactId, exactName, "ID " .. exactId, true)
+			end
+			local list, cur = searchUsers(kw, nil)
+			if myToken ~= token then
+				return
+			end
+			loading = false
+			if list then
+				nextCursor = cur
+				for _, u in ipairs(list) do
+					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
+				end
+				status.Text = count == 0 and ("Tidak ada hasil untuk \"" .. kw .. "\".") or (count .. " pemain ditemukan")
+				moreBtn.Visible = nextCursor ~= nil
+			else
+				status.Text = (count > 0) and "Pencarian luas gagal (HTTP diblokir), hanya hasil persis."
+					or ("⚠ Pencarian gagal: " .. tostring(cur))
+			end
+		end)
+	end
+
+	moreBtn.Activated:Connect(function()
+		if loading or not nextCursor then
+			return
+		end
+		loading = true
+		local myToken = token
+		task.spawn(function()
+			local list, cur = searchUsers(keyword, nextCursor)
+			if myToken ~= token then
+				return
+			end
+			loading = false
+			if list then
+				nextCursor = cur
+				for _, u in ipairs(list) do
+					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
+				end
+			else
+				nextCursor = nil
+			end
+			moreBtn.Visible = nextCursor ~= nil
+			status.Text = count .. " pemain ditemukan" .. (nextCursor and "+" or "")
+		end)
+	end)
+
+	randBtn.Activated:Connect(function()
+		if loading then
+			return
+		end
+		loading = true
+		token = token + 1
+		local myToken = token
+		clearResults()
+		nextCursor = nil
+		status.Text = "Mencari pemain acak..."
+		task.spawn(function()
+			local tries = 0
+			while count < 8 and tries < 30 and myToken == token do
+				tries = tries + 1
+				local id = math.random(100000, 3500000000)
+				local nm = nameFromId(id)
+				if nm then
+					addUser(id, nm, "ID " .. id)
+				end
+			end
+			if myToken == token then
+				loading = false
+				status.Text = count .. " pemain acak (tekan 🎲 lagi untuk ganti)"
+			end
+		end)
+	end)
+
+	searchBtn.Activated:Connect(doSearch)
+	box.FocusLost:Connect(function(enter)
+		if enter then
+			doSearch()
+		end
+	end)
+
+	-- preset
+	local h1 = label(scroll, "PRESET", 11, T.Dim, Enum.Font.GothamBold)
+	h1.LayoutOrder = 5
+	local presetGrid = userGrid(scroll, 6)
+	for i, p in ipairs(PRESETS) do
+		userCard(presetGrid, p[2], p[1], i)
+	end
+
+	-- pemain di server
+	local h2 = label(scroll, "PEMAIN DI SERVER INI", 11, T.Dim, Enum.Font.GothamBold)
+	h2.LayoutOrder = 7
+	local serverGrid = userGrid(scroll, 8)
+	local function refreshServer()
+		for _, c in ipairs(serverGrid:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+		local n = 0
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				n = n + 1
+				userCard(serverGrid, p.UserId, p.DisplayName, n)
+			end
+		end
+	end
+	UI.onShow.avatars = refreshServer
+	refreshServer()
+
+	-- teman
+	local h3 = label(scroll, "TEMAN", 11, T.Dim, Enum.Font.GothamBold)
+	h3.LayoutOrder = 9
+	local friendGrid = userGrid(scroll, 10)
+	local fstatus = label(scroll, "Memuat daftar teman...", 11, T.Dim, Enum.Font.Gotham)
+	fstatus.LayoutOrder = 11
+	task.spawn(function()
+		local ok, pages = pcall(function()
+			return Players:GetFriendsAsync(player.UserId)
+		end)
+		if not ok or not pages then
+			fstatus.Text = "Daftar teman tidak bisa dimuat."
+			return
+		end
+		local fcount, done = 0, false
+		while not done and fcount < 72 do
+			for _, f in ipairs(pages:GetCurrentPage()) do
+				fcount = fcount + 1
+				userCard(friendGrid, f.Id, f.DisplayName or f.Username, fcount)
+			end
+			if pages.IsFinished then
+				done = true
+			elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
+				done = true
+			end
+		end
+		fstatus.Text = fcount == 0 and "Belum ada teman di akun ini." or (fcount .. " teman dimuat")
+	end)
+end
+
+----------------------------------------------------------------------------
+
+
+-- Drag header
+do
+	local dragging, dragStart, startPos = false, nil, nil
+	Header.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging, dragStart, startPos = true, input.Position, MainFrame.Position
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+-- Floating toggle
 local FloatingBtn = Instance.new("TextButton")
-FloatingBtn.Name = "FloatingToggleBtn"
 FloatingBtn.Size = UDim2.fromOffset(44, 44)
 FloatingBtn.AnchorPoint = Vector2.new(0, 0.5)
 FloatingBtn.Position = UDim2.new(0, 20, 0.4, 0)
 FloatingBtn.BackgroundColor3 = Theme.Background
-FloatingBtn.BorderSizePixel = 0
 FloatingBtn.Visible = false
-FloatingBtn.Active = true
 FloatingBtn.Text = ""
 FloatingBtn.Parent = ScreenGui
-
 Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 11)
+local fs = Instance.new("UIStroke")
+fs.Color = Theme.AccentBlue
+fs.Thickness = 1.5
+fs.Parent = FloatingBtn
+local fl = CreateFLogo(UDim2.fromOffset(20, 20), -12)
+fl.Position = UDim2.new(0.5, -10, 0.5, -10)
+fl.Parent = FloatingBtn
 
-local FloatingStroke = Instance.new("UIStroke")
-FloatingStroke.Color = Theme.AccentBlue
-FloatingStroke.Thickness = 1.5
-FloatingStroke.Parent = FloatingBtn
-
-local FloatingLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
-FloatingLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
-FloatingLogo.Parent = FloatingBtn
-
-local FloatingScale = Instance.new("UIScale")
-FloatingScale.Scale = 1
-FloatingScale.Parent = FloatingBtn
-
-local floatDragging = false
-local floatDragStart = Vector3.new()
-local floatStartPos = UDim2.new()
-local floatInputObj = nil
-
-FloatingBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        floatDragging = true
-        floatDragStart = input.Position
-        floatStartPos = FloatingBtn.Position
-        floatInputObj = input
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input == floatInputObj or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        floatDragging = false
-        floatInputObj = nil
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if floatDragging and (input == floatInputObj or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - floatDragStart
-        FloatingBtn.Position = UDim2.new(
-            floatStartPos.X.Scale,
-            floatStartPos.X.Offset + delta.X,
-            floatStartPos.Y.Scale,
-            floatStartPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
--- [ 13. TOGGLE UI <-> FLOATING BUTTON BARU ]
 ToggleMainUI = function(show)
-    if show then
-        MainFrame.Size = UDim2.fromOffset(560, 340)
-        MainFrame.Visible = true
-        MainScale.Scale = 0
-        FloatingBtn.Visible = false
-
-        TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Scale = 1
-        }):Play()
-    else
-        -- INSTANT close to floating toggle (same as X button)
-        MainScale.Scale = 0
-        MainFrame.Visible = false
-        FloatingBtn.Visible = true
-        FloatingScale.Scale = 1
-    end
+	if show then
+		MainFrame.Visible = true
+		MainScale.Scale = 0
+		FloatingBtn.Visible = false
+		TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	else
+		MainScale.Scale = 0
+		MainFrame.Visible = false
+		FloatingBtn.Visible = true
+	end
 end
+FloatingBtn.MouseButton1Click:Connect(function() ToggleMainUI(true) end)
 
-
-RunAndClose = function(scriptEntry)
-    -- 1) close UI instantly (same as pressing X)
-    if ToggleMainUI then
-        ToggleMainUI(false)
-    else
-        MainFrame.Visible = false
-        MainScale.Scale = 0
-        if FloatingBtn then
-            FloatingBtn.Visible = true
-            FloatingScale.Scale = 1
-        end
-    end
-    -- 2) execute in background so UI never waits
-    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
-    AddToHistory(scriptEntry)
-    task.spawn(function()
-        local raw = scriptEntry.url
-        local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
-        local ok, err = pcall(function()
-            if pureUrl and pureUrl ~= "" then
-                loadstring(game:HttpGet(pureUrl))()
-            elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
-                local fn, compileErr = loadstring(raw)
-                if not fn then error(compileErr or "loadstring compile failed") end
-                fn()
-            else
-                loadstring(game:HttpGet(raw))()
-            end
-        end)
-        if not ok then
-            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
-        end
-    end)
-end
-
-FloatingBtn.MouseButton1Click:Connect(function()
-    ToggleMainUI(true)
+E.onChanged(function()
+	if UI.refreshCards then pcall(UI.refreshCards) end
+	if UI.refreshWorn then pcall(UI.refreshWorn) end
 end)
 
--- [ 14. BOOT LOADING SCREEN ]
-local BootScreen = Instance.new("CanvasGroup")
-BootScreen.Name = "BootScreen"
-BootScreen.Size = UDim2.fromOffset(280, 130)
-BootScreen.AnchorPoint = Vector2.new(0.5, 0.5)
-BootScreen.Position = UDim2.fromScale(0.5, 0.5)
-BootScreen.BackgroundColor3 = Theme.Background
-BootScreen.GroupTransparency = 0
-BootScreen.ZIndex = 100
-BootScreen.Parent = ScreenGui
+RenderSidebarTabs()
+SetActiveCategory(1)
 
-Instance.new("UICorner", BootScreen).CornerRadius = UDim.new(0, 16)
-
-local BootStroke = Instance.new("UIStroke")
-BootStroke.Color = Theme.Accent
-BootStroke.Thickness = 2
-BootStroke.Parent = BootScreen
-
-local BootLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
-BootLogo.Position = UDim2.new(0.5, -10, 0, 20)
-BootLogo.Parent = BootScreen
-
-local BootTitle = Instance.new("TextLabel")
-BootTitle.Font = Enum.Font.GothamBold
-BootTitle.TextSize = 15
-BootTitle.TextColor3 = Theme.Accent
-BootTitle.BackgroundTransparency = 1
-BootTitle.Size = UDim2.new(1, -20, 0, 18)
-BootTitle.Position = UDim2.new(0, 10, 0, 48)
-BootTitle.Text = "LEON4951 HUB"
-BootTitle.Parent = BootScreen
-
-local BootSubText = Instance.new("TextLabel")
-BootSubText.Font = Enum.Font.Gotham
-BootSubText.TextSize = 10
-BootSubText.TextColor3 = Theme.TextMuted
-BootSubText.BackgroundTransparency = 1
-BootSubText.Size = UDim2.new(1, -20, 0, 14)
-BootSubText.Position = UDim2.new(0, 10, 0, 68)
-BootSubText.Text = "Loading..."
-BootSubText.Parent = BootScreen
-
-local BootTrack = Instance.new("Frame")
-BootTrack.Size = UDim2.new(1, -40, 0, 5)
-BootTrack.Position = UDim2.new(0, 20, 1, -24)
-BootTrack.BackgroundColor3 = Theme.CardBg
-BootTrack.BorderSizePixel = 0
-BootTrack.Parent = BootScreen
-Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
-
-local BootFill = Instance.new("Frame")
-BootFill.Size = UDim2.new(0, 0, 1, 0)
-BootFill.BackgroundColor3 = Theme.Accent
-BootFill.BorderSizePixel = 0
-BootFill.Parent = BootTrack
-Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)
-
-local BootPercentLabel = Instance.new("TextLabel")
-BootPercentLabel.Font = Enum.Font.GothamBold
-BootPercentLabel.TextSize = 9
-BootPercentLabel.TextColor3 = Theme.TextPrimary
-BootPercentLabel.BackgroundTransparency = 1
-BootPercentLabel.TextXAlignment = Enum.TextXAlignment.Right
-BootPercentLabel.Size = UDim2.new(1, -40, 0, 12)
-BootPercentLabel.Position = UDim2.new(0, 20, 1, -38)
-BootPercentLabel.Text = "0%"
-BootPercentLabel.Parent = BootScreen
-
-local BootStatuses = {
-    { 0.00, "Initializing Elegant Theme..." },
-    { 0.20, "Loading UI Components..." },
-    { 0.40, "Filtering Script Database..." },
-    { 0.65, "Preparing Categories..." },
-    { 0.85, "Finalizing UI..." },
-}
-
-local bootDuration = 0.6
-local bootStartTime = os.clock()
-local bootConn
-
-bootConn = RunService.Heartbeat:Connect(function()
-    local elapsed = os.clock() - bootStartTime
-    local pct = math.clamp(elapsed / bootDuration, 0, 1)
-
-    BootFill.Size = UDim2.new(pct, 0, 1, 0)
-    BootPercentLabel.Text = math.floor(pct * 100) .. "%"
-
-    for _, status in ipairs(BootStatuses) do
-        if pct >= status[1] then
-            BootSubText.Text = status[2]
-        end
-    end
-
-    if pct >= 1 then
-        bootConn:Disconnect()
-        bootConn = nil
-        BootSubText.Text = "✓ Ready"
-
-        task.spawn(function()
-            task.wait(0.3)
-
-            TweenService:Create(BootScreen, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                GroupTransparency = 1
-            }):Play()
-
-            task.delay(0.2, function()
-                BootScreen:Destroy()
-
-                MainFrame.Visible = true
-                MainScale.Scale = 0
-                TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Scale = 1
-                }):Play()
-                task.delay(0.4, function()
-                    pcall(ShowNewScriptNotification)
-                end)
-            end)
-        end)
-    end
+task.spawn(function()
+	local ok, err = pcall(E.init)
+	if not ok then
+		toast("Gagal init avatar: " .. tostring(err), "danger")
+		return
+	end
+	toast("LEON4951 + Avatar engine siap", "ok")
 end)
+
+MainFrame.Visible = true
+MainScale.Scale = 0
+TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
