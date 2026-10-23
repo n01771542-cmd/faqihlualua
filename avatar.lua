@@ -11,6 +11,8 @@
    - Filter Cowo / Cewe diganti sistem skor (kata kunci kuat/lemah + tipe aksesori).
      Avatar yang tidak jelas gendernya TIDAK ikut muncul di filter Cowo/Cewe lagi.
    - "Item terbanyak" hanya menampilkan avatar asli dengan item banyak (lihat MOST_MIN_ITEMS).
+  UPDATE v3 (CEPAT): kandidat dari teman / pemain server / teman-dari-teman (bukan tebak ID acak),
+   kartu langsung muncul begitu lolos filter, gender dihitung di latar belakang, paralel 24.
   Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
 
@@ -3169,6 +3171,8 @@ local function userCard(parent, userId, name, order, sub)
 	hint.Position = UDim2.fromOffset(3, 76)
 	hint.Size = UDim2.new(1, -6, 0, 12)
 	hint.TextTruncate = Enum.TextTruncate.AtEnd
+	hint.Name = "HintLbl"
+	card:SetAttribute("Idle", idleText)
 	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
 	local busyCard = false
@@ -3184,7 +3188,7 @@ local function userCard(parent, userId, name, order, sub)
 			else
 				E.applyUser(userId, name)
 			end
-			hint.Text = idleText
+			hint.Text = card:GetAttribute("Idle") or idleText
 			busyCard = false
 		end)
 	end)
@@ -3484,26 +3488,102 @@ local function buildAvatars(page)
 	end
 
 	local tried = {}
+
+	-- ===== POOL KANDIDAT (jalur cepat) =====
+	-- Dipakai duluan: teman akun ini, pemain di server, lalu teman-dari-teman avatar yang lolos filter.
+	-- Hampir semuanya akun asli + nama sudah ada (tanpa tebak ID acak yang banyak kosong), jadi kartu muncul jauh lebih cepat.
+	local pool, poolSeen, expanded, expanding = {}, {}, {}, 0
+	local feedConc = 24
+
+	local function poolPush(id, name)
+		id = tonumber(id)
+		if not id or poolSeen[id] or tried[id] or #pool > 1500 then
+			return
+		end
+		poolSeen[id] = true
+		pool[#pool + 1] = { id = id, name = tostring(name or "") }
+	end
+	local function poolPop()
+		local n = #pool
+		if n == 0 then
+			return nil
+		end
+		local i = math.random(1, n)
+		local v = pool[i]
+		pool[i] = pool[n]
+		pool[n] = nil
+		return v
+	end
+	local function expandFriends(uid, force)
+		if expanded[uid] or (not force and (expanding >= 3 or #pool > 700)) then
+			return
+		end
+		expanded[uid] = true
+		expanding = expanding + 1
+		task.spawn(function()
+			local ok, pages = pcall(function()
+				return Players:GetFriendsAsync(uid)
+			end)
+			if ok and pages then
+				local okP, cur = pcall(function()
+					return pages:GetCurrentPage()
+				end)
+				if okP and type(cur) == "table" then
+					for _, f in ipairs(cur) do
+						poolPush(f.Id, f.DisplayName or f.Username)
+					end
+				end
+			end
+			expanding = expanding - 1
+		end)
+	end
+	local function seedPool()
+		local n = 0
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				poolPush(p.UserId, p.DisplayName)
+				if n < 3 then
+					n = n + 1
+					expandFriends(p.UserId, true)
+				end
+			end
+		end
+		expandFriends(player.UserId, true)
+	end
+
+	local function setSub(card, text)
+		card:SetAttribute("Idle", text)
+		local h = card:FindFirstChild("HintLbl")
+		if h and h.Text ~= "memuat..." then
+			h.Text = text
+		end
+	end
+	local function genderSym(g)
+		return (g == "cewe" and "♀") or (g == "cowo" and "♂") or "•"
+	end
+
+	-- kartu langsung tampil begitu lolos filter bacon; gender (mode "terbanyak") dihitung menyusul di latar belakang
 	local function feedBatch(myToken, n)
 		loading = true
 		setStatus("Memuat pemain Roblox...")
 		local found, attempts, inflight, throttled = 0, 0, 0, 0
 		local maxAttempts = n * 40
-		local CONC = 14
 		while myToken == token and found < n and attempts < maxAttempts do
 			if throttled >= 5 then
 				setStatus("Roblox membatasi permintaan, menunggu...")
+				feedConc = math.max(8, feedConc - 6)
 				task.wait(2)
 				throttled = 0
 			end
-			while myToken == token and inflight < CONC and found < n and attempts < maxAttempts do
+			while myToken == token and inflight < feedConc and found < n and attempts < maxAttempts do
 				attempts = attempts + 1
 				inflight = inflight + 1
 				task.spawn(function()
-					local id = math.floor(math.random() * 5000000000) + 100000
+					local cand = (math.random() < 0.92) and poolPop() or nil
+					local id = cand and cand.id or (math.floor(math.random() * 5000000000) + 100000)
 					if not tried[id] then
 						tried[id] = true
-						-- cek avatar dulu (gagal cepat untuk akun tidak ada), nama hanya untuk yang lolos
+						-- cek avatar dulu (gagal cepat untuk akun tidak ada / bacon), nama hanya untuk yang lolos
 						local desc, derr = descFromUser(id)
 						if desc then
 							local a = analyzeDesc(desc)
@@ -3515,16 +3595,35 @@ local function buildAvatars(page)
 								plainCache[id] = plain
 							end
 							if not plain and myToken == token then
-								local nm = nameFromId(id)
+								expandFriends(id)
+								local nm = (cand and cand.name ~= "" and cand.name) or nil
+								if not nm then
+									nm = nameFromId(id)
+								end
 								if nm and myToken == token then
-									a.gender = genderOf(a)
+									local g = nil
+									if sortMode ~= "most" then
+										g = genderOf(a)
+									end
+									a.gender = g
 									analysisCache[id] = a
-									local gsym = (a.gender == "cewe" and "♀") or (a.gender == "cowo" and "♂") or "•"
-									local sub = a.count .. " item " .. gsym
-									if addUser(id, nm, sub, nil, { count = a.count, gender = a.gender }) then
-										if visibleFor(a.gender, a.count) then
+									if addUser(id, nm, a.count .. " item " .. genderSym(g), nil, { count = a.count, gender = g }) then
+										if visibleFor(g, a.count) then
 											found = found + 1
 										end
+										if sortMode == "most" then
+											task.spawn(function()
+												local g2 = genderOf(a)
+												local e = entries[id]
+												if e and e.card and e.card.Parent then
+													e.gender = g2
+													a.gender = g2
+													e.card.Visible = visibleFor(g2, e.count)
+													setSub(e.card, a.count .. " item " .. genderSym(g2))
+												end
+											end)
+										end
+										setStatus(countVisible() .. " pemain • memuat...")
 									end
 								end
 							end
@@ -3538,11 +3637,11 @@ local function buildAvatars(page)
 					inflight = inflight - 1
 				end)
 			end
-			task.wait(0.05)
+			task.wait(0.03)
 		end
 		local t0 = os.clock()
-		while inflight > 0 and os.clock() - t0 < 8 and myToken == token do
-			task.wait(0.1)
+		while inflight > 0 and os.clock() - t0 < 1.5 and myToken == token do
+			task.wait(0.05)
 		end
 		if myToken == token then
 			loading = false
@@ -3560,8 +3659,10 @@ local function buildAvatars(page)
 		local myToken = token
 		clearAll()
 		mode, searchState, keyword = "feed", nil, ""
+		feedConc = 24
 		showSection("all")
-		task.spawn(feedBatch, myToken, 8)
+		seedPool()
+		task.spawn(feedBatch, myToken, 16)
 	end
 
 	local function setSortMode(m)
@@ -3574,8 +3675,8 @@ local function buildAvatars(page)
 			applyMode()
 			local vis = countVisible()
 			setStatus(vis .. " pemain • gulir untuk lagi")
-			if vis < 8 and not loading then
-				task.spawn(feedBatch, token, 8)
+			if vis < 12 and not loading then
+				task.spawn(feedBatch, token, 12)
 			end
 		else
 			startFeed()
@@ -3645,7 +3746,7 @@ local function buildAvatars(page)
 		end
 		local myToken = token
 		if mode == "feed" then
-			task.spawn(feedBatch, myToken, 8)
+			task.spawn(feedBatch, myToken, 12)
 		elseif mode == "search" and searchState and searchState.cursor then
 			loading = true
 			task.spawn(function()
@@ -3716,7 +3817,7 @@ local function buildAvatars(page)
 		task.spawn(function()
 			local inflight = 0
 			for _, c in ipairs(cardsList) do
-				while inflight >= 4 and ver[sc] == v do
+				while inflight >= 10 and ver[sc] == v do
 					task.wait(0.05)
 				end
 				if ver[sc] ~= v then
