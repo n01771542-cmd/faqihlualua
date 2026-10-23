@@ -3,8 +3,8 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL: engine asli utuh + UI gaya LEON4951 HUB v2 (5 tab):
-    avatar | karakter | animasi | sepatu | sedang di pakai
+  VERSI FULL (OPTIMAL): antrian render, katalog instan, tab ramping, bug UI fix.
+  Tab: avatar | karakter | animasi | sepatu | dipakai
   Avatar polosan (bacon dll) disaring di tab avatar (lihat FILTER_POLOSAN).
   Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
@@ -201,11 +201,13 @@ local function button(parent, o)
 		AnchorPoint = o.anchor or Vector2.zero, LayoutOrder = o.order or 0, Parent = parent,
 	})
 	corner(b, o.radius or 10)
+	b:SetAttribute("Base", bg)
 	b.MouseEnter:Connect(function()
-		tween(b, { BackgroundColor3 = bg:Lerp(Color3.new(1, 1, 1), 0.12) }, 0.12)
+		local base = b:GetAttribute("Base") or bg
+		tween(b, { BackgroundColor3 = base:Lerp(Color3.new(1, 1, 1), 0.12) }, 0.12)
 	end)
 	b.MouseLeave:Connect(function()
-		tween(b, { BackgroundColor3 = bg }, 0.15)
+		tween(b, { BackgroundColor3 = b:GetAttribute("Base") or bg }, 0.15)
 	end)
 	if o.onClick then
 		b.Activated:Connect(o.onClick)
@@ -234,7 +236,9 @@ local function commas(n)
 end
 
 local function priceText(p)
-	if p == nil then
+	if p == false then
+		return "…"
+	elseif p == nil then
 		return "Tidak dijual"
 	elseif p == 0 then
 		return "Gratis"
@@ -1758,76 +1762,137 @@ function E.commit(newLook, text, skipHist, force)
 end
 
 ------------------------------------------------------------------------
+-- ANTRIAN RENDER: klik beruntun digabung, hanya hasil akhir yang dirender
+------------------------------------------------------------------------
+E.pending, E.pendingCbs, E.worker = nil, {}, false
+
+function E.queueLook(nl, onDone)
+	E.pending = nl
+	if onDone then
+		table.insert(E.pendingCbs, onDone)
+	end
+	if E.worker then
+		return
+	end
+	E.worker = true
+	task.spawn(function()
+		while E.pending do
+			local l, cbs = E.pending, E.pendingCbs
+			E.pending, E.pendingCbs = nil, {}
+			while E.busy do
+				task.wait(0.05)
+			end
+			local ok = E.commit(l, "queue")
+			for _, cb in ipairs(cbs) do
+				pcall(cb, ok)
+			end
+		end
+		E.worker = false
+	end)
+end
+
+------------------------------------------------------------------------
 -- API tingkat tinggi
 ------------------------------------------------------------------------
-function E.toggleAsset(id, itemName)
+function E.toggleAsset(id, itemName, onDone)
+	local function finish(ok)
+		if onDone then
+			onDone(ok)
+		end
+		return ok
+	end
 	if not needReady() then
-		return false
+		return finish(false)
 	end
 	local tid = E.assetType(id)
 	if not tid then
 		toast("Tidak bisa membaca info item ini", "danger")
-		return false
+		return finish(false)
 	end
 	if not ACC[tid] and not CLASSIC[tid] then
 		toast("Tipe item ini belum didukung", "warn")
-		return false
+		return finish(false)
 	end
-	local worn = E.isWorn(id)
-	local nl = E.look:Clone()
+	local base = E.pending or E.look
+	local worn = (collect(base))[id] == true
+	local nl = base:Clone()
 	if worn then
 		removeFromDesc(nl, id)
 	else
 		addToDesc(nl, id, tid)
 	end
-	local ok = E.commit(nl, itemName)
-	if ok then
-		if worn then
-			toast("Dilepas: " .. tostring(itemName or id), "warn")
-		elseif E.isWorn(id) then
-			toast("Dipakai: " .. tostring(itemName or id) .. "  (" .. E.lastMethod .. ")", "ok")
+	E.queueLook(nl, function(ok)
+		if ok then
+			if worn then
+				toast("Dilepas: " .. tostring(itemName or id), "warn")
+			elseif E.isWorn(id) then
+				toast("Dipakai: " .. tostring(itemName or id) .. "  (" .. E.lastMethod .. ")", "ok")
+			end
 		end
-	end
-	return ok
+		finish(ok)
+	end)
+	return true
 end
 
 function E.removeAsset(id)
 	if not needReady() then
 		return false
 	end
-	local nl = E.look:Clone()
+	local nl = (E.pending or E.look):Clone()
 	removeFromDesc(nl, id)
-	return E.commit(nl, "lepas")
+	E.queueLook(nl)
+	return true
 end
 
-function E.equipBundle(bundleId, bundleName)
+function E.equipBundle(bundleId, bundleName, onDone)
+	local function finish(ok)
+		if onDone then
+			onDone(ok)
+		end
+		return ok
+	end
 	if not needReady() then
-		return false
+		return finish(false)
 	end
 	local info = productInfo(bundleId, Enum.InfoType.Bundle)
 	if not info or not info.Items then
 		toast("Gagal membaca isi bundle", "danger")
-		return false
+		return finish(false)
 	end
-	local nl = E.look:Clone()
-	for _, item in ipairs(info.Items) do
-		if item.Type == "UserOutfit" then
-			local od = descFromOutfit(item.Id)
-			if od then
-				mergeDescription(nl, od)
+	local n = #info.Items
+	local results, left = {}, n
+	for i, item in ipairs(info.Items) do
+		task.spawn(function()
+			if item.Type == "UserOutfit" then
+				results[i] = { kind = "outfit", d = descFromOutfit(item.Id) }
+			elseif item.Type == "Asset" then
+				results[i] = { kind = "asset", id = item.Id, tid = E.assetType(item.Id) }
 			end
-		elseif item.Type == "Asset" then
-			local tid = E.assetType(item.Id)
-			if tid then
-				addToDesc(nl, item.Id, tid)
+			left = left - 1
+		end)
+	end
+	local t0 = os.clock()
+	while left > 0 and os.clock() - t0 < 12 do
+		task.wait()
+	end
+	local nl = (E.pending or E.look):Clone()
+	for i = 1, n do
+		local r = results[i]
+		if r then
+			if r.kind == "outfit" and r.d then
+				mergeDescription(nl, r.d)
+			elseif r.kind == "asset" and r.tid then
+				addToDesc(nl, r.id, r.tid)
 			end
 		end
 	end
-	local done = E.commit(nl, bundleName)
-	if done then
-		toast("Bundle dipakai: " .. tostring(bundleName or bundleId), "ok")
-	end
-	return done
+	E.queueLook(nl, function(ok)
+		if ok then
+			toast("Bundle dipakai: " .. tostring(bundleName or bundleId), "ok")
+		end
+		finish(ok)
+	end)
+	return true
 end
 
 function E.applyUserVisual(userId, displayName, keepLook)
@@ -1888,10 +1953,11 @@ function E.removeAll()
 	if not needReady() then
 		return false
 	end
-	local nl = E.look:Clone()
+	local nl = (E.pending or E.look):Clone()
 	nl:SetAccessories({}, true)
 	E.failed = {}
-	return E.commit(nl, "lepas semua")
+	E.queueLook(nl)
+	return true
 end
 
 function E.undo()
@@ -1918,6 +1984,7 @@ function E.reset()
 	if not needReady() then
 		return
 	end
+	E.pending = nil
 	if E.skinActive then
 		E.removeSkin()
 		E.userVisual = nil
@@ -2177,7 +2244,7 @@ function E.init()
 		end
 	end)
 	task.spawn(function()
-		while task.wait(0.75) do
+		while task.wait(1.2) do
 			if stale() then
 				break
 			end
@@ -2342,44 +2409,16 @@ function Query:aesPage()
 	if self.pages.IsFinished then
 		self.finished = true
 	end
-	local assetIds, bundleIds = {}, {}
-	for _, it in ipairs(res) do
-		if it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle then
-			table.insert(bundleIds, it.Id)
-		else
-			table.insert(assetIds, it.Id)
-		end
-	end
-	local aD, bD, pendingD = {}, {}, 0
-	local function runDetails(ids, itemType, out)
-		if #ids == 0 then
-			return
-		end
-		pendingD = pendingD + 1
-		task.spawn(function()
-			local r = fetchDetails(ids, itemType)
-			for k, v in pairs(r) do
-				out[k] = v
-			end
-			pendingD = pendingD - 1
-		end)
-	end
-	runDetails(assetIds, Enum.AvatarItemType.Asset, aD)
-	runDetails(bundleIds, Enum.AvatarItemType.Bundle, bD)
-	local tD = os.clock()
-	while pendingD > 0 and os.clock() - tD < 10 do
-		task.wait()
-	end
-	local items = {}
+	-- daftar langsung ditampilkan; nama & harga menyusul di latar belakang
+	local assetIds, bundleIds, items, byId = {}, {}, {}, {}
 	for _, it in ipairs(res) do
 		local isBundle = it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle
-		local d = (isBundle and bD or aD)[it.Id] or {}
+		table.insert(isBundle and bundleIds or assetIds, it.Id)
 		self.total = self.total + 1
-		local nm = d.Name or it.Name or ("Item #" .. it.Id)
-		table.insert(items, {
-			Id = it.Id, Type = isBundle and "Bundle" or "Asset", Name = nm,
-			Price = d.PriceInRobux, Order = self.total,
-		})
+		local nm = it.Name or ("Item #" .. it.Id)
+		local row = { Id = it.Id, Type = isBundle and "Bundle" or "Asset", Name = nm, Price = false, Order = self.total }
+		byId[(isBundle and "B" or "A") .. it.Id] = row
+		table.insert(items, row)
 		if not isBundle then
 			E.names[it.Id] = E.names[it.Id] or nm
 			if self.tid then
@@ -2387,6 +2426,38 @@ function Query:aesPage()
 			end
 		end
 	end
+	local function fill(ids, itemType, prefix)
+		if #ids == 0 then
+			return
+		end
+		task.spawn(function()
+			local det = fetchDetails(ids, itemType)
+			for id, d in pairs(det) do
+				local row = byId[prefix .. id]
+				if row then
+					row.Name = d.Name or row.Name
+					row.Price = d.PriceInRobux
+					if prefix == "A" and d.Name then
+						E.names[id] = d.Name
+					end
+					if row.onUpdate then
+						pcall(row.onUpdate)
+					end
+				end
+			end
+			for _, id in ipairs(ids) do
+				local row = byId[prefix .. id]
+				if row and row.Price == false then
+					row.Price = nil
+					if row.onUpdate then
+						pcall(row.onUpdate)
+					end
+				end
+			end
+		end)
+	end
+	fill(assetIds, Enum.AvatarItemType.Asset, "A")
+	fill(bundleIds, Enum.AvatarItemType.Bundle, "B")
 	return items
 end
 
@@ -2508,8 +2579,6 @@ end
 
 ----------------------------------------------------------------------------
 -- [7] TEMA + FILTER AVATAR POLOSAN
--- (GANTI semua isi script lama mulai dari baris "-- [7] WINDOW (500 x 300)"
---  sampai paling bawah dengan isi file ini. Section [1]-[6] JANGAN diubah.)
 ----------------------------------------------------------------------------
 local FILTER_POLOSAN = true -- true = sembunyikan avatar polosan (bacon dll). false = tampilkan semua
 local MAX_POLOS_ITEMS = 4 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
@@ -2612,6 +2681,14 @@ local function makeCard(parent, item)
 	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
 	pr.Position = UDim2.fromOffset(5, 88)
 	pr.Size = UDim2.new(1, -10, 0, 12)
+	item.onUpdate = function()
+		if not card.Parent then
+			return
+		end
+		nm.Text = item.Name
+		pr.Text = priceText(item.Price)
+		pr.TextColor3 = item.Price == 0 and T.Ok or T.Dim
+	end
 	local badge = mk("TextLabel", {
 		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
 		BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
@@ -2627,6 +2704,8 @@ local function makeCard(parent, item)
 	local obj = { card = card, item = item, loading = false }
 	function obj.update()
 		local worn = (not isBundle) and E.isWorn(item.Id)
+		badge.Text = "✓"
+		badge.BackgroundColor3 = T.Ok
 		badge.Visible = worn
 		st.Color = worn and T.Ok or T.Stroke
 		st.Transparency = worn and 0 or 0.3
@@ -2635,20 +2714,24 @@ local function makeCard(parent, item)
 	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
 	card.Activated:Connect(function()
-		if obj.loading then
-			return
-		end
-		obj.loading = true
-		overlay.Visible = true
-		task.spawn(function()
-			if isBundle then
-				E.equipBundle(item.Id, item.Name)
-			else
-				E.toggleAsset(item.Id, item.Name)
+		if isBundle then
+			if obj.loading then
+				return
 			end
-			overlay.Visible = false
-			obj.loading = false
-		end)
+			obj.loading = true
+			overlay.Visible = true
+			task.spawn(E.equipBundle, item.Id, item.Name, function()
+				overlay.Visible = false
+				obj.loading = false
+			end)
+		else
+			badge.Text = "⏳"
+			badge.BackgroundColor3 = T.Warn
+			badge.Visible = true
+			task.spawn(E.toggleAsset, item.Id, item.Name, function()
+				obj.update()
+			end)
+		end
 	end)
 	return obj
 end
@@ -2677,7 +2760,7 @@ local function buildCatalog(page, group)
 
 	-- baris cari | urut | gratis | refresh
 	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 32), BackgroundTransparency = 1, Parent = page })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -170, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -182, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
@@ -2692,7 +2775,7 @@ local function buildCatalog(page, group)
 			startQuery()
 		end
 	end)
-	local sortBtn = button(row, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(72, 30), anchor = Vector2.new(1, 0),
+	local sortBtn = button(row, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(84, 30), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, -94, 0, 0), textSize = 10,
 		onClick = function()
 			st.sortIdx = st.sortIdx % #SORTS + 1
@@ -2768,7 +2851,9 @@ local function buildCatalog(page, group)
 		loading = false
 		clearGrid()
 		sortBtn.Text = "↕ " .. SORTS[st.sortIdx].name
-		freeBtn.BackgroundColor3 = st.freeOnly and T.Ok or T.Surface2
+		local fc = st.freeOnly and T.Ok or T.Surface2
+		freeBtn.BackgroundColor3 = fc
+		freeBtn:SetAttribute("Base", fc)
 		freeBtn.Text = (st.freeOnly and "✓ " or "") .. "Gratis"
 		showMsg("⏳ Memuat...")
 		currentQuery = newQuery(st.cat, st.keyword, st.sortIdx, st.freeOnly)
@@ -2776,7 +2861,7 @@ local function buildCatalog(page, group)
 	end
 
 	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
+		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 600 then
 			loadPage(st.token)
 		end
 	end)
@@ -3394,7 +3479,7 @@ end
 -- [11] SHELL UI (gaya LEON4951 HUB v2): header, sidebar 5 tab, drag, resize
 ----------------------------------------------------------------------------
 local MAIN_W, MAIN_H = 800, 360
-local State = { tab = "avatars", open = false }
+local State = { tab = "avatars", open = false, sbw = 78 }
 local UI = { builders = {}, built = {}, pages = {}, refreshers = {} }
 
 UI.gui = mk("ScreenGui", {
@@ -3417,7 +3502,7 @@ local mainFrame = mk("Frame", {
 	Active = true, Visible = false, Parent = UI.gui,
 })
 corner(mainFrame, 20)
-stroke(mainFrame, Theme.Accent, 6)
+stroke(mainFrame, Theme.Accent, 3)
 local mainScale = mk("UIScale", { Scale = 0, Parent = mainFrame })
 
 local function computeScale()
@@ -3505,13 +3590,13 @@ mk("Frame", { Size = UDim2.new(1, -32, 0, 1), Position = UDim2.new(0, 16, 0, 48)
 -- body: sidebar + content
 local bodyFrame = mk("Frame", { Name = "Body", Size = UDim2.new(1, -32, 1, -56), Position = UDim2.new(0, 16, 0, 52), BackgroundTransparency = 1, Parent = mainFrame })
 local sidebar = mk("ScrollingFrame", {
-	Name = "Sidebar", Size = UDim2.new(0, 135, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+	Name = "Sidebar", Size = UDim2.new(0, State.sbw, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
 	AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Parent = bodyFrame,
 })
-mk("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sidebar })
+mk("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sidebar })
 
 local contentFrame = mk("Frame", {
-	Name = "Content", Size = UDim2.new(1, -145 - 220, 1, 0), Position = UDim2.new(0, 145, 0, 0),
+	Name = "Content", Size = UDim2.new(1, -(State.sbw + 8) - 220, 1, 0), Position = UDim2.new(0, State.sbw + 8, 0, 0),
 	BackgroundTransparency = 1, ClipsDescendants = true, Parent = bodyFrame,
 })
 local contentTitle = mk("TextLabel", {
@@ -3536,7 +3621,7 @@ local TABS = {
 	{ key = "karakter", name = "karakter", group = "KARAKTER / TUBUH" },
 	{ key = "animasi", name = "animasi", group = "ANIMASI" },
 	{ key = "sepatu", name = "sepatu", group = "SEPATU" },
-	{ key = "worn", name = "sedang di pakai" },
+	{ key = "worn", name = "dipakai", title = "SEDANG DI PAKAI" },
 }
 
 UI.builders.avatars = buildAvatars
@@ -3566,7 +3651,7 @@ local function setTab(index)
 	for k, p in pairs(UI.pages) do
 		p.Visible = k == tab.key
 	end
-	contentTitle.Text = string.upper(tab.name)
+	contentTitle.Text = tab.title or string.upper(tab.name)
 	updateSub()
 	if not UI.built[tab.key] then
 		UI.built[tab.key] = true
@@ -3587,21 +3672,21 @@ end
 
 for i, tab in ipairs(TABS) do
 	local b = mk("TextButton", {
-		Name = "Tab_" .. tab.key, Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = Theme.TabActiveBg, BackgroundTransparency = 1,
+		Name = "Tab_" .. tab.key, Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Theme.TabActiveBg, BackgroundTransparency = 1,
 		Text = "", AutoButtonColor = false, LayoutOrder = i, Parent = sidebar,
 	})
-	corner(b, 12)
-	local sk = stroke(b, Theme.TabActiveBorder, 1.5)
+	corner(b, 8)
+	local sk = stroke(b, Theme.TabActiveBorder, 1)
 	sk.Enabled = false
 	local ind = mk("Frame", {
-		Size = UDim2.new(0, 4, 0, 26), Position = UDim2.new(0, 5, 0.5, -13), BackgroundColor3 = Theme.Accent,
+		Size = UDim2.new(0, 3, 0, 16), Position = UDim2.new(0, 4, 0.5, -8), BackgroundColor3 = Theme.Accent,
 		BorderSizePixel = 0, Visible = false, Parent = b,
 	})
 	corner(ind, 99)
 	local lb = mk("TextLabel", {
-		Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
-		Size = UDim2.new(1, -22, 1, 0), Position = UDim2.new(0, 15, 0, 0), TextXAlignment = Enum.TextXAlignment.Left,
-		TextWrapped = true, Text = string.upper(tab.name), Parent = b,
+		Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+		Size = UDim2.new(1, -14, 1, 0), Position = UDim2.new(0, 12, 0, 0), TextXAlignment = Enum.TextXAlignment.Left,
+		Text = string.upper(tab.name), Parent = b,
 	})
 	table.insert(tabBtns, { frame = b, stroke = sk, label = lb, indicator = ind })
 	b.Activated:Connect(function()
@@ -3620,254 +3705,254 @@ local MIRROR_W = 210
 local Mirror = { on = true, spin = 0, auto = true, dragging = false, pauseUntil = 0, sig = nil, stage = nil, model = nil, token = 0 }
 
 local mirrorPanel = mk("Frame", {
-    Name = "Mirror", Size = UDim2.new(0, MIRROR_W, 1, 0), Position = UDim2.new(1, -MIRROR_W, 0, 0),
-    BackgroundColor3 = Theme.CardBg, BorderSizePixel = 0, ClipsDescendants = true, Parent = bodyFrame,
+	Name = "Mirror", Size = UDim2.new(0, MIRROR_W, 1, 0), Position = UDim2.new(1, -MIRROR_W, 0, 0),
+	BackgroundColor3 = Theme.CardBg, BorderSizePixel = 0, ClipsDescendants = true, Parent = bodyFrame,
 })
 corner(mirrorPanel, 14)
 stroke(mirrorPanel, Theme.Accent, 2)
 mk("UIGradient", {
-    Color = ColorSequence.new(Color3.fromRGB(36, 40, 66), Color3.fromRGB(14, 15, 26)),
-    Rotation = 90, Parent = mirrorPanel,
+	Color = ColorSequence.new(Color3.fromRGB(36, 40, 66), Color3.fromRGB(14, 15, 26)),
+	Rotation = 90, Parent = mirrorPanel,
 })
 
 mk("TextLabel", {
-    Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
-    Size = UDim2.new(1, -16, 0, 20), Position = UDim2.new(0, 10, 0, 6), TextXAlignment = Enum.TextXAlignment.Left,
-    Text = "🪞 CERMIN", Parent = mirrorPanel,
+	Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
+	Size = UDim2.new(1, -16, 0, 20), Position = UDim2.new(0, 10, 0, 6), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "🪞 CERMIN", Parent = mirrorPanel,
 })
 
 local mirrorVP = mk("ViewportFrame", {
-    Name = "MirrorVP", Size = UDim2.new(1, -12, 1, -76), Position = UDim2.new(0, 6, 0, 28),
-    BackgroundTransparency = 1, Active = true,
-    Ambient = Color3.fromRGB(175, 175, 190), LightColor = Color3.fromRGB(255, 255, 255),
-    LightDirection = Vector3.new(-0.5, -0.8, -0.6), Parent = mirrorPanel,
+	Name = "MirrorVP", Size = UDim2.new(1, -12, 1, -76), Position = UDim2.new(0, 6, 0, 28),
+	BackgroundTransparency = 1, Active = true,
+	Ambient = Color3.fromRGB(175, 175, 190), LightColor = Color3.fromRGB(255, 255, 255),
+	LightDirection = Vector3.new(-0.5, -0.8, -0.6), Parent = mirrorPanel,
 })
 local mirrorCam = mk("Camera", { FieldOfView = 40, Parent = mirrorVP })
 mirrorVP.CurrentCamera = mirrorCam
 
 local mirrorMsg = mk("TextLabel", {
-    Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
-    Size = UDim2.new(1, -20, 0, 40), Position = UDim2.new(0, 10, 0.5, -20), TextWrapped = true,
-    Text = "Memuat karakter...", Parent = mirrorPanel,
+	Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+	Size = UDim2.new(1, -20, 0, 40), Position = UDim2.new(0, 10, 0.5, -20), TextWrapped = true,
+	Text = "Memuat karakter...", Parent = mirrorPanel,
 })
 
 mk("TextLabel", {
-    Font = Enum.Font.Gotham, TextSize = 9, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
-    Size = UDim2.new(1, -16, 0, 12), Position = UDim2.new(0, 8, 1, -44), TextXAlignment = Enum.TextXAlignment.Center,
-    Text = "geser kiri/kanan untuk memutar", Parent = mirrorPanel,
+	Font = Enum.Font.Gotham, TextSize = 9, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+	Size = UDim2.new(1, -16, 0, 12), Position = UDim2.new(0, 8, 1, -44), TextXAlignment = Enum.TextXAlignment.Center,
+	Text = "geser kiri/kanan untuk memutar", Parent = mirrorPanel,
 })
 
 local function charSignature()
-    local char = player.Character
-    if not char then
-        return "none"
-    end
-    local n = 0
-    for _ in ipairs(char:GetDescendants()) do
-        n = n + 1
-    end
-    return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod)
+	local char = player.Character
+	if not char then
+		return "none"
+	end
+	local n = 0
+	for _ in ipairs(char:GetDescendants()) do
+		n = n + 1
+	end
+	return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod)
 end
 
 local function mirrorBuild()
-    local char = player.Character
-    if not char or not char.Parent then
-        return nil, "karakter belum siap"
-    end
-    local wasArch = char.Archivable
-    char.Archivable = true
-    local okC, clone = pcall(function()
-        return char:Clone()
-    end)
-    char.Archivable = wasArch
-    if not okC or not clone then
-        return nil, "gagal menyalin karakter"
-    end
+	local char = player.Character
+	if not char or not char.Parent then
+		return nil, "karakter belum siap"
+	end
+	local wasArch = char.Archivable
+	char.Archivable = true
+	local okC, clone = pcall(function()
+		return char:Clone()
+	end)
+	char.Archivable = wasArch
+	if not okC or not clone then
+		return nil, "gagal menyalin karakter"
+	end
 
-    for _, d in ipairs(clone:GetDescendants()) do
-        pcall(function()
-            if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("BillboardGui") then
-                d:Destroy()
-            elseif d:IsA("BasePart") then
-                d.Anchored = true
-                d.CanCollide = false
-            end
-        end)
-    end
-    local hum = clone:FindFirstChildOfClass("Humanoid")
-    if hum then
-        pcall(function()
-            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-            hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
-        end)
-    end
-    local hrp = clone:FindFirstChild("HumanoidRootPart")
-    if hrp and not clone.PrimaryPart then
-        clone.PrimaryPart = hrp
-    end
-    clone:PivotTo(CFrame.new())
+	for _, d in ipairs(clone:GetDescendants()) do
+		pcall(function()
+			if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("BillboardGui") then
+				d:Destroy()
+			elseif d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+			end
+		end)
+	end
+	local hum = clone:FindFirstChildOfClass("Humanoid")
+	if hum then
+		pcall(function()
+			hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+		end)
+	end
+	local hrp = clone:FindFirstChild("HumanoidRootPart")
+	if hrp and not clone.PrimaryPart then
+		clone.PrimaryPart = hrp
+	end
+	clone:PivotTo(CFrame.new())
 
-    local bbCF, bbSize = clone:GetBoundingBox()
-    local height = math.clamp(bbSize.Y, 3, 14)
-    local width = math.clamp(math.max(bbSize.X, bbSize.Z), 2, 14)
-    local center = bbCF.Position
-    local fov = math.rad(mirrorCam.FieldOfView)
-    local dist = (math.max(height, width * 0.9) / 2) / math.tan(fov / 2) * 1.18 + width / 2
+	local bbCF, bbSize = clone:GetBoundingBox()
+	local height = math.clamp(bbSize.Y, 3, 14)
+	local width = math.clamp(math.max(bbSize.X, bbSize.Z), 2, 14)
+	local center = bbCF.Position
+	local fov = math.rad(mirrorCam.FieldOfView)
+	local dist = (math.max(height, width * 0.9) / 2) / math.tan(fov / 2) * 1.18 + width / 2
 
-    local stage = Instance.new("Folder")
-    stage.Name = "Stage"
+	local stage = Instance.new("Folder")
+	stage.Name = "Stage"
 
-    local base = Instance.new("Part")
-    base.Name = "Platform"
-    base.Shape = Enum.PartType.Cylinder
-    base.Size = Vector3.new(0.2, width * 1.9, width * 1.9)
-    base.CFrame = CFrame.new(center.X, center.Y - height / 2 - 0.1, center.Z) * CFrame.Angles(0, 0, math.pi / 2)
-    base.Anchored = true
-    base.CanCollide = false
-    base.Material = Enum.Material.Neon
-    base.Color = Theme.Accent
-    base.Transparency = 0.55
-    base.Parent = stage
+	local base = Instance.new("Part")
+	base.Name = "Platform"
+	base.Shape = Enum.PartType.Cylinder
+	base.Size = Vector3.new(0.2, width * 1.9, width * 1.9)
+	base.CFrame = CFrame.new(center.X, center.Y - height / 2 - 0.1, center.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	base.Anchored = true
+	base.CanCollide = false
+	base.Material = Enum.Material.Neon
+	base.Color = Theme.Accent
+	base.Transparency = 0.55
+	base.Parent = stage
 
-    clone.Parent = stage
-    return stage, clone, center, dist, height
+	clone.Parent = stage
+	return stage, clone, center, dist, height
 end
 
 function Mirror.refresh()
-    if stale() or not mirrorVP.Parent then
-        return
-    end
-    local ok, stage, model, center, dist, height = pcall(mirrorBuild)
-    if not ok then
-        logf("cermin gagal: %s", tostring(stage))
-        mirrorMsg.Text = "Cermin gagal: " .. tostring(stage)
-        mirrorMsg.Visible = true
-        return
-    end
-    if not stage then
-        mirrorMsg.Text = tostring(model)
-        mirrorMsg.Visible = true
-        return
-    end
-    local old = Mirror.stage
-    stage.Parent = mirrorVP
-    mirrorCam.CFrame = CFrame.lookAt(center + Vector3.new(0, height * 0.04, dist), center)
-    Mirror.stage, Mirror.model = stage, model
-    Mirror.sig = charSignature()
-    mirrorMsg.Visible = false
-    if old then
-        old:Destroy()
-    end
+	if stale() or not mirrorVP.Parent then
+		return
+	end
+	local ok, stage, model, center, dist, height = pcall(mirrorBuild)
+	if not ok then
+		logf("cermin gagal: %s", tostring(stage))
+		mirrorMsg.Text = "Cermin gagal: " .. tostring(stage)
+		mirrorMsg.Visible = true
+		return
+	end
+	if not stage then
+		mirrorMsg.Text = tostring(model)
+		mirrorMsg.Visible = true
+		return
+	end
+	local old = Mirror.stage
+	stage.Parent = mirrorVP
+	mirrorCam.CFrame = CFrame.lookAt(center + Vector3.new(0, height * 0.04, dist), center)
+	Mirror.stage, Mirror.model = stage, model
+	Mirror.sig = charSignature()
+	mirrorMsg.Visible = false
+	if old then
+		old:Destroy()
+	end
 end
 
 function Mirror.queue(delay)
-    Mirror.token = Mirror.token + 1
-    local t = Mirror.token
-    task.delay(delay or 0.6, function()
-        if t == Mirror.token then
-            Mirror.refresh()
-        end
-    end)
+	Mirror.token = Mirror.token + 1
+	local t = Mirror.token
+	task.delay(delay or 0.6, function()
+		if t == Mirror.token then
+			Mirror.refresh()
+		end
+	end)
 end
 
 -- geser untuk memutar
 mirrorVP.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        Mirror.dragging = true
-        Mirror.lastX = input.Position.X
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                Mirror.dragging = false
-                Mirror.pauseUntil = os.clock() + 2
-            end
-        end)
-    end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		Mirror.dragging = true
+		Mirror.lastX = input.Position.X
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				Mirror.dragging = false
+				Mirror.pauseUntil = os.clock() + 2
+			end
+		end)
+	end
 end)
 mirrorVP.InputChanged:Connect(function(input)
-    if Mirror.dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local x = input.Position.X
-        Mirror.spin = Mirror.spin + (x - (Mirror.lastX or x)) * 0.012
-        Mirror.lastX = x
-    end
+	if Mirror.dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local x = input.Position.X
+		Mirror.spin = Mirror.spin + (x - (Mirror.lastX or x)) * 0.012
+		Mirror.lastX = x
+	end
 end)
 
 -- tombol bawah: segarkan + putar otomatis
 local mirrorRefreshBtn = button(mirrorPanel, {
-    text = "↻ Segarkan", textSize = 11, bg = Theme.CardBg, size = UDim2.new(0.5, -9, 0, 26),
-    position = UDim2.new(0, 6, 1, -32), radius = 8, onClick = function()
-        Mirror.refresh()
-    end,
+	text = "↻ Segarkan", textSize = 11, bg = Theme.CardBg, size = UDim2.new(0.5, -9, 0, 26),
+	position = UDim2.new(0, 6, 1, -32), radius = 8, onClick = function()
+		Mirror.refresh()
+	end,
 })
 local mirrorAutoBtn = button(mirrorPanel, {
-    text = "⏸ Putar", textSize = 11, bg = Theme.CardBg, size = UDim2.new(0.5, -9, 0, 26),
-    position = UDim2.new(0.5, 3, 1, -32), radius = 8, onClick = function() end,
+	text = "⏸ Putar", textSize = 11, bg = Theme.CardBg, size = UDim2.new(0.5, -9, 0, 26),
+	position = UDim2.new(0.5, 3, 1, -32), radius = 8, onClick = function() end,
 })
 mirrorAutoBtn.Activated:Connect(function()
-    Mirror.auto = not Mirror.auto
-    mirrorAutoBtn.Text = Mirror.auto and "⏸ Putar" or "▶ Putar"
+	Mirror.auto = not Mirror.auto
+	mirrorAutoBtn.Text = Mirror.auto and "⏸ Putar" or "▶ Putar"
 end)
 
 -- tombol buka/tutup cermin di header
 local mirrorToggle = mk("TextButton", {
-    Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -219, 0, 8), BackgroundColor3 = Theme.CardBg, Text = "🪞",
-    Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, AutoButtonColor = false, Parent = header,
+	Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -219, 0, 8), BackgroundColor3 = Theme.CardBg, Text = "🪞",
+	Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, AutoButtonColor = false, Parent = header,
 })
 corner(mirrorToggle, 10)
 stroke(mirrorToggle, Theme.CardBorder, 1.5)
 
 local function setMirror(on)
-    Mirror.on = on
-    mirrorPanel.Visible = on
-    contentFrame.Size = UDim2.new(1, -145 - (on and (MIRROR_W + 10) or 0), 1, 0)
-    if on then
-        Mirror.queue(0.1)
-    end
+	Mirror.on = on
+	mirrorPanel.Visible = on
+	contentFrame.Size = UDim2.new(1, -(State.sbw + 8) - (on and (MIRROR_W + 10) or 0), 1, 0)
+	if on then
+		Mirror.queue(0.1)
+	end
 end
 mirrorToggle.Activated:Connect(function()
-    setMirror(not Mirror.on)
+	setMirror(not Mirror.on)
 end)
 
 -- animasi putar
 do
-    local conn
-    conn = RunService.RenderStepped:Connect(function(dt)
-        if stale() or not UI.gui.Parent then
-            conn:Disconnect()
-            return
-        end
-        if not Mirror.model or not Mirror.model.Parent or not mirrorPanel.Visible or not State.open then
-            return
-        end
-        if Mirror.auto and not Mirror.dragging and os.clock() > Mirror.pauseUntil then
-            Mirror.spin = Mirror.spin + dt * 0.8
-        end
-        pcall(function()
-            Mirror.model:PivotTo(CFrame.Angles(0, math.pi + Mirror.spin, 0))
-        end)
-    end)
+	local conn
+	conn = RunService.RenderStepped:Connect(function(dt)
+		if stale() or not UI.gui.Parent then
+			conn:Disconnect()
+			return
+		end
+		if not Mirror.model or not Mirror.model.Parent or not mirrorPanel.Visible or not State.open then
+			return
+		end
+		if Mirror.auto and not Mirror.dragging and os.clock() > Mirror.pauseUntil then
+			Mirror.spin = Mirror.spin + dt * 0.8
+		end
+		pcall(function()
+			Mirror.model:PivotTo(CFrame.Angles(0, math.pi + Mirror.spin, 0))
+		end)
+	end)
 end
 
 -- ikuti perubahan avatar
 E.onChanged(function()
-    Mirror.queue(0.8)
+	Mirror.queue(0.8)
 end)
 player.CharacterAdded:Connect(function()
-    Mirror.sig = nil
-    Mirror.queue(2)
+	Mirror.sig = nil
+	Mirror.queue(2)
 end)
 
 -- pemeriksa berkala (menangkap perubahan susulan: aksesori yang baru selesai dimuat, dll)
 task.spawn(function()
-    local last = 0
-    while not stale() and UI.gui.Parent do
-        task.wait(2)
-        if State.open and mirrorPanel.Visible then
-            if charSignature() ~= Mirror.sig or os.clock() - last > 8 then
-                last = os.clock()
-                Mirror.refresh()
-            end
-        end
-    end
+	local last = 0
+	while not stale() and UI.gui.Parent do
+		task.wait(2)
+		if State.open and mirrorPanel.Visible then
+			if charSignature() ~= Mirror.sig or os.clock() - last > 8 then
+				last = os.clock()
+				Mirror.refresh()
+			end
+		end
+	end
 end)
 Mirror.queue(1.5)
 end
@@ -3913,6 +3998,9 @@ fab.InputBegan:Connect(function(input)
 	end
 end)
 UserInputService.InputChanged:Connect(function(input)
+	if stale() then
+		return
+	end
 	local moveType = input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch
 	if not moveType then
 		return
@@ -3922,7 +4010,7 @@ UserInputService.InputChanged:Connect(function(input)
 		mainFrame.Position = UDim2.new(dragOrigin.X.Scale, dragOrigin.X.Offset + d.X, dragOrigin.Y.Scale, dragOrigin.Y.Offset + d.Y)
 	end
 	if resizing then
-		local d = input.Position - resizeStart
+		local d = (input.Position - resizeStart) / math.max(mainScale.Scale, 0.1)
 		mainFrame.Size = UDim2.fromOffset(
 			math.clamp(sizeOrigin.X.Offset + d.X, 660, 1000),
 			math.clamp(sizeOrigin.Y.Offset + d.Y, 300, 650)
@@ -3964,7 +4052,7 @@ ToggleMainUI = function(show)
 end
 
 UserInputService.InputBegan:Connect(function(input, gp)
-	if gp or E.uiDestroyed then
+	if gp or E.uiDestroyed or stale() then
 		return
 	end
 	if input.KeyCode == TOGGLE_KEY then
