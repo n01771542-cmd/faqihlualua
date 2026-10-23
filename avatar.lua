@@ -2589,7 +2589,7 @@ end
 -- [7] TEMA + FILTER AVATAR POLOSAN
 ----------------------------------------------------------------------------
 local FILTER_POLOSAN = true -- true = sembunyikan avatar polosan (bacon dll). false = tampilkan semua
-local MAX_POLOS_ITEMS = 4 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
+local MAX_POLOS_ITEMS = 8 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
 
 local Theme = {
 	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
@@ -2613,20 +2613,41 @@ T.Accent = Theme.Accent
 local creatorCache = {}
 local plainCache = {}
 
+local PLAIN_PROPS = {
+	"Shirt", "Pants", "GraphicTShirt", "ClimbAnimation", "FallAnimation", "IdleAnimation",
+	"JumpAnimation", "RunAnimation", "SwimAnimation", "WalkAnimation", "MoodAnimation",
+}
+
+-- polosan = hanya berisi item buatan Roblox (rambut bacon, kaos/celana bawaan, dll).
+-- Bagian tubuh klasik (kepala, badan, tangan, kaki, wajah) tidak dihitung, karena itu bawaan semua akun.
 local function plainFromDesc(desc)
-	local _, list = collect(desc)
-	if #list == 0 then
+	local ids = {}
+	local okA, accs = pcall(function()
+		return desc:GetAccessories(true)
+	end)
+	if okA then
+		for _, a in ipairs(accs) do
+			table.insert(ids, a.AssetId)
+		end
+	end
+	for _, prop in ipairs(PLAIN_PROPS) do
+		local v = getProp(desc, prop)
+		if type(v) == "number" and v > 0 then
+			table.insert(ids, v)
+		end
+	end
+	if #ids == 0 then
 		return true
 	end
-	if #list > MAX_POLOS_ITEMS then
+	if #ids > MAX_POLOS_ITEMS then
 		return false
 	end
 	local need = {}
-	for _, e in ipairs(list) do
-		if creatorCache[e.Id] == false then
+	for _, id in ipairs(ids) do
+		if creatorCache[id] == false then
 			return false
-		elseif creatorCache[e.Id] == nil then
-			table.insert(need, e.Id)
+		elseif creatorCache[id] == nil then
+			table.insert(need, id)
 		end
 	end
 	if #need > 0 then
@@ -3192,7 +3213,15 @@ local function buildAvatars(page)
 		return true
 	end
 
-	-- tambahkan daftar hasil pencarian, buang yang polosan (maks 6 cek bersamaan)
+	-- hasil pencarian: tampilkan semua (tidak disaring)
+	local function addAll(list, myToken)
+		for _, u in ipairs(list) do
+			if myToken ~= token then
+				return
+			end
+			addUser(u.id, u.display, "@" .. u.name)
+		end
+	end
 	local function addFiltered(list, myToken)
 		local inflight = 0
 		for _, u in ipairs(list) do
@@ -3321,12 +3350,12 @@ local function buildAvatars(page)
 			end
 			if list then
 				searchState = st
-				addFiltered(list, myToken)
+				addAll(list, myToken)
 				if myToken ~= token then
 					return
 				end
 				loading = false
-				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " (polosan disembunyikan)")
+				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " hasil")
 			else
 				loading = false
 				if count > 0 then
@@ -3354,11 +3383,11 @@ local function buildAvatars(page)
 				end
 				if list then
 					searchState = st
-					addFiltered(list, myToken)
+					addAll(list, myToken)
 					if myToken ~= token then
 						return
 					end
-					setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " (polosan disembunyikan)")
+					setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " hasil")
 				else
 					searchState = nil
 				end
