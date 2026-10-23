@@ -38,7 +38,8 @@ local function stale()
 end
 
 local REMOTE_NAME = "AvatarStudioApply"
-local PAGE_SIZE = 30
+local PAGE_SIZE = 120
+local MAX_ITEMS = 1000
 local TOGGLE_KEY = Enum.KeyCode.K
 
 ----------------------------------------------------------------------------
@@ -1844,7 +1845,7 @@ function E.removeAsset(id)
 	return true
 end
 
-function E.equipBundle(bundleId, bundleName, onDone)
+function E.equipBundle(bundleId, bundleName, onDone, slot, slotName)
 	local function finish(ok)
 		if onDone then
 			onDone(ok)
@@ -1876,19 +1877,26 @@ function E.equipBundle(bundleId, bundleName, onDone)
 		task.wait()
 	end
 	local nl = (E.pending or E.look):Clone()
+	local applied = 0
 	for i = 1, n do
 		local r = results[i]
 		if r then
-			if r.kind == "outfit" and r.d then
+			if r.kind == "outfit" and r.d and not slot then
 				mergeDescription(nl, r.d)
-			elseif r.kind == "asset" and r.tid then
+				applied = applied + 1
+			elseif r.kind == "asset" and r.tid and (not slot or r.tid == slot) then
 				addToDesc(nl, r.id, r.tid)
+				applied = applied + 1
 			end
 		end
 	end
+	if slot and applied == 0 then
+		toast("Paket ini tidak punya " .. tostring(slotName or "bagian itu") .. ", coba paket lain", "warn")
+		return finish(false)
+	end
 	E.queueLook(nl, function(ok)
 		if ok then
-			toast("Bundle dipakai: " .. tostring(bundleName or bundleId), "ok")
+			toast((slot and (tostring(slotName) .. " dipakai dari: ") or "Bundle dipakai: ") .. tostring(bundleName or bundleId), "ok")
 		end
 		finish(ok)
 	end)
@@ -2265,29 +2273,29 @@ end)
 
 local CATEGORIES = {}
 -- variants (hanya untuk bundle, jalur web cadangan): { Category, Subcategory, kataKunciBawaan }
-local function C(group, id, name, kind, list, variants)
-	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list, httpVariants = variants })
+local function C(group, id, name, kind, list, variants, slot)
+	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list, httpVariants = variants, slot = slot })
 end
 
 C("KARAKTER / TUBUH", "b_body", "Paket Karakter", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } })
 C("KARAKTER / TUBUH", "face", "Ekspresi Wajah", "asset", { "Face" })
-C("KARAKTER / TUBUH", "head", "Kepala", "asset", { "Head" })
-C("KARAKTER / TUBUH", "torso", "Badan", "asset", { "Torso" })
-C("KARAKTER / TUBUH", "rarm", "Lengan Kanan", "asset", { "RightArm" })
-C("KARAKTER / TUBUH", "larm", "Lengan Kiri", "asset", { "LeftArm" })
-C("KARAKTER / TUBUH", "rleg", "Kaki Kanan", "asset", { "RightLeg" })
-C("KARAKTER / TUBUH", "lleg", "Kaki Kiri", "asset", { "LeftLeg" })
+C("KARAKTER / TUBUH", "head", "Kepala", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 17)
+C("KARAKTER / TUBUH", "torso", "Badan", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 27)
+C("KARAKTER / TUBUH", "rarm", "Lengan Kanan", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 28)
+C("KARAKTER / TUBUH", "larm", "Lengan Kiri", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 29)
+C("KARAKTER / TUBUH", "rleg", "Kaki Kanan", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 31)
+C("KARAKTER / TUBUH", "lleg", "Kaki Kiri", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 30)
 C("KARAKTER / TUBUH", "brow", "Alis", "asset", { "EyebrowAccessory" })
 C("KARAKTER / TUBUH", "lash", "Bulu Mata", "asset", { "EyelashAccessory" })
 
 C("ANIMASI", "b_anim", "Paket Animasi", "bundle", { "Animations" }, { { 12, 38 }, { 12 } })
-C("ANIMASI", "a_idle", "Idle", "asset", { "IdleAnimation" })
-C("ANIMASI", "a_walk", "Jalan", "asset", { "WalkAnimation" })
-C("ANIMASI", "a_run", "Lari", "asset", { "RunAnimation" })
-C("ANIMASI", "a_jump", "Lompat", "asset", { "JumpAnimation" })
-C("ANIMASI", "a_fall", "Jatuh", "asset", { "FallAnimation" })
-C("ANIMASI", "a_climb", "Panjat", "asset", { "ClimbAnimation" })
-C("ANIMASI", "a_swim", "Renang", "asset", { "SwimAnimation" })
+C("ANIMASI", "a_idle", "Idle", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 51)
+C("ANIMASI", "a_walk", "Jalan", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 55)
+C("ANIMASI", "a_run", "Lari", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 53)
+C("ANIMASI", "a_jump", "Lompat", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 52)
+C("ANIMASI", "a_fall", "Jatuh", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 50)
+C("ANIMASI", "a_climb", "Panjat", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 48)
+C("ANIMASI", "a_swim", "Renang", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 54)
 C("ANIMASI", "a_mood", "Mood", "asset", { "MoodAnimation" })
 
 C("SEPATU", "b_shoes", "Set Sepatu", "bundle", { "Shoes" }, { { 4, 37, "shoes" }, { 3, nil, "shoes" }, { 1, 37, "shoes" } })
@@ -2670,8 +2678,7 @@ local function makeCard(parent, item)
 	local st = stroke(card, T.Stroke, 1.5, 0.3)
 	local img = mk("ImageLabel", {
 		Size = UDim2.new(1, -8, 0, 64), Position = UDim2.fromOffset(4, 4), BackgroundColor3 = T.Surface2,
-		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
-		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
+		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit, Parent = card,
 	})
 	corner(img, 8)
 	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
@@ -2701,9 +2708,20 @@ local function makeCard(parent, item)
 	})
 	corner(overlay, 10)
 
-	local obj = { card = card, item = item, loading = false }
-	function obj.update()
-		local worn = (not isBundle) and E.isWorn(item.Id)
+	local obj = { card = card, item = item, loading = false, imgLoaded = false }
+	function obj.loadImg()
+		obj.imgLoaded = true
+		img.Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150)
+	end
+	function obj.update(set)
+		local worn = false
+		if not isBundle then
+			if set then
+				worn = set[item.Id] == true
+			else
+				worn = E.isWorn(item.Id)
+			end
+		end
 		badge.Text = "✓"
 		badge.BackgroundColor3 = T.Ok
 		badge.Visible = worn
@@ -2723,7 +2741,7 @@ local function makeCard(parent, item)
 			task.spawn(E.equipBundle, item.Id, item.Name, function()
 				overlay.Visible = false
 				obj.loading = false
-			end)
+			end, item.slot, item.slotName)
 		else
 			badge.Text = "⏳"
 			badge.BackgroundColor3 = T.Warn
@@ -2760,7 +2778,7 @@ local function buildCatalog(page, group)
 
 	-- baris cari | urut | gratis | refresh
 	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 32), BackgroundTransparency = 1, Parent = page })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -182, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -202, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
@@ -2776,24 +2794,24 @@ local function buildCatalog(page, group)
 		end
 	end)
 	local sortBtn = button(row, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(84, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -94, 0, 0), textSize = 10,
+		position = UDim2.new(1, -110, 0, 0), textSize = 10,
 		onClick = function()
 			st.sortIdx = st.sortIdx % #SORTS + 1
 			startQuery()
 		end })
 	local freeBtn = button(row, { text = "Gratis", size = UDim2.fromOffset(52, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -38, 0, 0), textSize = 11,
+		position = UDim2.new(1, -52, 0, 0), textSize = 11,
 		onClick = function()
 			st.freeOnly = not st.freeOnly
 			startQuery()
 		end })
-	button(row, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
-		textSize = 16, onClick = function() startQuery() end })
+	button(row, { text = "Ulang", size = UDim2.fromOffset(46, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
+		textSize = 11, onClick = function() startQuery() end })
 
 	-- grid
 	local grid = makeScroll(page, UDim2.new(1, 0, 1, -68), UDim2.fromOffset(0, 68))
 	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(90, 112), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		CellSize = UDim2.fromOffset(84, 110), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
 	})
 	pad(grid, 0, 2, 0, 10)
@@ -2824,26 +2842,67 @@ local function buildCatalog(page, group)
 		end
 		loading = true
 		local q = currentQuery
+		local target = q.total + MAX_ITEMS
 		task.spawn(function()
-			local items, err = q:nextPage()
-			if token ~= st.token then
-				return
+			while token == st.token and not q.finished and q.total < target do
+				local items, err = q:nextPage()
+				if token ~= st.token then
+					return
+				end
+				if not items then
+					logf("katalog gagal: %s", tostring(err))
+					if q.total == 0 then
+						showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
+					end
+					break
+				end
+				msg.Visible = false
+				for i, it in ipairs(items) do
+					it.slot = st.cat.slot
+					it.slotName = st.cat.name
+					table.insert(cards, makeCard(grid, it))
+					if i % 10 == 0 then
+						task.wait()
+						if token ~= st.token then
+							return
+						end
+					end
+				end
+				if q.total == 0 then
+					showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
+					break
+				end
 			end
-			loading = false
-			if not items then
-				logf("katalog gagal: %s", tostring(err))
-				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
-				return
-			end
-			msg.Visible = false
-			for _, it in ipairs(items) do
-				table.insert(cards, makeCard(grid, it))
-			end
-			if q.total == 0 then
-				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
+			if token == st.token then
+				loading = false
 			end
 		end)
 	end
+
+	-- gambar kartu dimuat hanya yang dekat layar (supaya 1000 item tetap ringan)
+	local function refreshImages()
+		local top = grid.AbsolutePosition.Y
+		local h = grid.AbsoluteWindowSize.Y
+		if h <= 0 then
+			return
+		end
+		for _, c in ipairs(cards) do
+			if not c.imgLoaded and c.card.AbsoluteSize.Y > 0 then
+				local y = c.card.AbsolutePosition.Y
+				if y + 120 > top - 300 and y < top + h + 300 then
+					c.loadImg()
+				end
+			end
+		end
+	end
+	task.spawn(function()
+		while not stale() and page.Parent do
+			task.wait(0.15)
+			if page.Visible then
+				pcall(refreshImages)
+			end
+		end
+	end)
 
 	startQuery = function()
 		st.token = st.token + 1
@@ -2897,8 +2956,9 @@ local function buildCatalog(page, group)
 
 	selectCat(cats[1])
 	return function()
+		local set = collect(E.look)
 		for _, c in ipairs(cards) do
-			c.update()
+			c.update(set)
 		end
 	end
 end
@@ -3037,7 +3097,7 @@ end
 
 local function buildAvatars(page)
 	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = page })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -120, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local box = mk("TextBox", {
@@ -3047,15 +3107,15 @@ local function buildAvatars(page)
 		Parent = sbFrame,
 	})
 	local searchBtn = button(row, { text = "Cari", size = UDim2.fromOffset(60, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -42, 0, 0), bg = T.Accent, textSize = 12 })
-	local randBtn = button(row, { text = "🎲", size = UDim2.fromOffset(36, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, 0, 0, 0), textSize = 15 })
+		position = UDim2.new(1, -50, 0, 0), bg = T.Accent, textSize = 12 })
+	local randBtn = button(row, { text = "Acak", size = UDim2.fromOffset(44, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 0), textSize = 11 })
 
 	local status = label(page, "", 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Right)
-	status.Position = UDim2.fromOffset(288, 34)
-	status.Size = UDim2.new(1, -288, 0, 24)
+	status.Position = UDim2.fromOffset(248, 34)
+	status.Size = UDim2.new(1, -248, 0, 24)
 	status.TextTruncate = Enum.TextTruncate.AtEnd
-	local chipRow = mk("Frame", { Size = UDim2.new(0, 280, 0, 24), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, ZIndex = 2, Parent = page })
+	local chipRow = mk("Frame", { Size = UDim2.new(0, 240, 0, 24), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, ZIndex = 2, Parent = page })
 	mk("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = chipRow,
@@ -3065,7 +3125,7 @@ local function buildAvatars(page)
 	local function makeSection(key)
 		local sc = makeScroll(page, UDim2.new(1, 0, 1, -64), UDim2.fromOffset(0, 64))
 		mk("UIGridLayout", {
-			CellSize = UDim2.fromOffset(88, 96), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+			CellSize = UDim2.fromOffset(84, 96), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = sc,
 		})
 		pad(sc, 0, 2, 0, 10)
@@ -3093,10 +3153,10 @@ local function buildAvatars(page)
 			loadFriends()
 		end
 	end
-	local chipDefs = { { "all", "🌐 Semua" }, { "preset", "⭐ Preset" }, { "server", "🖥 Server" }, { "friends", "👥 Teman" } }
+	local chipDefs = { { "all", "Semua" }, { "preset", "Preset" }, { "server", "Server" }, { "friends", "Teman" } }
 	for i, d in ipairs(chipDefs) do
 		local c = mk("TextButton", {
-			Size = UDim2.fromOffset(66, 24), BackgroundColor3 = T.Surface2, BorderSizePixel = 0, Text = d[2], TextSize = 11,
+			Size = UDim2.fromOffset(58, 24), BackgroundColor3 = T.Surface2, BorderSizePixel = 0, Text = d[2], TextSize = 11,
 			Font = Enum.Font.GothamBold, TextColor3 = T.Text, AutoButtonColor = false, LayoutOrder = i, Parent = chipRow,
 		})
 		corner(c, 8)
@@ -3210,7 +3270,7 @@ local function buildAvatars(page)
 		if myToken == token then
 			loading = false
 			if found == 0 and count == 0 then
-				setStatus("Belum ketemu avatar non-polosan, tekan 🎲")
+				setStatus("Belum ketemu avatar non-polosan, tekan Acak")
 			else
 				setStatus(count .. " pemain • gulir untuk lagi")
 			end
@@ -3433,7 +3493,7 @@ local function buildWorn(page)
 	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
 		onClick = function() task.spawn(E.removeAll) end })
-	button(head, { text = "↺ Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
+	button(head, { text = "Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
 
 	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
@@ -3478,7 +3538,7 @@ end
 ----------------------------------------------------------------------------
 -- [11] SHELL UI (gaya LEON4951 HUB v2): header, sidebar 5 tab, drag, resize
 ----------------------------------------------------------------------------
-local MAIN_W, MAIN_H = 800, 360
+local MAIN_W, MAIN_H = 660, 360
 local State = { tab = "avatars", open = false, sbw = 78 }
 local UI = { builders = {}, built = {}, pages = {}, refreshers = {} }
 
@@ -3596,7 +3656,7 @@ local sidebar = mk("ScrollingFrame", {
 mk("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sidebar })
 
 local contentFrame = mk("Frame", {
-	Name = "Content", Size = UDim2.new(1, -(State.sbw + 8) - 220, 1, 0), Position = UDim2.new(0, State.sbw + 8, 0, 0),
+	Name = "Content", Size = UDim2.new(1, -(State.sbw + 8) - 180, 1, 0), Position = UDim2.new(0, State.sbw + 8, 0, 0),
 	BackgroundTransparency = 1, ClipsDescendants = true, Parent = bodyFrame,
 })
 local contentTitle = mk("TextLabel", {
@@ -3701,7 +3761,7 @@ end
 --   Otomatis ikut berubah saat item/avatar dipilih. Geser untuk memutar.
 ----------------------------------------------------------------------------
 do
-local MIRROR_W = 210
+local MIRROR_W = 170
 local Mirror = { on = true, spin = 0, auto = true, dragging = false, pauseUntil = 0, sig = nil, stage = nil, model = nil, token = 0 }
 
 local mirrorPanel = mk("Frame", {
@@ -3718,11 +3778,11 @@ mk("UIGradient", {
 mk("TextLabel", {
 	Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
 	Size = UDim2.new(1, -16, 0, 20), Position = UDim2.new(0, 10, 0, 6), TextXAlignment = Enum.TextXAlignment.Left,
-	Text = "🪞 CERMIN", Parent = mirrorPanel,
+	Text = "CERMIN", Parent = mirrorPanel,
 })
 
 local mirrorVP = mk("ViewportFrame", {
-	Name = "MirrorVP", Size = UDim2.new(1, -12, 1, -76), Position = UDim2.new(0, 6, 0, 28),
+	Name = "MirrorVP", Size = UDim2.new(1, -12, 1, -72), Position = UDim2.new(0, 6, 0, 28),
 	BackgroundTransparency = 1, Active = true,
 	Ambient = Color3.fromRGB(175, 175, 190), LightColor = Color3.fromRGB(255, 255, 255),
 	LightDirection = Vector3.new(-0.5, -0.8, -0.6), Parent = mirrorPanel,
@@ -3736,11 +3796,6 @@ local mirrorMsg = mk("TextLabel", {
 	Text = "Memuat karakter...", Parent = mirrorPanel,
 })
 
-mk("TextLabel", {
-	Font = Enum.Font.Gotham, TextSize = 9, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
-	Size = UDim2.new(1, -16, 0, 12), Position = UDim2.new(0, 8, 1, -44), TextXAlignment = Enum.TextXAlignment.Center,
-	Text = "geser kiri/kanan untuk memutar", Parent = mirrorPanel,
-})
 
 local function charSignature()
 	local char = player.Character
@@ -3876,41 +3931,16 @@ mirrorVP.InputChanged:Connect(function(input)
 	end
 end)
 
--- tombol bawah: segarkan + putar otomatis
-local mirrorRefreshBtn = button(mirrorPanel, {
-	text = "↻ Segarkan", textSize = 11, bg = Theme.CardBg, size = UDim2.new(0.5, -9, 0, 26),
-	position = UDim2.new(0, 6, 1, -32), radius = 8, onClick = function()
-		Mirror.refresh()
-	end,
-})
+-- tombol bawah: putar otomatis
 local mirrorAutoBtn = button(mirrorPanel, {
-	text = "⏸ Putar", textSize = 11, bg = Theme.CardBg, size = UDim2.new(0.5, -9, 0, 26),
-	position = UDim2.new(0.5, 3, 1, -32), radius = 8, onClick = function() end,
+	text = "⏸ Putar", textSize = 11, bg = Theme.CardBg, size = UDim2.new(1, -12, 0, 26),
+	position = UDim2.new(0, 6, 1, -32), radius = 8, onClick = function() end,
 })
 mirrorAutoBtn.Activated:Connect(function()
 	Mirror.auto = not Mirror.auto
 	mirrorAutoBtn.Text = Mirror.auto and "⏸ Putar" or "▶ Putar"
 end)
 
--- tombol buka/tutup cermin di header
-local mirrorToggle = mk("TextButton", {
-	Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -219, 0, 8), BackgroundColor3 = Theme.CardBg, Text = "🪞",
-	Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, AutoButtonColor = false, Parent = header,
-})
-corner(mirrorToggle, 10)
-stroke(mirrorToggle, Theme.CardBorder, 1.5)
-
-local function setMirror(on)
-	Mirror.on = on
-	mirrorPanel.Visible = on
-	contentFrame.Size = UDim2.new(1, -(State.sbw + 8) - (on and (MIRROR_W + 10) or 0), 1, 0)
-	if on then
-		Mirror.queue(0.1)
-	end
-end
-mirrorToggle.Activated:Connect(function()
-	setMirror(not Mirror.on)
-end)
 
 -- animasi putar
 do
@@ -4012,7 +4042,7 @@ UserInputService.InputChanged:Connect(function(input)
 	if resizing then
 		local d = (input.Position - resizeStart) / math.max(mainScale.Scale, 0.1)
 		mainFrame.Size = UDim2.fromOffset(
-			math.clamp(sizeOrigin.X.Offset + d.X, 660, 1000),
+			math.clamp(sizeOrigin.X.Offset + d.X, 560, 1000),
 			math.clamp(sizeOrigin.Y.Offset + d.Y, 300, 650)
 		)
 	end
