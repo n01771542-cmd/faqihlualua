@@ -393,6 +393,13 @@ Categories = {
         type = "info",
         scripts = CleanedScripts,
     },
+    {
+        key = "GantiAvatar",
+        name = "Ganti ke avatar",
+        type = "empty",
+        scripts = {},
+        tabHeight = 84, -- 2x tab biasa (42)
+    },
 }
 
 local activeCategoryIndex = 1
@@ -901,6 +908,15 @@ RenderContent = function(categoryIndex)
 
     ContentTitle.Text = string.upper(category.name)
 
+    if category.type == "empty" then
+        FilterContainer.Visible = false
+        SearchBox.Visible = false
+        ContentSub.Text = ""
+        -- tab sengaja dikosongkan untuk sementara
+        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+        return
+    end
+
     if category.type == "info" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
@@ -1366,9 +1382,10 @@ RenderSidebarTabs = function()
     sidebarTabButtons = {}
 
     for i, category in ipairs(Categories) do
+        local tabHeight = category.tabHeight or 42
         local tabBtn = Instance.new("TextButton")
         tabBtn.Name = "Tab_" .. category.key
-        tabBtn.Size = UDim2.new(1, 0, 0, 42)
+        tabBtn.Size = UDim2.new(1, 0, 0, tabHeight)
         tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
         tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
         tabBtn.Text = ""
@@ -1385,8 +1402,8 @@ RenderSidebarTabs = function()
 
         local indicator = Instance.new("Frame")
         indicator.Name = "Indicator"
-        indicator.Size = UDim2.new(0, 4, 0, 26)
-        indicator.Position = UDim2.new(0, 5, 0.5, -13)
+        indicator.Size = UDim2.new(0, 4, 0, math.max(20, tabHeight - 16))
+        indicator.Position = UDim2.new(0, 5, 0.5, -math.floor(math.max(20, tabHeight - 16) / 2))
         indicator.BackgroundColor3 = Theme.Accent
         indicator.BorderSizePixel = 0
         indicator.Visible = (i == activeCategoryIndex)
