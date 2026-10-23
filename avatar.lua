@@ -466,10 +466,13 @@ local function SwitchUIMode(mode)
         activeCategoryIndex = 1
     end
     UpdateModeButton()
-    if RenderSidebarTabs then
+    -- rebuild tab sidebar (tombol mode di Body, tidak ikut hilang)
+    if type(RenderSidebarTabs) == "function" then
         RenderSidebarTabs()
+    else
+        warn("[LEON4951] RenderSidebarTabs belum siap")
     end
-    if RenderContent then
+    if type(RenderContent) == "function" then
         RenderContent(activeCategoryIndex)
     end
 end
@@ -862,9 +865,10 @@ Body.Position = UDim2.new(0, 16, 0, 52)
 Body.BackgroundTransparency = 1
 Body.Parent = MainFrame
 
+-- Sidebar tab list (sisakan ruang bawah untuk tombol mode)
 local Sidebar = Instance.new("ScrollingFrame")
 Sidebar.Name = "Sidebar"
-Sidebar.Size = UDim2.new(0, 135, 1, 0)
+Sidebar.Size = UDim2.new(0, 135, 1, -94)
 Sidebar.BackgroundTransparency = 1
 Sidebar.BorderSizePixel = 0
 Sidebar.ScrollBarThickness = 0
@@ -876,6 +880,49 @@ local SidebarLayout = Instance.new("UIListLayout")
 SidebarLayout.Padding = UDim.new(0, 6)
 SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 SidebarLayout.Parent = Sidebar
+
+-- TOMBOL MODE tetap di Body (di luar Sidebar) — tidak ikut di-destroy saat ganti tab
+ModeSwitchBtn = Instance.new("TextButton")
+ModeSwitchBtn.Name = "ModeSwitchBtn"
+ModeSwitchBtn.Size = UDim2.new(0, 135, 0, 84)
+ModeSwitchBtn.Position = UDim2.new(0, 0, 1, -84)
+ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(12, 22, 38)
+ModeSwitchBtn.BackgroundTransparency = 0.25
+ModeSwitchBtn.Text = "GANTI KE\nAVATAR"
+ModeSwitchBtn.Font = Enum.Font.GothamBold
+ModeSwitchBtn.TextSize = 11
+ModeSwitchBtn.TextColor3 = Theme.TextPrimary
+ModeSwitchBtn.TextWrapped = true
+ModeSwitchBtn.AutoButtonColor = false
+ModeSwitchBtn.Parent = Body
+Instance.new("UICorner", ModeSwitchBtn).CornerRadius = UDim.new(0, 12)
+
+local modeStrokeFixed = Instance.new("UIStroke")
+modeStrokeFixed.Color = Color3.fromRGB(130, 200, 255)
+modeStrokeFixed.Thickness = 1.5
+modeStrokeFixed.Transparency = 0.15
+modeStrokeFixed.Enabled = true
+modeStrokeFixed.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+modeStrokeFixed.Parent = ModeSwitchBtn
+
+ModeSwitchBtn.MouseEnter:Connect(function()
+    TweenService:Create(ModeSwitchBtn, TweenInfo.new(0.12), {
+        BackgroundColor3 = Theme.TabActiveBg,
+        BackgroundTransparency = 0
+    }):Play()
+end)
+ModeSwitchBtn.MouseLeave:Connect(function()
+    TweenService:Create(ModeSwitchBtn, TweenInfo.new(0.12), {
+        BackgroundColor3 = Color3.fromRGB(12, 22, 38),
+        BackgroundTransparency = 0.25
+    }):Play()
+end)
+local function onModeBtnPress()
+    local nextMode = (UIMode == "avatar") and "script" or "avatar"
+    SwitchUIMode(nextMode)
+end
+ModeSwitchBtn.MouseButton1Click:Connect(onModeBtnPress)
+ModeSwitchBtn.Activated:Connect(onModeBtnPress)
 
 local Content = Instance.new("Frame")
 Content.Name = "Content"
@@ -1539,47 +1586,6 @@ RenderSidebarTabs = function()
             SetActiveCategory(i)
         end)
     end
-
-    -- TOMBOL MODE (bukan tab) — tinggi 2x, outline biru muda
-    local modeBtn = Instance.new("TextButton")
-    modeBtn.Name = "ModeSwitchBtn"
-    modeBtn.Size = UDim2.new(1, 0, 0, 84)
-    modeBtn.BackgroundColor3 = Color3.fromRGB(12, 22, 38)
-    modeBtn.BackgroundTransparency = 0.25
-    modeBtn.Text = (UIMode == "avatar") and "KEMBALI KE\nDAFTAR SCRIPT" or "GANTI KE\nAVATAR"
-    modeBtn.Font = Enum.Font.GothamBold
-    modeBtn.TextSize = 11
-    modeBtn.TextColor3 = Theme.TextPrimary
-    modeBtn.TextWrapped = true
-    modeBtn.AutoButtonColor = false
-    modeBtn.LayoutOrder = 999
-    modeBtn.Parent = Sidebar
-    Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 12)
-
-    local modeStroke = Instance.new("UIStroke")
-    modeStroke.Color = Color3.fromRGB(130, 200, 255)
-    modeStroke.Thickness = 1.5
-    modeStroke.Transparency = 0.15
-    modeStroke.Enabled = true
-    modeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    modeStroke.Parent = modeBtn
-
-    modeBtn.MouseEnter:Connect(function()
-        TweenService:Create(modeBtn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Theme.TabActiveBg,
-            BackgroundTransparency = 0
-        }):Play()
-    end)
-    modeBtn.MouseLeave:Connect(function()
-        TweenService:Create(modeBtn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(12, 22, 38),
-            BackgroundTransparency = 0.25
-        }):Play()
-    end)
-    modeBtn.MouseButton1Click:Connect(function()
-        SwitchUIMode(UIMode == "avatar" and "script" or "avatar")
-    end)
-    ModeSwitchBtn = modeBtn
 end
 
 RenderSidebarTabs()
