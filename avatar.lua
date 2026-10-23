@@ -393,56 +393,38 @@ local ScriptCategories = {
         type = "info",
         scripts = CleanedScripts,
     },
-    {
-        key = "GantiAvatar",
-        name = "Ganti ke avatar",
-        type = "mode_switch",
-        targetMode = "avatar",
-        scripts = {},
-        tabHeight = 84,
-        specialOutline = true,
-    },
 }
 
 local AvatarCategories = {
     {
         key = "AvatarTab",
         name = "avatar",
-        type = "empty",
+        type = "avatar_page",
         scripts = {},
     },
     {
         key = "KarakterTab",
         name = "karakter",
-        type = "empty",
+        type = "avatar_page",
         scripts = {},
     },
     {
         key = "AnimasiTab",
         name = "animasi",
-        type = "empty",
+        type = "avatar_page",
         scripts = {},
     },
     {
         key = "SepatuTab",
         name = "sepatu",
-        type = "empty",
+        type = "avatar_page",
         scripts = {},
     },
     {
         key = "DipakaiTab",
         name = "sedang di pakai",
-        type = "empty",
+        type = "avatar_page",
         scripts = {},
-    },
-    {
-        key = "BackToScripts",
-        name = "Kembali ke daftar script",
-        type = "mode_switch",
-        targetMode = "script",
-        scripts = {},
-        tabHeight = 84,
-        specialOutline = true,
     },
 }
 
@@ -451,16 +433,39 @@ Categories = ScriptCategories
 
 local activeCategoryIndex = 1
 local activeFilter = "ALL"
+local ModeSwitchBtn = nil -- tombol tetap di bawah (bukan tab)
+-- AvatarEngine diisi penuh di bagian bawah file (engine dari leon4951hub avatar)
+local AvatarEngine = AvatarEngine or { _inited = false, init = function() end }
+
+local function UpdateModeButton()
+    if not ModeSwitchBtn then return end
+    if UIMode == "avatar" then
+        ModeSwitchBtn.Text = "KEMBALI KE\nDAFTAR SCRIPT"
+    else
+        ModeSwitchBtn.Text = "GANTI KE\nAVATAR"
+    end
+end
 
 local function SwitchUIMode(mode)
     UIMode = mode
     if mode == "avatar" then
         Categories = AvatarCategories
         activeCategoryIndex = 1
+        if AvatarEngine and not AvatarEngine._inited then
+            task.spawn(function()
+                local ok, err = pcall(AvatarEngine.init)
+                if ok then
+                    AvatarEngine._inited = true
+                else
+                    warn("[LEON4951] Avatar engine init gagal: " .. tostring(err))
+                end
+            end)
+        end
     else
         Categories = ScriptCategories
         activeCategoryIndex = 1
     end
+    UpdateModeButton()
     if RenderSidebarTabs then
         RenderSidebarTabs()
     end
@@ -972,11 +977,28 @@ RenderContent = function(categoryIndex)
 
     ContentTitle.Text = string.upper(category.name)
 
-    if category.type == "empty" then
+    if category.type == "empty" or category.type == "avatar_page" then
         FilterContainer.Visible = false
         SearchBox.Visible = false
         ContentSub.Text = ""
-        -- tab sengaja dikosongkan untuk sementara
+        local ListLayout = Instance.new("UIListLayout")
+        ListLayout.Padding = UDim.new(0, 8)
+        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        ListLayout.Parent = ScriptScroll
+
+        local hint = Instance.new("TextLabel")
+        hint.Font = Enum.Font.GothamBold
+        hint.TextSize = 12
+        hint.TextColor3 = Theme.TextMuted
+        hint.BackgroundTransparency = 1
+        hint.Size = UDim2.new(1, 0, 0, 40)
+        hint.TextWrapped = true
+        if category.type == "avatar_page" then
+            hint.Text = "Panel " .. category.name .. " — engine avatar sedang disiapkan..."
+        else
+            hint.Text = ""
+        end
+        hint.Parent = ScriptScroll
         ScriptScroll.CanvasPosition = Vector2.new(0, 0)
         return
     end
@@ -1410,12 +1432,6 @@ local function SetActiveCategory(index)
     local cat = Categories[index]
     if not cat then return end
 
-    -- tab mode-switch: ganti seluruh daftar tab sidebar
-    if cat.type == "mode_switch" then
-        SwitchUIMode(cat.targetMode or "script")
-        return
-    end
-
     activeCategoryIndex = index
 
     if UIMode == "script" then
@@ -1426,27 +1442,15 @@ local function SetActiveCategory(index)
 
     for i, btnData in ipairs(sidebarTabButtons) do
         local isActive = (i == index)
-        local isSpecial = (Categories[i] and Categories[i].specialOutline == true)
 
-        if isSpecial then
-            TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
-                BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(12, 22, 38)
-            }):Play()
-            btnData.frame.BackgroundTransparency = isActive and 0 or 0.35
-            btnData.stroke.Color = Color3.fromRGB(130, 200, 255)
-            btnData.stroke.Thickness = 1.5
-            btnData.stroke.Transparency = 0.15
-            btnData.stroke.Enabled = true
-        else
-            TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
-                BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
-            }):Play()
-            btnData.frame.BackgroundTransparency = isActive and 0 or 1
-            btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-            btnData.stroke.Thickness = 1.5
-            btnData.stroke.Transparency = 0
-            btnData.stroke.Enabled = isActive
-        end
+        TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
+            BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
+        }):Play()
+        btnData.frame.BackgroundTransparency = isActive and 0 or 1
+        btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
+        btnData.stroke.Thickness = 1.5
+        btnData.stroke.Transparency = 0
+        btnData.stroke.Enabled = isActive
 
         btnData.label.TextColor3 = isActive and Theme.TextPrimary or Theme.TextMuted
         btnData.indicator.Visible = isActive
@@ -1474,18 +1478,11 @@ RenderSidebarTabs = function()
     sidebarTabButtons = {}
 
     for i, category in ipairs(Categories) do
-        local tabHeight = category.tabHeight or 42
-        local isSpecialTab = (category.specialOutline == true)
         local tabBtn = Instance.new("TextButton")
         tabBtn.Name = "Tab_" .. category.key
-        tabBtn.Size = UDim2.new(1, 0, 0, tabHeight)
-        if isSpecialTab then
-            tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(12, 22, 38)
-            tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 0.35
-        else
-            tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
-            tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
-        end
+        tabBtn.Size = UDim2.new(1, 0, 0, 42)
+        tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
+        tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
         tabBtn.Text = ""
         tabBtn.AutoButtonColor = false
         tabBtn.LayoutOrder = i
@@ -1493,23 +1490,15 @@ RenderSidebarTabs = function()
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
 
         local tabStroke = Instance.new("UIStroke")
-        if isSpecialTab then
-            tabStroke.Color = Color3.fromRGB(130, 200, 255)
-            tabStroke.Thickness = 1.5
-            tabStroke.Transparency = 0.15
-            tabStroke.Enabled = true
-            tabStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        else
-            tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
-            tabStroke.Thickness = 1.5
-            tabStroke.Enabled = (i == activeCategoryIndex)
-        end
+        tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
+        tabStroke.Thickness = 1.5
+        tabStroke.Enabled = (i == activeCategoryIndex)
         tabStroke.Parent = tabBtn
 
         local indicator = Instance.new("Frame")
         indicator.Name = "Indicator"
-        indicator.Size = UDim2.new(0, 4, 0, math.max(20, tabHeight - 16))
-        indicator.Position = UDim2.new(0, 5, 0.5, -math.floor(math.max(20, tabHeight - 16) / 2))
+        indicator.Size = UDim2.new(0, 4, 0, 26)
+        indicator.Position = UDim2.new(0, 5, 0.5, -13)
         indicator.BackgroundColor3 = Theme.Accent
         indicator.BorderSizePixel = 0
         indicator.Visible = (i == activeCategoryIndex)
@@ -1550,6 +1539,47 @@ RenderSidebarTabs = function()
             SetActiveCategory(i)
         end)
     end
+
+    -- TOMBOL MODE (bukan tab) — tinggi 2x, outline biru muda
+    local modeBtn = Instance.new("TextButton")
+    modeBtn.Name = "ModeSwitchBtn"
+    modeBtn.Size = UDim2.new(1, 0, 0, 84)
+    modeBtn.BackgroundColor3 = Color3.fromRGB(12, 22, 38)
+    modeBtn.BackgroundTransparency = 0.25
+    modeBtn.Text = (UIMode == "avatar") and "KEMBALI KE\nDAFTAR SCRIPT" or "GANTI KE\nAVATAR"
+    modeBtn.Font = Enum.Font.GothamBold
+    modeBtn.TextSize = 11
+    modeBtn.TextColor3 = Theme.TextPrimary
+    modeBtn.TextWrapped = true
+    modeBtn.AutoButtonColor = false
+    modeBtn.LayoutOrder = 999
+    modeBtn.Parent = Sidebar
+    Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 12)
+
+    local modeStroke = Instance.new("UIStroke")
+    modeStroke.Color = Color3.fromRGB(130, 200, 255)
+    modeStroke.Thickness = 1.5
+    modeStroke.Transparency = 0.15
+    modeStroke.Enabled = true
+    modeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    modeStroke.Parent = modeBtn
+
+    modeBtn.MouseEnter:Connect(function()
+        TweenService:Create(modeBtn, TweenInfo.new(0.12), {
+            BackgroundColor3 = Theme.TabActiveBg,
+            BackgroundTransparency = 0
+        }):Play()
+    end)
+    modeBtn.MouseLeave:Connect(function()
+        TweenService:Create(modeBtn, TweenInfo.new(0.12), {
+            BackgroundColor3 = Color3.fromRGB(12, 22, 38),
+            BackgroundTransparency = 0.25
+        }):Play()
+    end)
+    modeBtn.MouseButton1Click:Connect(function()
+        SwitchUIMode(UIMode == "avatar" and "script" or "avatar")
+    end)
+    ModeSwitchBtn = modeBtn
 end
 
 RenderSidebarTabs()
