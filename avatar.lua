@@ -3,11 +3,9 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI INI: ENGINE ASLI UTUH (server, injector, donor, skin), hanya UI yang
-  dipangkas jadi 3 tab (500 x 300):
-    - Katalog : Karakter/Tubuh, Animasi, Sepatu
-    - Avatar  : cari SEMUA pemain Roblox + preset + server + teman
-    - Dipakai : daftar item aktif
+  VERSI FULL: engine asli utuh + UI gaya LEON4951 HUB v2 (5 tab):
+    avatar | karakter | animasi | sepatu | sedang di pakai
+  Avatar polosan (bacon dll) disaring di tab avatar (lihat FILTER_POLOSAN).
   Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
 
@@ -2440,159 +2438,76 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
--- [7] WINDOW  (500 x 300)
+-- [7] TEMA + FILTER AVATAR POLOSAN
+-- (GANTI semua isi script lama mulai dari baris "-- [7] WINDOW (500 x 300)"
+--  sampai paling bawah dengan isi file ini. Section [1]-[6] JANGAN diubah.)
 ----------------------------------------------------------------------------
-local W, H = 500, 300
-local UI = {}
-local State = { tab = "catalog", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, open = true, token = 0 }
+local FILTER_POLOSAN = true -- true = sembunyikan avatar polosan (bacon dll). false = tampilkan semua
+local MAX_POLOS_ITEMS = 3 -- avatar dengan item <= angka ini DAN semuanya buatan Roblox dianggap polosan
 
-UI.gui = mk("ScreenGui", {
-	Name = "leon4951hub", ResetOnSpawn = false, IgnoreGuiInset = true,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 50, Parent = playerGui,
-})
-
-toastHolder = mk("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(420, 300),
-	BackgroundTransparency = 1, ZIndex = 200, Parent = UI.gui,
-})
-mk("UIListLayout", {
-	FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
-	HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = toastHolder,
-})
-
-UI.window = mk("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.fromOffset(W, H),
-	BackgroundColor3 = T.Bg, BorderSizePixel = 0, ClipsDescendants = true, Parent = UI.gui,
-})
-corner(UI.window, 14)
-stroke(UI.window, T.Stroke, 1.5)
-UI.scale = mk("UIScale", { Parent = UI.window })
-
-local function computeScale()
-	local cam = Workspace.CurrentCamera
-	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
-	return math.max(math.min((vp.X - 20) / W, (vp.Y - 20) / H, 1.2), 0.4)
-end
-UI.scale.Scale = computeScale()
-
--- titlebar
-local TITLE_H = 40
-local titlebar = mk("Frame", { Size = UDim2.new(1, 0, 0, TITLE_H), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = UI.window })
-local tl = label(titlebar, "leon4951hub", 15, T.Text, Enum.Font.GothamBold)
-tl.Position = UDim2.fromOffset(12, 3)
-tl.Size = UDim2.new(0, 200, 0, 18)
-UI.subtitle = label(titlebar, "Memuat karakter...", 11, T.Dim, Enum.Font.Gotham)
-UI.subtitle.Position = UDim2.fromOffset(12, 21)
-UI.subtitle.Size = UDim2.new(0, 250, 0, 14)
-
-local tbBtns = mk("Frame", {
-	Size = UDim2.fromOffset(190, 30), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
-	BackgroundTransparency = 1, Parent = titlebar,
-})
-mk("UIListLayout", {
-	FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
-	HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center,
-	Parent = tbBtns,
-})
-UI.undoBtn = button(tbBtns, { text = "↶", size = UDim2.fromOffset(34, 28), textSize = 16, order = 1,
-	onClick = function() task.spawn(E.undo) end })
-UI.redoBtn = button(tbBtns, { text = "↷", size = UDim2.fromOffset(34, 28), textSize = 16, order = 2,
-	onClick = function() task.spawn(E.doRedo) end })
-UI.destroyBtn = button(tbBtns, { text = "💥", size = UDim2.fromOffset(34, 28), textSize = 14, bg = rgb(120, 40, 56), order = 3 })
-UI.closeBtn = button(tbBtns, { text = "✕", size = UDim2.fromOffset(34, 28), textSize = 13, bg = T.Danger, order = 4 })
-
-do
-	local dragging, dragStart, startPos = false, nil, nil
-	titlebar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging, dragStart, startPos = true, input.Position, UI.window.Position
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local d = input.Position - dragStart
-			UI.window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
-end
-
--- body
-local RAIL_W = 64
-local body = mk("Frame", { Position = UDim2.fromOffset(0, TITLE_H), Size = UDim2.new(1, 0, 1, -TITLE_H), BackgroundTransparency = 1, Parent = UI.window })
-local rail = mk("Frame", { Size = UDim2.new(0, RAIL_W, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = body })
-local railList = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = rail })
-vlist(railList, 4)
-pad(railList, 5, 6, 5, 6)
-UI.content = mk("Frame", {
-	Position = UDim2.fromOffset(RAIL_W, 0), Size = UDim2.new(1, -RAIL_W, 1, 0), BackgroundTransparency = 1,
-	ClipsDescendants = true, Parent = body,
-})
-
-local TABS = {
-	{ key = "catalog", icon = "🛍", name = "Katalog" },
-	{ key = "avatars", icon = "👥", name = "Avatar" },
-	{ key = "worn", icon = "👕", name = "Dipakai" },
+local Theme = {
+	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
+	Accent = rgb(0, 122, 255), TabActiveBg = rgb(18, 32, 54), TabActiveBorder = rgb(0, 122, 255),
+	TextPrimary = rgb(245, 247, 255), TextMuted = rgb(130, 145, 175),
+	WaGreen = rgb(37, 211, 102), WaDarkGreen = rgb(18, 38, 28),
 }
-UI.pages, UI.builders, UI.built, UI.railBtns, UI.onShow = {}, {}, {}, {}, {}
+local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
-function UI.showTab(key)
-	State.tab = key
-	for k, rb in pairs(UI.railBtns) do
-		local active = k == key
-		rb.btn.BackgroundTransparency = active and 0 or 1
-		rb.txt.TextColor3 = active and T.Accent or T.Dim
+-- samakan warna helper lama (button, label, toast, kartu) dengan tema baru
+T.Bg = Theme.Background
+T.Surface = Theme.CardBg
+T.Surface2 = rgb(22, 32, 50)
+T.Hover = rgb(30, 44, 70)
+T.Stroke = Theme.CardBorder
+T.Text = Theme.TextPrimary
+T.Dim = Theme.TextMuted
+T.Accent = Theme.Accent
+
+-- apakah avatar pemain ini "polosan" (tanpa item / hanya item default buatan Roblox)
+local plainCache = {}
+local function isPlainAvatar(userId)
+	if not FILTER_POLOSAN then
+		return false, true
 	end
-	for k, p in pairs(UI.pages) do
-		p.Visible = k == key
+	if plainCache[userId] ~= nil then
+		return plainCache[userId], true
 	end
-	if not UI.built[key] and UI.builders[key] then
-		UI.built[key] = true
-		-- kalau satu halaman error, tampilkan pesannya (bukan halaman kosong) dan jangan hentikan script
-		local okB, errB = pcall(UI.builders[key], UI.pages[key])
-		if not okB then
-			logf("GAGAL membuat halaman %s: %s", key, tostring(errB))
-			mk("TextLabel", {
-				Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, TextWrapped = true, TextColor3 = T.Danger,
-				TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
-				TextYAlignment = Enum.TextYAlignment.Top, Text = "⚠ Halaman gagal dibuat:\n" .. tostring(errB),
-				Parent = UI.pages[key],
-			})
+	local desc = descFromUser(userId)
+	if not desc then
+		return false, false
+	end
+	local _, list = collect(desc)
+	local plain
+	if #list == 0 then
+		plain = true
+	elseif #list <= MAX_POLOS_ITEMS then
+		local ids = {}
+		for _, e in ipairs(list) do
+			table.insert(ids, e.Id)
 		end
+		local det = fetchDetails(ids, Enum.AvatarItemType.Asset)
+		plain = true
+		for _, id in ipairs(ids) do
+			local d = det[id]
+			if not d then
+				plain = false
+				break
+			end
+			if not (d.CreatorTargetId == 1 or d.CreatorName == "Roblox") then
+				plain = false
+				break
+			end
+		end
+	else
+		plain = false
 	end
-	if UI.onShow[key] then
-		pcall(UI.onShow[key])
-	end
-end
-
-for i, tab in ipairs(TABS) do
-	local b = mk("TextButton", {
-		Size = UDim2.new(1, 0, 0, 54), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
-		AutoButtonColor = false, LayoutOrder = i, Parent = railList,
-	})
-	corner(b, 12)
-	mk("TextLabel", { BackgroundTransparency = 1, Text = tab.icon, TextSize = 20, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 5), Parent = b })
-	local tx = label(b, tab.name, 10, T.Dim, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
-	tx.Size = UDim2.new(1, 0, 0, 14)
-	tx.Position = UDim2.fromOffset(0, 33)
-	UI.railBtns[tab.key] = { btn = b, txt = tx }
-	b.Activated:Connect(function()
-		UI.showTab(tab.key)
-	end)
-	local p = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = UI.content })
-	pad(p, 8)
-	UI.pages[tab.key] = p
+	plainCache[userId] = plain
+	return plain, true
 end
 
 ----------------------------------------------------------------------------
--- [8] HALAMAN KATALOG
+-- [8] KARTU KATALOG
 ----------------------------------------------------------------------------
-local activeCards = {}
-
 local function makeCard(parent, item)
 	local isBundle = item.Type == "Bundle"
 	local card = mk("TextButton", {
@@ -2614,7 +2529,6 @@ local function makeCard(parent, item)
 	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
 	pr.Position = UDim2.fromOffset(5, 88)
 	pr.Size = UDim2.new(1, -10, 0, 12)
-
 	local badge = mk("TextLabel", {
 		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
 		BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
@@ -2635,7 +2549,6 @@ local function makeCard(parent, item)
 		st.Transparency = worn and 0 or 0.3
 	end
 	obj.update()
-
 	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
 	card.Activated:Connect(function()
@@ -2657,75 +2570,76 @@ local function makeCard(parent, item)
 	return obj
 end
 
-UI.builders.catalog = function(page)
-	local CAT_W = 118
-	local catPanel = mk("Frame", { Size = UDim2.new(0, CAT_W, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = page })
-	corner(catPanel, 10)
-	local catScroll = makeScroll(catPanel)
-	pad(catScroll, 4, 4, 4, 4)
-	vlist(catScroll, 2)
+-- satu halaman katalog untuk satu grup kategori (KARAKTER / TUBUH, ANIMASI, SEPATU)
+local function buildCatalog(page, group)
+	local cats = {}
+	for _, c in ipairs(CATEGORIES) do
+		if c.group == group then
+			table.insert(cats, c)
+		end
+	end
+	local st = { cat = cats[1], keyword = "", sortIdx = 1, freeOnly = false, token = 0 }
+	local cards, loading, currentQuery = {}, false, nil
 
-	local main = mk("Frame", {
-		Position = UDim2.fromOffset(CAT_W + 8, 0), Size = UDim2.new(1, -(CAT_W + 8), 1, 0),
-		BackgroundTransparency = 1, Parent = page,
+	-- baris kategori (chip, geser kiri-kanan)
+	local chipBar = mk("ScrollingFrame", {
+		Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+		AutomaticCanvasSize = Enum.AutomaticSize.X, CanvasSize = UDim2.new(), ScrollingDirection = Enum.ScrollingDirection.X,
+		Parent = page,
+	})
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder,
+		VerticalAlignment = Enum.VerticalAlignment.Center, Parent = chipBar,
 	})
 
-	-- baris atas: cari | urut | gratis | refresh
-	local row1 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = main })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -170, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row1 })
+	-- baris cari | urut | gratis | refresh
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 32), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -170, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
 		Size = UDim2.new(1, -14, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Cari (Enter)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = sbFrame,
+		PlaceholderText = "🔍 Cari (Enter)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text, ClearTextOnFocus = false,
+		TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, Parent = sbFrame,
 	})
 	local startQuery
 	sbBox.FocusLost:Connect(function(enter)
 		if enter then
-			State.keyword = sbBox.Text
+			st.keyword = sbBox.Text
 			startQuery()
 		end
 	end)
-	local sortBtn = button(row1, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(72, 30), anchor = Vector2.new(1, 0),
+	local sortBtn = button(row, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(72, 30), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, -94, 0, 0), textSize = 10,
 		onClick = function()
-			State.sortIdx = State.sortIdx % #SORTS + 1
+			st.sortIdx = st.sortIdx % #SORTS + 1
 			startQuery()
 		end })
-	local freeBtn
-	freeBtn = button(row1, { text = "Gratis", size = UDim2.fromOffset(52, 30), anchor = Vector2.new(1, 0),
+	local freeBtn = button(row, { text = "Gratis", size = UDim2.fromOffset(52, 30), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, -38, 0, 0), textSize = 11,
 		onClick = function()
-			State.freeOnly = not State.freeOnly
+			st.freeOnly = not st.freeOnly
 			startQuery()
 		end })
-	button(row1, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
+	button(row, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
 		textSize = 16, onClick = function() startQuery() end })
 
-	-- teks jumlah item (disembunyikan karena ruang sempit)
-	local countL = label(main, "", 10, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
-	countL.Visible = false
-
 	-- grid
-	local grid = makeScroll(main, UDim2.new(1, 0, 1, -36), UDim2.fromOffset(0, 36))
+	local grid = makeScroll(page, UDim2.new(1, 0, 1, -68), UDim2.fromOffset(0, 68))
 	mk("UIGridLayout", {
 		CellSize = UDim2.fromOffset(90, 112), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
 	})
 	pad(grid, 0, 2, 0, 10)
 	local msg = mk("TextLabel", {
-		Size = UDim2.new(1, -16, 0, 90), Position = UDim2.fromOffset(8, 70), BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, -16, 0, 90), Position = UDim2.fromOffset(8, 90), BackgroundTransparency = 1, Text = "",
 		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
-		ZIndex = 5, Parent = main,
+		ZIndex = 5, Parent = page,
 	})
-
-	local currentQuery, loading = nil, false
 
 	local function clearGrid()
 		msg.Visible = false
-		activeCards = {}
+		cards = {}
 		for _, c in ipairs(grid:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
@@ -2733,7 +2647,6 @@ UI.builders.catalog = function(page)
 		end
 		grid.CanvasPosition = Vector2.new(0, 0)
 	end
-
 	local function showMsg(text)
 		msg.Text = text
 		msg.Visible = true
@@ -2747,155 +2660,83 @@ UI.builders.catalog = function(page)
 		local q = currentQuery
 		task.spawn(function()
 			local items, err = q:nextPage()
-			if token ~= State.token then
+			if token ~= st.token then
 				return
 			end
 			loading = false
 			if not items then
 				logf("katalog gagal: %s", tostring(err))
 				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
-				countL.Text = ""
 				return
 			end
 			msg.Visible = false
 			for _, it in ipairs(items) do
-				table.insert(activeCards, makeCard(grid, it))
+				table.insert(cards, makeCard(grid, it))
 			end
 			if q.total == 0 then
 				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
 			end
-			countL.Text = q.total .. " item" .. (q.finished and "" or "+") .. (q.backend and ("  •  " .. q.backend) or "")
 		end)
 	end
 
 	startQuery = function()
-		State.token = State.token + 1
-		local token = State.token
+		st.token = st.token + 1
+		local token = st.token
 		loading = false
 		clearGrid()
-		sortBtn.Text = "↕ " .. SORTS[State.sortIdx].name
-		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
-		freeBtn.Text = (State.freeOnly and "✓ " or "") .. "Gratis"
+		sortBtn.Text = "↕ " .. SORTS[st.sortIdx].name
+		freeBtn.BackgroundColor3 = st.freeOnly and T.Ok or T.Surface2
+		freeBtn.Text = (st.freeOnly and "✓ " or "") .. "Gratis"
 		showMsg("⏳ Memuat...")
-		currentQuery = newQuery(State.cat, State.keyword, State.sortIdx, State.freeOnly)
+		currentQuery = newQuery(st.cat, st.keyword, st.sortIdx, st.freeOnly)
 		loadPage(token)
 	end
 
 	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
 		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
-			loadPage(State.token)
+			loadPage(st.token)
 		end
 	end)
 
-	-- daftar kategori (dikelompokkan)
-	local catRows = {}
-	local function markCat()
-		for id, r in pairs(catRows) do
-			local active = id == State.cat.id
-			r.btn.BackgroundTransparency = active and 0 or 1
-			r.txt.TextColor3 = active and T.Accent or T.Text
+	local chipRefs = {}
+	local function markChips()
+		for id, c in pairs(chipRefs) do
+			local active = id == st.cat.id
+			c.BackgroundColor3 = active and Theme.TabActiveBg or T.Surface2
+			c.TextColor3 = active and T.Accent or T.Text
 		end
 	end
 	local function selectCat(cat)
-		State.cat = cat
-		State.keyword = ""
+		st.cat = cat
+		st.keyword = ""
 		sbBox.Text = ""
-		markCat()
+		markChips()
 		startQuery()
 	end
-
-	local order, lastGroup = 0, nil
-	for _, cat in ipairs(CATEGORIES) do
-		if cat.group ~= lastGroup then
-			lastGroup = cat.group
-			order = order + 1
-			local h = label(catScroll, cat.group, 10, T.Dim, Enum.Font.GothamBold)
-			h.LayoutOrder = order
-			h.Size = UDim2.new(1, 0, 0, 20)
-			h.TextYAlignment = Enum.TextYAlignment.Bottom
-		end
-		order = order + 1
-		local b = mk("TextButton", {
-			Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = T.Surface2, BackgroundTransparency = 1, Text = "",
-			AutoButtonColor = false, LayoutOrder = order, Parent = catScroll,
+	for i, cat in ipairs(cats) do
+		local c = mk("TextButton", {
+			Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Text = cat.name, TextSize = 11, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
+			AutoButtonColor = false, LayoutOrder = i, Parent = chipBar,
 		})
-		corner(b, 7)
-		local t = label(b, cat.name, 12, T.Text, Enum.Font.GothamMedium)
-		t.Size = UDim2.new(1, -12, 1, 0)
-		t.Position = UDim2.fromOffset(8, 0)
-		t.TextTruncate = Enum.TextTruncate.AtEnd
-		catRows[cat.id] = { btn = b, txt = t }
-		b.Activated:Connect(function()
+		corner(c, 8)
+		pad(c, 10, 0, 10, 0)
+		chipRefs[cat.id] = c
+		c.Activated:Connect(function()
 			selectCat(cat)
 		end)
 	end
 
-	UI.refreshCards = function()
-		for _, c in ipairs(activeCards) do
+	selectCat(cats[1])
+	return function()
+		for _, c in ipairs(cards) do
 			c.update()
 		end
 	end
-	UI.onShow.catalog = UI.refreshCards
-
-	selectCat(CATEGORIES[1])
 end
 
 ----------------------------------------------------------------------------
--- [9] HALAMAN DIPAKAI
-----------------------------------------------------------------------------
-UI.builders.worn = function(page)
-	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
-	label(head, "Sedang dipakai", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
-	local sub = label(head, "", 11, T.Dim, Enum.Font.Gotham)
-	sub.Position = UDim2.fromOffset(0, 20)
-	sub.Size = UDim2.new(0.5, 0, 0, 14)
-	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
-		onClick = function() task.spawn(E.removeAll) end })
-	button(head, { text = "↺ Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
-
-	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
-	vlist(list, 6)
-	pad(list, 0, 0, 8, 10)
-
-	UI.refreshWorn = function()
-		for _, c in ipairs(list:GetChildren()) do
-			if c:IsA("GuiObject") then
-				c:Destroy()
-			end
-		end
-		local items = E.wornList()
-		sub.Text = #items .. " item aktif pada karakter"
-		for n, e in ipairs(items) do
-			local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
-			corner(row, 10)
-			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
-				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = row })
-			corner(img, 8)
-			local nameL = label(row, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
-			nameL.Position = UDim2.fromOffset(50, 6)
-			nameL.Size = UDim2.new(1, -124, 0, 18)
-			nameL.TextTruncate = Enum.TextTruncate.AtEnd
-			local typeL = label(row, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
-			typeL.Position = UDim2.fromOffset(50, 26)
-			typeL.Size = UDim2.new(1, -124, 0, 14)
-			button(row, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
-				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
-			task.spawn(function()
-				local nm = E.name(e.Id)
-				if nameL.Parent then
-					nameL.Text = nm
-				end
-			end)
-		end
-	end
-	UI.onShow.worn = UI.refreshWorn
-	UI.refreshWorn()
-end
-
-----------------------------------------------------------------------------
--- [10] HALAMAN AVATAR  (semua pemain Roblox + preset + server + teman)
+-- [9] KARTU PEMAIN + PENCARIAN (halaman AVATAR)
 ----------------------------------------------------------------------------
 local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
 
@@ -2952,7 +2793,6 @@ local function idFromName(name)
 	return nil
 end
 
--- pencarian pemain di SELURUH Roblox lewat web (beberapa backend dicoba berurutan)
 local SESSION_ID = "leon-" .. tostring(os.time())
 pcall(function()
 	SESSION_ID = HttpService:GenerateGUID(false)
@@ -3005,7 +2845,6 @@ local function parseUserList(bodyTxt)
 	return nil
 end
 
--- state = { idx = backend yang dipakai, cursor = halaman berikut }
 local function searchUsersWeb(keyword, state)
 	state = state or {}
 	local first, last = 1, #SEARCH_BUILDERS
@@ -3028,15 +2867,14 @@ local function searchUsersWeb(keyword, state)
 	return nil, lastErr
 end
 
-UI.builders.avatars = function(page)
-	-- baris pencarian
+local function buildAvatars(page)
 	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = page })
 	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local box = mk("TextBox", {
 		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Username / nama / UserId (seluruh Roblox)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		PlaceholderText = "🔍 Username / nama / UserId", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
 		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = sbFrame,
 	})
@@ -3045,7 +2883,6 @@ UI.builders.avatars = function(page)
 	local randBtn = button(row, { text = "🎲", size = UDim2.fromOffset(36, 30), anchor = Vector2.new(1, 0),
 		position = UDim2.new(1, 0, 0, 0), textSize = 15 })
 
-	-- baris tab kecil + status
 	local status = label(page, "", 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Right)
 	status.Position = UDim2.fromOffset(288, 34)
 	status.Size = UDim2.new(1, -288, 0, 24)
@@ -3073,9 +2910,8 @@ UI.builders.avatars = function(page)
 	local serverSc = makeSection("server")
 	local friendSc = makeSection("friends")
 
-	local current = "all"
+	local refreshServer
 	local function showSection(key)
-		current = key
 		for k, sc in pairs(secs) do
 			sc.Visible = k == key
 		end
@@ -3083,8 +2919,8 @@ UI.builders.avatars = function(page)
 			c.BackgroundColor3 = (k == key) and T.Accent or T.Surface2
 		end
 		status.Visible = key == "all"
-		if key == "server" and UI.refreshServer then
-			UI.refreshServer()
+		if key == "server" and refreshServer then
+			refreshServer()
 		end
 	end
 	local chipDefs = { { "all", "🌐 Semua" }, { "preset", "⭐ Preset" }, { "server", "🖥 Server" }, { "friends", "👥 Teman" } }
@@ -3100,14 +2936,13 @@ UI.builders.avatars = function(page)
 		end)
 	end
 
-	-- ===== SEMUA PEMAIN ROBLOX =====
+	-- ===== SEMUA PEMAIN ROBLOX (polosan disaring) =====
 	local token, loading, mode, searchState, keyword = 0, false, "feed", nil, ""
 	local count, seen = 0, {}
 
 	local function setStatus(t)
 		status.Text = t
 	end
-
 	local function clearAll()
 		for _, c in ipairs(allSc:GetChildren()) do
 			if c:IsA("GuiObject") then
@@ -3117,7 +2952,6 @@ UI.builders.avatars = function(page)
 		allSc.CanvasPosition = Vector2.new(0, 0)
 		count, seen = 0, {}
 	end
-
 	local function addUser(id, name, sub, front)
 		if seen[id] then
 			return false
@@ -3128,29 +2962,56 @@ UI.builders.avatars = function(page)
 		return true
 	end
 
-	-- mode "feed": ambil pemain acak dari seluruh Roblox (hanya butuh layanan Roblox, tanpa HTTP)
+	-- tambahkan daftar hasil pencarian, buang yang polosan (maks 6 cek bersamaan)
+	local function addFiltered(list, myToken)
+		local inflight = 0
+		for _, u in ipairs(list) do
+			while inflight >= 6 and myToken == token do
+				task.wait(0.05)
+			end
+			if myToken ~= token then
+				return
+			end
+			inflight = inflight + 1
+			task.spawn(function()
+				local plain, known = isPlainAvatar(u.id)
+				if myToken == token and not (known and plain) then
+					addUser(u.id, u.display, "@" .. u.name)
+				end
+				inflight = inflight - 1
+			end)
+		end
+		local t0 = os.clock()
+		while inflight > 0 and os.clock() - t0 < 8 and myToken == token do
+			task.wait(0.05)
+		end
+	end
+
 	local function feedBatch(myToken, n)
 		loading = true
 		setStatus("Memuat pemain Roblox...")
 		local found, attempts, inflight = 0, 0, 0
-		local maxAttempts = n * 6
+		local maxAttempts = n * 30
 		while myToken == token and found < n and attempts < maxAttempts do
-			while myToken == token and inflight < 8 and (found + inflight) < n and attempts < maxAttempts do
+			while myToken == token and inflight < 10 and (found + inflight) < n and attempts < maxAttempts do
 				attempts = attempts + 1
 				inflight = inflight + 1
 				task.spawn(function()
 					local id = math.floor(math.random() * 5000000000) + 100000
 					local nm = nameFromId(id)
-					inflight = inflight - 1
-					if nm and myToken == token and addUser(id, nm, "ID " .. id) then
-						found = found + 1
+					if nm and myToken == token and not seen[id] then
+						local plain, known = isPlainAvatar(id)
+						if known and not plain and myToken == token and addUser(id, nm, "ID " .. id) then
+							found = found + 1
+						end
 					end
+					inflight = inflight - 1
 				end)
 			end
 			task.wait(0.1)
 		end
 		local t0 = os.clock()
-		while inflight > 0 and os.clock() - t0 < 6 and myToken == token do
+		while inflight > 0 and os.clock() - t0 < 8 and myToken == token do
 			task.wait(0.1)
 		end
 		if myToken == token then
@@ -3168,7 +3029,6 @@ UI.builders.avatars = function(page)
 		task.spawn(feedBatch, myToken, 12)
 	end
 
-	-- mode "search": pencarian nama di seluruh Roblox
 	local function doSearch()
 		local kw = box.Text:match("^%s*(.-)%s*$")
 		if kw == "" then
@@ -3196,23 +3056,27 @@ UI.builders.avatars = function(page)
 				return
 			end
 			if exactId and exactName then
-				addUser(exactId, exactName, "ID " .. exactId, true)
+				addUser(exactId, exactName, "ID " .. exactId, true) -- hasil persis tidak disaring
 			end
 			local list, st = searchUsersWeb(kw, nil)
 			if myToken ~= token then
 				return
 			end
-			loading = false
 			if list then
 				searchState = st
-				for _, u in ipairs(list) do
-					addUser(u.id, u.display, "@" .. u.name)
+				addFiltered(list, myToken)
+				if myToken ~= token then
+					return
 				end
-				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " ditemukan")
-			elseif count > 0 then
-				setStatus("Pencarian luas gagal (HTTP diblokir?), hanya hasil persis.")
+				loading = false
+				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " (polosan disembunyikan)")
 			else
-				setStatus("⚠ " .. string.sub(tostring(st), 1, 60))
+				loading = false
+				if count > 0 then
+					setStatus("Pencarian luas gagal (HTTP diblokir?), hanya hasil persis.")
+				else
+					setStatus("⚠ " .. string.sub(tostring(st), 1, 60))
+				end
 			end
 		end)
 	end
@@ -3231,16 +3095,17 @@ UI.builders.avatars = function(page)
 				if myToken ~= token then
 					return
 				end
-				loading = false
 				if list then
 					searchState = st
-					for _, u in ipairs(list) do
-						addUser(u.id, u.display, "@" .. u.name)
+					addFiltered(list, myToken)
+					if myToken ~= token then
+						return
 					end
-					setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " ditemukan")
+					setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " (polosan disembunyikan)")
 				else
 					searchState = nil
 				end
+				loading = false
 			end)
 		end
 	end
@@ -3250,7 +3115,6 @@ UI.builders.avatars = function(page)
 			loadMore()
 		end
 	end)
-
 	searchBtn.Activated:Connect(doSearch)
 	box.FocusLost:Connect(function(enter)
 		if enter then
@@ -3267,26 +3131,55 @@ UI.builders.avatars = function(page)
 		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- ===== PEMAIN DI SERVER =====
-	UI.refreshServer = function()
-		for _, c in ipairs(serverSc:GetChildren()) do
+	-- isi daftar (server / teman) dengan penyaring polosan
+	local ver = {}
+	local function populate(sc, entries, emptyText)
+		ver[sc] = (ver[sc] or 0) + 1
+		local v = ver[sc]
+		for _, c in ipairs(sc:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
 			end
 		end
-		local n = 0
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player then
-				n = n + 1
-				userCard(serverSc, p.UserId, p.DisplayName, n)
+		local n, inflight = 0, 0
+		for _, e in ipairs(entries) do
+			while inflight >= 6 and ver[sc] == v do
+				task.wait(0.05)
 			end
+			if ver[sc] ~= v then
+				return
+			end
+			inflight = inflight + 1
+			task.spawn(function()
+				local plain, known = isPlainAvatar(e.id)
+				if ver[sc] == v and not (known and plain) then
+					n = n + 1
+					userCard(sc, e.id, e.name, n)
+				end
+				inflight = inflight - 1
+			end)
 		end
-		if n == 0 then
+		local t0 = os.clock()
+		while inflight > 0 and os.clock() - t0 < 10 and ver[sc] == v do
+			task.wait(0.05)
+		end
+		if ver[sc] == v and n == 0 then
 			mk("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Tidak ada pemain lain di server ini.",
-				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = serverSc,
+				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = emptyText,
+				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = sc,
 			})
 		end
+	end
+
+	-- ===== PEMAIN DI SERVER =====
+	refreshServer = function()
+		local entries = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				table.insert(entries, { id = p.UserId, name = p.DisplayName })
+			end
+		end
+		task.spawn(populate, serverSc, entries, "Tidak ada pemain lain (atau semuanya polosan).")
 	end
 
 	-- ===== TEMAN =====
@@ -3301,11 +3194,10 @@ UI.builders.avatars = function(page)
 			})
 			return
 		end
-		local fcount, done = 0, false
-		while not done and fcount < 72 do
+		local entries, done = {}, false
+		while not done and #entries < 72 do
 			for _, f in ipairs(pages:GetCurrentPage()) do
-				fcount = fcount + 1
-				userCard(friendSc, f.Id, f.DisplayName or f.Username, fcount)
+				table.insert(entries, { id = f.Id, name = f.DisplayName or f.Username })
 			end
 			if pages.IsFinished then
 				done = true
@@ -3313,157 +3205,369 @@ UI.builders.avatars = function(page)
 				done = true
 			end
 		end
-		if fcount == 0 then
-			mk("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Belum ada teman di akun ini.",
-				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
-			})
-		end
+		populate(friendSc, entries, "Belum ada teman (atau semuanya polosan).")
 	end)
 
 	startFeed()
 end
 
 ----------------------------------------------------------------------------
--- [11] BUKA/TUTUP, KEYBIND, REAKSI
+-- [10] HALAMAN SEDANG DI PAKAI
 ----------------------------------------------------------------------------
-UI.fab = mk("TextButton", {
-	Size = UDim2.fromOffset(54, 54), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 14, 0.5, 0), Text = "👗",
-	TextSize = 26, AutoButtonColor = false, BackgroundColor3 = T.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 20, Parent = UI.gui,
+local function buildWorn(page)
+	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
+	label(head, "Sedang dipakai", 15, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
+	local sub = label(head, "", 11, T.Dim, Enum.Font.Gotham)
+	sub.Position = UDim2.fromOffset(0, 20)
+	sub.Size = UDim2.new(0.5, 0, 0, 14)
+	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
+		onClick = function() task.spawn(E.removeAll) end })
+	button(head, { text = "↺ Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
+
+	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
+	vlist(list, 6)
+	pad(list, 0, 0, 8, 10)
+
+	local function refresh()
+		for _, c in ipairs(list:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+		local items = E.wornList()
+		sub.Text = #items .. " item aktif pada karakter"
+		for n, e in ipairs(items) do
+			local r = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
+			corner(r, 10)
+			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
+				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = r })
+			corner(img, 8)
+			local nameL = label(r, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
+			nameL.Position = UDim2.fromOffset(50, 6)
+			nameL.Size = UDim2.new(1, -124, 0, 18)
+			nameL.TextTruncate = Enum.TextTruncate.AtEnd
+			local typeL = label(r, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
+			typeL.Position = UDim2.fromOffset(50, 26)
+			typeL.Size = UDim2.new(1, -124, 0, 14)
+			button(r, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
+				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
+			task.spawn(function()
+				local nm = E.name(e.Id)
+				if nameL.Parent then
+					nameL.Text = nm
+				end
+			end)
+		end
+	end
+	refresh()
+	return refresh
+end
+
+----------------------------------------------------------------------------
+-- [11] SHELL UI (gaya LEON4951 HUB v2): header, sidebar 5 tab, drag, resize
+----------------------------------------------------------------------------
+local MAIN_W, MAIN_H = 560, 340
+local State = { tab = "avatars", open = false }
+local UI = { builders = {}, built = {}, pages = {}, refreshers = {} }
+
+UI.gui = mk("ScreenGui", {
+	Name = "leon4951hub", ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 50, Parent = playerGui,
 })
-corner(UI.fab, 27)
--- tombol 👗 bisa digeser bebas
-do
-	local fab = UI.fab
-	fab.Active = true
-	local KEEP = 12
-	local p0, moved = nil, false
 
-	local function settle()
-		local cam2 = Workspace.CurrentCamera
-		local vp = cam2 and cam2.ViewportSize or Vector2.new(1280, 720)
-		local ap, sz = fab.AbsolutePosition, fab.AbsoluteSize
-		local x = math.clamp(ap.X, -(sz.X - KEEP), vp.X - KEEP)
-		local y = math.clamp(ap.Y, -(sz.Y - KEEP), vp.Y - KEEP)
-		fab.AnchorPoint = Vector2.zero
-		fab.Position = UDim2.fromOffset(x, y)
+toastHolder = mk("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(420, 300),
+	BackgroundTransparency = 1, ZIndex = 200, Parent = UI.gui,
+})
+mk("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = toastHolder,
+})
+
+local mainFrame = mk("Frame", {
+	Name = "MainFrame", Size = UDim2.fromOffset(MAIN_W, MAIN_H), AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5), BackgroundColor3 = Theme.Background, BorderSizePixel = 0,
+	Active = true, Visible = false, Parent = UI.gui,
+})
+corner(mainFrame, 20)
+stroke(mainFrame, Theme.Accent, 6)
+local mainScale = mk("UIScale", { Scale = 0, Parent = mainFrame })
+
+local function computeScale()
+	local cam = Workspace.CurrentCamera
+	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+	return math.clamp(math.min((vp.X - 20) / MAIN_W, (vp.Y - 20) / MAIN_H), 0.4, 1)
+end
+
+-- logo "F"
+local function createLogo(size, rotation)
+	local box = mk("Frame", { Size = size, BackgroundTransparency = 1, Rotation = rotation or -12 })
+	local function bar(sz, pos)
+		local f = mk("Frame", { Size = sz, Position = pos, BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = box })
+		corner(f, 2)
 	end
-
-	fab.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			p0 = fab.AbsolutePosition
-			moved = false
-		end
-	end)
-	fab.Activated:Connect(function()
-		if not moved then
-			UI.setOpen(true)
-		end
-	end)
-
-	local okDD, dd = pcall(function()
-		local d = Instance.new("UIDragDetector")
-		d.ResponseStyle = Enum.UIDragDetectorResponseStyle.Offset
-		d.Parent = fab
-		return d
-	end)
-	if okDD and dd then
-		dd.DragStart:Connect(function()
-			p0 = fab.AbsolutePosition
-			moved = false
-		end)
-		dd.DragContinue:Connect(function()
-			if p0 and (fab.AbsolutePosition - p0).Magnitude > 8 then
-				moved = true
-			end
-		end)
-		dd.DragEnd:Connect(function()
-			if moved then
-				settle()
-			end
-		end)
-		logf("tombol 👗: geser bebas aktif (UIDragDetector)")
-	else
-		local dragging, dragInput, dragStart, startAbs = false, nil, nil, nil
-		fab.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				dragging = true
-				dragStart = input.Position
-				startAbs = fab.AbsolutePosition
-				input.Changed:Connect(function()
-					if input.UserInputState == Enum.UserInputState.End then
-						dragging = false
-						if moved then
-							settle()
-						end
-					end
-				end)
-			end
-		end)
-		fab.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-				dragInput = input
-			end
-		end)
-		UserInputService.InputChanged:Connect(function(input)
-			if dragging and input == dragInput and startAbs then
-				local dx, dy = input.Position.X - dragStart.X, input.Position.Y - dragStart.Y
-				if math.abs(dx) + math.abs(dy) > 8 then
-					moved = true
-				end
-				if moved then
-					fab.AnchorPoint = Vector2.zero
-					fab.Position = UDim2.fromOffset(startAbs.X + dx, startAbs.Y + dy)
-				end
-			end
-		end)
-		logf("tombol 👗: geser bebas aktif (cara manual, UIDragDetector tidak tersedia)")
-	end
+	bar(UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28)), UDim2.new())
+	bar(UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24)), UDim2.new(0.2, 0, 0.4, 0))
+	bar(UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0), UDim2.new(0.08, 0, 0, 0))
+	return box
 end
 
--- hapus UI + tombol 👗; avatar di tubuh TETAP dipakai
-function UI.destroyUI()
-	E.uiDestroyed = true
-	toastHolder = nil
-	logf("UI dihapus. Avatar tetap dipakai.")
-	if UI.gui then
-		UI.gui:Destroy()
-	end
-end
+-- header
+local header = mk("Frame", { Name = "Header", Size = UDim2.new(1, 0, 0, 52), BackgroundTransparency = 1, Active = true, Parent = mainFrame })
+local logo = createLogo(UDim2.fromOffset(26, 26), -12)
+logo.Position = UDim2.new(0, 16, 0, 13)
+logo.Parent = header
+mk("TextLabel", {
+	Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
+	Size = UDim2.new(0, 200, 0, 26), Position = UDim2.new(0, 50, 0, 13), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "LEON4951 HUB", Parent = header,
+})
 
-do
-	local confirmAt = 0
-	UI.destroyBtn.Activated:Connect(function()
-		if os.clock() - confirmAt < 3 then
-			UI.destroyUI()
-			return
-		end
-		confirmAt = os.clock()
-		UI.destroyBtn.Text = "❓"
-		toast("Tekan 💥 sekali lagi untuk menghapus UI. Avatar di tubuhmu tetap dipakai.", "warn")
-		task.delay(3, function()
-			if UI.destroyBtn.Parent then
-				UI.destroyBtn.Text = "💥"
-			end
-		end)
-	end)
-end
+local ToggleMainUI
 
-function UI.setOpen(open)
-	State.open = open
-	UI.window.Visible = open
-	UI.fab.Visible = not open
-end
-UI.closeBtn.Activated:Connect(function()
-	UI.setOpen(false)
+local closeBtn = mk("TextButton", {
+	Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -44, 0, 8), BackgroundColor3 = Theme.CardBg, Text = "X",
+	Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, AutoButtonColor = false, Parent = header,
+})
+corner(closeBtn, 10)
+stroke(closeBtn, Theme.CardBorder, 1.5)
+closeBtn.Activated:Connect(function()
+	ToggleMainUI(false)
 end)
+
+local waBtn = mk("TextButton", {
+	Size = UDim2.fromOffset(120, 26), Position = UDim2.new(1, -175, 0, 13), BackgroundColor3 = Theme.WaGreen,
+	Text = "💬 SALURAN WA", Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = Theme.TextPrimary,
+	AutoButtonColor = false, Parent = header,
+})
+corner(waBtn, 8)
+stroke(waBtn, Theme.WaDarkGreen, 1.5)
+waBtn.Activated:Connect(function()
+	pcall(function()
+		if setclipboard then
+			setclipboard(WA_CHANNEL_LINK)
+		elseif toclipboard then
+			toclipboard(WA_CHANNEL_LINK)
+		end
+	end)
+	local orig = "💬 SALURAN WA"
+	waBtn.Text = "✓ COPIED!"
+	task.delay(1.5, function()
+		if waBtn.Parent then
+			waBtn.Text = orig
+		end
+	end)
+end)
+
+mk("Frame", { Size = UDim2.new(1, -32, 0, 1), Position = UDim2.new(0, 16, 0, 48), BackgroundColor3 = Theme.CardBorder, BorderSizePixel = 0, Parent = mainFrame })
+
+-- body: sidebar + content
+local bodyFrame = mk("Frame", { Name = "Body", Size = UDim2.new(1, -32, 1, -56), Position = UDim2.new(0, 16, 0, 52), BackgroundTransparency = 1, Parent = mainFrame })
+local sidebar = mk("ScrollingFrame", {
+	Name = "Sidebar", Size = UDim2.new(0, 135, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Parent = bodyFrame,
+})
+mk("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sidebar })
+
+local contentFrame = mk("Frame", {
+	Name = "Content", Size = UDim2.new(1, -145, 1, 0), Position = UDim2.new(0, 145, 0, 0),
+	BackgroundTransparency = 1, ClipsDescendants = true, Parent = bodyFrame,
+})
+local contentTitle = mk("TextLabel", {
+	Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Text = "AVATAR", Parent = contentFrame,
+})
+local contentSub = mk("TextLabel", {
+	Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 0, 22), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "", Parent = contentFrame,
+})
+local pageHolder = mk("Frame", { Size = UDim2.new(1, 0, 1, -46), Position = UDim2.fromOffset(0, 46), BackgroundTransparency = 1, Parent = contentFrame })
+
+local function updateSub()
+	local n = #E.wornList()
+	contentSub.Text = n .. " item dipakai  •  mode: " .. (E.lastMethod ~= "" and E.lastMethod or (E.remote and "server" or "native"))
+end
+
+-- daftar tab
+local TABS = {
+	{ key = "avatars", name = "avatar" },
+	{ key = "karakter", name = "karakter", group = "KARAKTER / TUBUH" },
+	{ key = "animasi", name = "animasi", group = "ANIMASI" },
+	{ key = "sepatu", name = "sepatu", group = "SEPATU" },
+	{ key = "worn", name = "sedang di pakai" },
+}
+
+UI.builders.avatars = buildAvatars
+UI.builders.worn = function(p)
+	UI.refreshers.worn = buildWorn(p)
+end
+for _, tab in ipairs(TABS) do
+	if tab.group then
+		UI.builders[tab.key] = function(p)
+			UI.refreshers[tab.key] = buildCatalog(p, tab.group)
+		end
+	end
+end
+
+local tabBtns = {}
+local function setTab(index)
+	local tab = TABS[index]
+	State.tab = tab.key
+	for i, b in ipairs(tabBtns) do
+		local active = i == index
+		b.frame.BackgroundTransparency = active and 0 or 1
+		b.frame.BackgroundColor3 = Theme.TabActiveBg
+		b.stroke.Enabled = active
+		b.label.TextColor3 = active and Theme.TextPrimary or Theme.TextMuted
+		b.indicator.Visible = active
+	end
+	for k, p in pairs(UI.pages) do
+		p.Visible = k == tab.key
+	end
+	contentTitle.Text = string.upper(tab.name)
+	updateSub()
+	if not UI.built[tab.key] then
+		UI.built[tab.key] = true
+		local okB, errB = pcall(UI.builders[tab.key], UI.pages[tab.key])
+		if not okB then
+			logf("GAGAL membuat halaman %s: %s", tab.key, tostring(errB))
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, TextWrapped = true, TextColor3 = T.Danger,
+				TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top, Text = "⚠ Halaman gagal dibuat:\n" .. tostring(errB),
+				Parent = UI.pages[tab.key],
+			})
+		end
+	elseif UI.refreshers[tab.key] then
+		pcall(UI.refreshers[tab.key])
+	end
+end
+
+for i, tab in ipairs(TABS) do
+	local b = mk("TextButton", {
+		Name = "Tab_" .. tab.key, Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = Theme.TabActiveBg, BackgroundTransparency = 1,
+		Text = "", AutoButtonColor = false, LayoutOrder = i, Parent = sidebar,
+	})
+	corner(b, 12)
+	local sk = stroke(b, Theme.TabActiveBorder, 1.5)
+	sk.Enabled = false
+	local ind = mk("Frame", {
+		Size = UDim2.new(0, 4, 0, 26), Position = UDim2.new(0, 5, 0.5, -13), BackgroundColor3 = Theme.Accent,
+		BorderSizePixel = 0, Visible = false, Parent = b,
+	})
+	corner(ind, 99)
+	local lb = mk("TextLabel", {
+		Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+		Size = UDim2.new(1, -22, 1, 0), Position = UDim2.new(0, 15, 0, 0), TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true, Text = string.upper(tab.name), Parent = b,
+	})
+	table.insert(tabBtns, { frame = b, stroke = sk, label = lb, indicator = ind })
+	b.Activated:Connect(function()
+		setTab(i)
+	end)
+	UI.pages[tab.key] = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = pageHolder })
+end
+
+-- tombol mengambang (muncul saat UI ditutup)
+local fab = mk("TextButton", {
+	Name = "FloatingToggleBtn", Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 20, 0.4, 0), BackgroundColor3 = Theme.Background, BorderSizePixel = 0,
+	Visible = false, Active = true, Text = "", ZIndex = 20, Parent = UI.gui,
+})
+corner(fab, 11)
+stroke(fab, Theme.Accent, 1.5)
+local fabLogo = createLogo(UDim2.fromOffset(20, 20), -12)
+fabLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
+fabLogo.Parent = fab
+
+-- resize handle
+local resizeHandle = mk("TextButton", {
+	Name = "ResizeHandle", Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, 0, 1, 0),
+	BackgroundColor3 = Theme.Accent, Text = "◢", Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = Theme.Background,
+	AutoButtonColor = false, ZIndex = 10, Parent = mainFrame,
+})
+corner(resizeHandle, 5)
+
+-- drag / resize / drag tombol mengambang
+local dragging, dragStart, dragOrigin
+local resizing, resizeStart, sizeOrigin
+local floating, floatStart, floatOrigin, floatMoved = false, nil, nil, false
+
+header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging, dragStart, dragOrigin = true, input.Position, mainFrame.Position
+	end
+end)
+resizeHandle.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		resizing, resizeStart, sizeOrigin = true, input.Position, mainFrame.Size
+	end
+end)
+fab.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		floating, floatStart, floatOrigin, floatMoved = true, input.Position, fab.Position, false
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	local moveType = input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch
+	if not moveType then
+		return
+	end
+	if dragging then
+		local d = input.Position - dragStart
+		mainFrame.Position = UDim2.new(dragOrigin.X.Scale, dragOrigin.X.Offset + d.X, dragOrigin.Y.Scale, dragOrigin.Y.Offset + d.Y)
+	end
+	if resizing then
+		local d = input.Position - resizeStart
+		mainFrame.Size = UDim2.fromOffset(
+			math.clamp(sizeOrigin.X.Offset + d.X, 480, 950),
+			math.clamp(sizeOrigin.Y.Offset + d.Y, 300, 650)
+		)
+	end
+	if floating then
+		local d = input.Position - floatStart
+		if math.abs(d.X) + math.abs(d.Y) > 8 then
+			floatMoved = true
+		end
+		if floatMoved then
+			fab.Position = UDim2.new(floatOrigin.X.Scale, floatOrigin.X.Offset + d.X, floatOrigin.Y.Scale, floatOrigin.Y.Offset + d.Y)
+		end
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging, resizing, floating = false, false, false
+	end
+end)
+fab.Activated:Connect(function()
+	if not floatMoved then
+		ToggleMainUI(true)
+	end
+end)
+
+ToggleMainUI = function(show)
+	State.open = show
+	if show then
+		mainFrame.Visible = true
+		mainScale.Scale = 0
+		fab.Visible = false
+		tween(mainScale, { Scale = computeScale() }, 0.22, Enum.EasingStyle.Back)
+	else
+		mainScale.Scale = 0
+		mainFrame.Visible = false
+		fab.Visible = true
+	end
+end
 
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp or E.uiDestroyed then
 		return
 	end
 	if input.KeyCode == TOGGLE_KEY then
-		UI.setOpen(not State.open)
+		ToggleMainUI(not State.open)
 		return
 	end
 	local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
@@ -3476,31 +3580,75 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	end
 end)
 
-local cam = Workspace.CurrentCamera
-if cam then
-	cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-		UI.scale.Scale = computeScale()
-	end)
+do
+	local cam = Workspace.CurrentCamera
+	if cam then
+		cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			if State.open then
+				mainScale.Scale = computeScale()
+			end
+		end)
+	end
 end
 
+-- segarkan kartu/daftar saat avatar berubah
 E.onChanged(function()
-	local n = #E.wornList()
-	UI.subtitle.Text = n .. " item dipakai  •  mode: " .. (E.lastMethod ~= "" and E.lastMethod or (E.remote and "server" or "native"))
-	UI.undoBtn.TextTransparency = #E.history > 0 and 0 or 0.65
-	UI.redoBtn.TextTransparency = #E.redo > 0 and 0 or 0.65
-	if UI.refreshCards then
-		UI.refreshCards()
-	end
-	if UI.refreshWorn and State.tab == "worn" then
-		UI.refreshWorn()
+	updateSub()
+	for key, fn in pairs(UI.refreshers) do
+		if key == State.tab or key ~= "worn" then
+			pcall(fn)
+		end
 	end
 end)
 
 ----------------------------------------------------------------------------
--- [12] START
+-- [12] BOOT + START
 ----------------------------------------------------------------------------
-UI.showTab("catalog")
-UI.setOpen(true)
+setTab(1)
+
+do
+	local boot = mk("CanvasGroup", {
+		Name = "BootScreen", Size = UDim2.fromOffset(280, 130), AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5), BackgroundColor3 = Theme.Background, GroupTransparency = 0,
+		ZIndex = 100, Parent = UI.gui,
+	})
+	corner(boot, 16)
+	stroke(boot, Theme.Accent, 2)
+	local bl = createLogo(UDim2.fromOffset(20, 20), -12)
+	bl.Position = UDim2.new(0.5, -10, 0, 20)
+	bl.Parent = boot
+	mk("TextLabel", {
+		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
+		Size = UDim2.new(1, -20, 0, 18), Position = UDim2.new(0, 10, 0, 48), Text = "LEON4951 HUB", Parent = boot,
+	})
+	local sub = mk("TextLabel", {
+		Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+		Size = UDim2.new(1, -20, 0, 14), Position = UDim2.new(0, 10, 0, 68), Text = "Loading...", Parent = boot,
+	})
+	local track = mk("Frame", { Size = UDim2.new(1, -40, 0, 5), Position = UDim2.new(0, 20, 1, -24), BackgroundColor3 = Theme.CardBg, BorderSizePixel = 0, Parent = boot })
+	corner(track, 99)
+	local fill = mk("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = track })
+	corner(fill, 99)
+
+	task.spawn(function()
+		local t0, dur = os.clock(), 0.5
+		while true do
+			local pct = math.clamp((os.clock() - t0) / dur, 0, 1)
+			fill.Size = UDim2.new(pct, 0, 1, 0)
+			sub.Text = pct < 0.4 and "Initializing..." or (pct < 0.8 and "Loading UI..." or "Ready...")
+			if pct >= 1 then
+				break
+			end
+			RunService.Heartbeat:Wait()
+		end
+		sub.Text = "✓ Ready"
+		task.wait(0.2)
+		tween(boot, { GroupTransparency = 1 }, 0.2)
+		task.wait(0.2)
+		boot:Destroy()
+		ToggleMainUI(true)
+	end)
+end
 
 task.spawn(function()
 	local ok, err = pcall(E.init)
