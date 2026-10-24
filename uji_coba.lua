@@ -2215,6 +2215,36 @@ function E.prefetchBg(uid)
 	end
 end
 
+-- foto profil: antrean preload paralel (3 pekerja x 24 gambar) supaya semua kartu terisi secepat mungkin
+E.thumbQ, E.thumbWorkers = {}, 0
+function E.preloadImg(img)
+	table.insert(E.thumbQ, img)
+	while E.thumbWorkers < 3 and #E.thumbQ > 0 do
+		E.thumbWorkers = E.thumbWorkers + 1
+		task.spawn(function()
+			local CP = game:GetService("ContentProvider")
+			while #E.thumbQ > 0 and not stale() do
+				local batch = {}
+				for _ = 1, 24 do
+					local im = table.remove(E.thumbQ, 1)
+					if not im then
+						break
+					end
+					if im.Parent and not im.IsLoaded then
+						batch[#batch + 1] = im
+					end
+				end
+				if #batch > 0 then
+					pcall(function()
+						CP:PreloadAsync(batch)
+					end)
+				end
+			end
+			E.thumbWorkers = E.thumbWorkers - 1
+		end)
+	end
+end
+
 function E.applyUserVisual(userId, displayName, keepLook)
 	local desc, derr
 	local rec = E.preCache[userId]
@@ -3634,25 +3664,37 @@ local function userCard(parent, userId, name, order, sub)
 	local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, Parent = card })
 	corner(img, 27)
-	-- foto profil: dimuat langsung, dan diulang otomatis (ukuran lain) kalau gagal / belum jadi
+	-- foto profil: ukuran kecil (cepat) + preload paralel + huruf pengganti selagi memuat
+	local initial = mk("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+		Text = string.upper(string.sub(tostring(name), 1, 1)), TextColor3 = T.Dim, TextSize = 20, Font = Enum.Font.GothamBold, Parent = img })
+	img.Image = thumbURL("AvatarHeadShot", userId, 100)
+	img:GetPropertyChangedSignal("IsLoaded"):Connect(function()
+		if img.IsLoaded then
+			initial.Visible = false
+		end
+	end)
+	E.preloadImg(img)
 	task.spawn(function()
-		local sizes = { 150, 100, 180, 110, 352, 150, 100 }
-		local tries = 1
-		img.Image = thumbURL("AvatarHeadShot", userId, sizes[1])
-		local lastSet = os.clock()
+		-- cadangan: kalau belum jadi, ulangi dengan ukuran lain
+		local sizes = { 150, 60, 180, 100, 352 }
+		local tries, lastSet = 0, os.clock()
 		while img.Parent and not img.IsLoaded and tries < #sizes do
-			task.wait(0.4)
+			task.wait(0.5)
 			if img.Parent and not img.IsLoaded then
 				if UI_SHOWN(img) then
-					if os.clock() - lastSet > 3 then
+					if os.clock() - lastSet > 2.5 then
 						tries = tries + 1
 						img.Image = thumbURL("AvatarHeadShot", userId, sizes[tries])
 						lastSet = os.clock()
+						E.preloadImg(img)
 					end
 				else
 					lastSet = os.clock() -- tab tersembunyi: tunggu sampai terlihat
 				end
 			end
+		end
+		if img.IsLoaded then
+			initial.Visible = false
 		end
 	end)
 	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
