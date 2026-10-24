@@ -3,16 +3,23 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL (OPTIMAL v2): antrian render, katalog instan, tab ramping, bug UI fix.
-  Tab: avatar | karakter | animasi | sepatu | dipakai
-  UPDATE v2:
-   - Filter bacon / bacon cewe jauh lebih ketat (cek pembuat item + cadangan ProductInfo,
-     minimal item "asli" buatan orang lain). Hasil PENCARIAN tetap tidak disaring.
-   - Filter Cowo / Cewe diganti sistem skor (kata kunci kuat/lemah + tipe aksesori).
-     Avatar yang tidak jelas gendernya TIDAK ikut muncul di filter Cowo/Cewe lagi.
-   - "Item terbanyak" hanya menampilkan avatar asli dengan item banyak (lihat MOST_MIN_ITEMS).
-  UPDATE v3 (CEPAT): kandidat dari teman / pemain server / teman-dari-teman (bukan tebak ID acak),
-   kartu langsung muncul begitu lolos filter, gender dihitung di latar belakang, paralel 24.
+  VERSI FULL (OPTIMAL v7): antrian render, katalog instan, tab ramping, bug UI fix.
+    Tab: avatar | karakter | animasi | sepatu | favorit | dipakai
+  UPDATE v7:
+   - Kamera cermin sejajar tinggi kepala avatar. Tab karakter: bundle bagian tubuh dipasang kilat (tukar mesh + prefetch).
+  UPDATE v6:
+   - Cowo / Cewe jauh lebih cepat: gender dihitung di latar belakang untuk semua avatar (batch paralel).
+   - Pencarian lebih cepat: 3 backend diadu bersamaan, hasil persis paralel, hasil teratas di-prefetch.
+   - Kamera cermin menyesuaikan ukuran avatar (kecil / tinggi) dan ukuran panel.
+  UPDATE v5:
+   - CONFIG avatar: daftar avatar di tab avatar disimpan ke file (leon4951hub_avatars.json).
+     Saat masuk lagi langsung muncul 100+ kartu sebelumnya lalu lanjut memuat. (butuh writefile/readfile)
+   - Avatar yang diklik secepat mungkin terpasang: model donor 8 avatar teratas yang terlihat disiapkan
+     lebih dulu (prefetch + cache), klik cepat berturut-turut diantre. Waktu pasang tampil di kartu & toast.
+   - Tab DIPAKAI jauh lebih cepat: nama item diambil sekaligus (batch paralel), baris dipakai ulang.
+  UPDATE v4 (SUPER CEPAT): 130 kartu avatar langsung muncul, jalur pasang cepat, cache + prefetch,
+   bar loading, tab FAVORIT (tombol hati di kartu avatar & item, tersimpan ke file kalau ada writefile).
+  UPDATE v2/v3: filter bacon / bacon cewe ketat, filter Cowo / Cewe sistem skor, kandidat dari teman/server.
   Tekan K untuk buka/tutup UI.
 ============================================================================= ]]
 
@@ -455,6 +462,8 @@ local E = {
 	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {},
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
+	bundleCache = {}, loadingBundles = 0, pendingClicks = 0,
+	preCache = {}, preOrder = {}, preJobs = {},
 }
 
 function E.onChanged(fn)
@@ -646,7 +655,7 @@ end
 ------------------------------------------------------------------------
 -- INJECTOR (jalur cadangan): muat aset lalu pasang langsung ke karakter
 ------------------------------------------------------------------------
-local function donorModel(desc)
+local function buildDonor(desc)
 	local hum = E.humanoid()
 	local rig = (hum.RigType == Enum.HumanoidRigType.R6) and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
 	local ok, m = callAny(Players, { "CreateHumanoidModelFromDescriptionAsync", "CreateHumanoidModelFromDescription" }, desc, rig)
@@ -655,6 +664,19 @@ local function donorModel(desc)
 	end
 	logf("donor rig gagal: %s", tostring(m))
 	return nil
+end
+
+-- kalau model donor untuk desc ini sudah disiapkan lebih awal (prefetch), pakai langsung
+local function donorModel(desc)
+	for i, uid in ipairs(E.preOrder) do
+		local rec = E.preCache[uid]
+		if rec and rec.desc == desc then
+			table.remove(E.preOrder, i)
+			E.preCache[uid] = nil
+			return rec.model
+		end
+	end
+	return buildDonor(desc)
 end
 
 local function loadAsset(id, tid)
@@ -1632,6 +1654,136 @@ local function isInjectable(t)
 	return t and (ACC[t] or t == 11 or t == 12 or t == 2 or t == 18 or ANIM_SLOT[t])
 end
 
+local FAST_CLASS = { [11] = "Shirt", [12] = "Pants", [2] = "ShirtGraphic" }
+
+-- pasang/lepas 1-3 item langsung di boneka skin (tanpa render ulang donor)
+function E.fastApply(added, removed)
+	local total = #added + #removed
+	if not E.skinActive or not E.useSkin or total == 0 or total > 3 then
+		return false
+	end
+	local char = player.Character
+	local skin = char and char:FindFirstChild(SKIN_NAME)
+	if not skin then
+		return false
+	end
+	local plan = {}
+	for _, id in ipairs(removed) do
+		local tagged
+		for _, ch in ipairs(skin:GetChildren()) do
+			if ch:GetAttribute("ASF") == id then
+				tagged = ch
+				break
+			end
+		end
+		local tid = E.types[id]
+		if tagged then
+			table.insert(plan, { "del", id, tagged })
+		elseif tid and FAST_CLASS[tid] then
+			table.insert(plan, { "delclass", id, FAST_CLASS[tid] })
+		else
+			return false -- item dari render donor: pakai render penuh
+		end
+	end
+	for _, id in ipairs(added) do
+		local tid = E.types[id] or E.assetType(id)
+		local acc = tid and ACC[tid]
+		if acc and not acc[2] and tid ~= 76 and tid ~= 77 then
+			table.insert(plan, { "acc", id, tid })
+		elseif tid and FAST_CLASS[tid] then
+			table.insert(plan, { "cls", id, tid })
+		else
+			return false -- layered / alis / bulu mata / bodypart / animasi: render penuh
+		end
+	end
+	for _, p in ipairs(plan) do
+		local kind, id = p[1], p[2]
+		if kind == "del" then
+			p[3]:Destroy()
+		elseif kind == "delclass" then
+			for _, ch in ipairs(skin:GetChildren()) do
+				if ch:IsA(p[3]) then
+					ch:Destroy()
+				end
+			end
+		elseif kind == "acc" then
+			if not E.attachDirect(id, skin) then
+				return false
+			end
+			local c = skin:FindFirstChild("AS_" .. id)
+			if c then
+				c:SetAttribute("ASF", id)
+			end
+		else
+			local class = FAST_CLASS[p[3]]
+			local objs, how = loadAsset(id, p[3])
+			if not objs then
+				return false
+			end
+			local inst = findIn(objs, class)
+			if not inst then
+				if how == "donor" then
+					pcall(function()
+						objs[1]:Destroy()
+					end)
+				end
+				return false
+			end
+			for _, ch in ipairs(skin:GetChildren()) do
+				if ch:IsA(class) then
+					ch:Destroy()
+				end
+			end
+			local c = inst:Clone()
+			c.Name = "AS_" .. id
+			c:SetAttribute("ASF", id)
+			c.Parent = skin
+			if how == "donor" then
+				pcall(function()
+					objs[1]:Destroy()
+				end)
+			end
+		end
+	end
+	return true
+end
+
+-- pastikan aksesori benar-benar ada di boneka; kalau kurang, pasang langsung
+function E.ensureWorn(id)
+	if E.remote or not E.skinActive then
+		return true
+	end
+	local char = player.Character
+	local skin = char and char:FindFirstChild(SKIN_NAME)
+	if not skin then
+		return false
+	end
+	local tid = E.types[id]
+	if not (tid and ACC[tid]) then
+		return true
+	end
+	local n = 0
+	for _, ch in ipairs(skin:GetChildren()) do
+		if ch:IsA("Accessory") then
+			n = n + 1
+		end
+	end
+	if n >= #E.look:GetAccessories(true) then
+		return true
+	end
+	if skin:FindFirstChild("AS_" .. id) then
+		return true
+	end
+	if E.attachDirect(id, skin) then
+		local c = skin:FindFirstChild("AS_" .. id)
+		if c then
+			c:SetAttribute("ASF", id)
+		end
+		return true
+	end
+	return false
+end
+
 function E._commit(newLook, text, skipHist, force)
 	local hum, char = E.humanoid()
 	local prevSet = collect(E.look)
@@ -1646,6 +1798,22 @@ function E._commit(newLook, text, skipHist, force)
 		if not nowSet[id] then
 			table.insert(removed, id)
 		end
+	end
+
+	if not force and not E.remote and E.fastApply(added, removed) then
+		E.lastMethod = "cepat"
+		if not skipHist and E.look then
+			table.insert(E.history, E.look)
+			while #E.history > 40 do
+				table.remove(E.history, 1)
+			end
+			E.redo = {}
+		end
+		E.look = newLook
+		E.failed = {}
+		task.delay(0.1, E.reapplyTweaks)
+		fire()
+		return true
 	end
 
 	local how
@@ -1821,6 +1989,7 @@ function E.toggleAsset(id, itemName, onDone)
 		toast("Tipe item ini belum didukung", "warn")
 		return finish(false)
 	end
+	local t0 = os.clock()
 	local base = E.pending or E.look
 	local worn = (collect(base))[id] == true
 	local nl = base:Clone()
@@ -1834,7 +2003,8 @@ function E.toggleAsset(id, itemName, onDone)
 			if worn then
 				toast("Dilepas: " .. tostring(itemName or id), "warn")
 			elseif E.isWorn(id) then
-				toast("Dipakai: " .. tostring(itemName or id) .. "  (" .. E.lastMethod .. ")", "ok")
+				local okW = E.ensureWorn(id)
+				toast(string.format("Dipakai: %s  (%s, %.1f dtk)", tostring(itemName or id), E.lastMethod, os.clock() - t0), okW and "ok" or "warn")
 			end
 		end
 		finish(ok)
@@ -1852,6 +2022,189 @@ function E.removeAsset(id)
 	return true
 end
 
+local BODY_PARTS = {
+	[17] = { "Head" },
+	[27] = { "UpperTorso", "LowerTorso" },
+	[28] = { "RightUpperArm", "RightLowerArm", "RightHand" },
+	[29] = { "LeftUpperArm", "LeftLowerArm", "LeftHand" },
+	[30] = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" },
+	[31] = { "RightUpperLeg", "RightLowerLeg", "RightFoot" },
+}
+E.bodyPre, E.bodyPreOrder = {}, {}
+
+local function bodyDesc(assets)
+	local d = Instance.new("HumanoidDescription")
+	for _, a in ipairs(assets) do
+		addToDesc(d, a.id, a.tid)
+	end
+	return d
+end
+
+-- tukar mesh bagian tubuh langsung di boneka skin (tanpa render ulang seluruh avatar)
+function E.fastBody(bundleId, assets)
+	if E.remote or not E.skinActive then
+		return false
+	end
+	local char = player.Character
+	local skin = char and char:FindFirstChild(SKIN_NAME)
+	local hum = E.humanoid()
+	if not skin or hum.RigType ~= Enum.HumanoidRigType.R15 then
+		return false
+	end
+	local model = E.bodyPre[bundleId]
+	if model then
+		E.bodyPre[bundleId] = nil
+		for i, id in ipairs(E.bodyPreOrder) do
+			if id == bundleId then
+				table.remove(E.bodyPreOrder, i)
+				break
+			end
+		end
+	else
+		model = buildDonor(bodyDesc(assets))
+	end
+	if not model then
+		return false
+	end
+	local changed, n = {}, 0
+	for _, a in ipairs(assets) do
+		for _, pn in ipairs(BODY_PARTS[a.tid] or {}) do
+			local dp, cp = model:FindFirstChild(pn), skin:FindFirstChild(pn)
+			if dp and cp and dp:IsA("MeshPart") and cp:IsA("MeshPart") then
+				pcall(function()
+					cp.MeshId = dp.MeshId
+					cp.TextureID = dp.TextureID
+					cp.Size = dp.Size
+				end)
+				pcall(function()
+					for _, x in ipairs(cp:GetChildren()) do
+						if x:IsA("SurfaceAppearance") then
+							x:Destroy()
+						end
+					end
+					local sa = dp:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						sa:Clone().Parent = cp
+					end
+				end)
+				for _, da in ipairs(dp:GetChildren()) do
+					if da:IsA("Attachment") then
+						local ca = cp:FindFirstChild(da.Name)
+						if ca and ca:IsA("Attachment") then
+							ca.CFrame = da.CFrame
+						end
+					end
+				end
+				changed[pn] = true
+				n = n + 1
+			end
+		end
+	end
+	if n > 0 then
+		local ours = {}
+		for _, d in ipairs(skin:GetDescendants()) do
+			if d:IsA("Motor6D") and not ours[d.Name] then
+				ours[d.Name] = d
+			end
+		end
+		for _, m in ipairs(model:GetDescendants()) do
+			if m:IsA("Motor6D") and ours[m.Name] and m.Part0 and m.Part1 and (changed[m.Part0.Name] or changed[m.Part1.Name]) then
+				pcall(function()
+					ours[m.Name].C0 = m.C0
+					ours[m.Name].C1 = m.C1
+				end)
+			end
+		end
+	end
+	pcall(function()
+		model:Destroy()
+	end)
+	return n > 0
+end
+
+function E.resolveBundle(bundleId)
+	local c = E.bundleCache[bundleId]
+	if c then
+		local t0 = os.clock()
+		while not c.done and os.clock() - t0 < 12 do
+			task.wait()
+		end
+		if c.done and not c.failed then
+			return c.results, c.n
+		end
+		return nil
+	end
+	c = { done = false }
+	E.bundleCache[bundleId] = c
+	local info = productInfo(bundleId, Enum.InfoType.Bundle)
+	if not info or not info.Items then
+		c.done, c.failed = true, true
+		E.bundleCache[bundleId] = nil
+		return nil
+	end
+	local n = #info.Items
+	local results, left = {}, n
+	for i, item in ipairs(info.Items) do
+		task.spawn(function()
+			pcall(function()
+				if item.Type == "UserOutfit" then
+					results[i] = { kind = "outfit", d = descFromOutfit(item.Id) }
+				elseif item.Type == "Asset" then
+					results[i] = { kind = "asset", id = item.Id, tid = E.assetType(item.Id) }
+				end
+			end)
+			left = left - 1
+		end)
+	end
+	local t0 = os.clock()
+	while left > 0 and os.clock() - t0 < 12 do
+		task.wait()
+	end
+	c.results, c.n, c.done = results, n, true
+	return results, n
+end
+
+-- antrean prefetch bundle (3 paralel). Bundle bagian tubuh juga disiapkan model donornya (maks 6)
+E.bQ, E.bWorkers = {}, 0
+function E.prefetchBundle(id)
+	if E.bundleCache[id] then
+		return
+	end
+	table.insert(E.bQ, 1, id)
+	while E.bWorkers < 3 and #E.bQ > 0 do
+		E.bWorkers = E.bWorkers + 1
+		task.spawn(function()
+			while #E.bQ > 0 and not stale() do
+				local b = table.remove(E.bQ, 1)
+				if not E.bundleCache[b] then
+					pcall(function()
+						local results, n = E.resolveBundle(b)
+						if results and not E.remote and E.skinActive and #E.bodyPreOrder < 6 and not E.bodyPre[b] then
+							local assets, only = {}, true
+							for i = 1, n do
+								local r = results[i]
+								if r and r.kind == "asset" and r.tid and BODY_PARTS[r.tid] then
+									assets[#assets + 1] = { id = r.id, tid = r.tid }
+								elseif r then
+									only = false
+								end
+							end
+							if only and #assets > 0 then
+								local m = buildDonor(bodyDesc(assets))
+								if m then
+									E.bodyPre[b] = m
+									table.insert(E.bodyPreOrder, b)
+								end
+							end
+						end
+					end)
+				end
+			end
+			E.bWorkers = E.bWorkers - 1
+		end)
+	end
+end
+
 function E.equipBundle(bundleId, bundleName, onDone, slot, slotName)
 	local function finish(ok)
 		if onDone then
@@ -1862,39 +2215,49 @@ function E.equipBundle(bundleId, bundleName, onDone, slot, slotName)
 	if not needReady() then
 		return finish(false)
 	end
-	local info = productInfo(bundleId, Enum.InfoType.Bundle)
-	if not info or not info.Items then
+	local results, n = E.resolveBundle(bundleId)
+	if not results then
 		toast("Gagal membaca isi bundle", "danger")
 		return finish(false)
 	end
-	local n = #info.Items
-	local results, left = {}, n
-	for i, item in ipairs(info.Items) do
-		task.spawn(function()
-			if item.Type == "UserOutfit" then
-				results[i] = { kind = "outfit", d = descFromOutfit(item.Id) }
-			elseif item.Type == "Asset" then
-				results[i] = { kind = "asset", id = item.Id, tid = E.assetType(item.Id) }
-			end
-			left = left - 1
-		end)
-	end
-	local t0 = os.clock()
-	while left > 0 and os.clock() - t0 < 12 do
-		task.wait()
-	end
 	local nl = (E.pending or E.look):Clone()
 	local applied = 0
+	local bodyAssets, onlyBody = {}, true
 	for i = 1, n do
 		local r = results[i]
 		if r then
 			if r.kind == "outfit" and r.d and not slot then
 				mergeDescription(nl, r.d)
 				applied = applied + 1
+				onlyBody = false
 			elseif r.kind == "asset" and r.tid and (not slot or r.tid == slot) then
 				addToDesc(nl, r.id, r.tid)
 				applied = applied + 1
+				if BODY_PARTS[r.tid] then
+					bodyAssets[#bodyAssets + 1] = { id = r.id, tid = r.tid }
+				else
+					onlyBody = false
+				end
 			end
+		end
+	end
+	-- jalur kilat: bundle hanya berisi bagian tubuh -> tukar mesh di boneka (target ~2 detik)
+	if applied > 0 and onlyBody and #bodyAssets > 0 and not E.remote and E.skinActive and not E.busy and not E.pending then
+		local t0 = os.clock()
+		E.busy = true
+		local okF, resF = pcall(E.fastBody, bundleId, bodyAssets)
+		E.busy = false
+		if okF and resF then
+			if E.look then
+				table.insert(E.history, E.look)
+				E.redo = {}
+			end
+			E.look = nl
+			E.failed = {}
+			E.lastMethod = "badan-cepat"
+			fire()
+			toast(string.format("%s dipakai: %s  (%.1f dtk)", tostring(slotName or "Bundle"), tostring(bundleName or bundleId), os.clock() - t0), "ok")
+			return finish(true)
 		end
 	end
 	if slot and applied == 0 then
@@ -1910,8 +2273,160 @@ function E.equipBundle(bundleId, bundleName, onDone, slot, slotName)
 	return true
 end
 
+E.descCache, E.descOrder = {}, {}
+
+function E.cacheDesc(uid, desc)
+	if E.descCache[uid] then
+		return
+	end
+	E.descCache[uid] = desc
+	table.insert(E.descOrder, uid)
+	if #E.descOrder > 250 then
+		local oldId = table.remove(E.descOrder, 1)
+		local d = E.descCache[oldId]
+		E.descCache[oldId] = nil
+		pcall(function()
+			d:Destroy()
+		end)
+	end
+end
+
+function E.getDesc(uid)
+	local c = E.descCache[uid]
+	if c then
+		return c:Clone()
+	end
+	local d, err = descFromUser(uid)
+	if d then
+		E.cacheDesc(uid, d)
+		return d:Clone()
+	end
+	return nil, err
+end
+
+------------------------------------------------------------------------
+-- PREFETCH AVATAR: boneka donor disiapkan lebih dulu, jadi saat kartu diklik
+-- avatar langsung terpasang (tinggal pasang, tidak perlu menunggu download lagi)
+------------------------------------------------------------------------
+local PRE_MAX = 10
+
+function E.preEvict()
+	while #E.preOrder > PRE_MAX do
+		local uid = table.remove(E.preOrder, 1)
+		local rec = E.preCache[uid]
+		E.preCache[uid] = nil
+		if rec then
+			pcall(function()
+				rec.model:Destroy()
+			end)
+		end
+	end
+end
+
+function E.prefetchUser(uid)
+	if E.remote or E.preCache[uid] or E.preJobs[uid] then
+		return
+	end
+	E.preJobs[uid] = true
+	task.spawn(function()
+		pcall(function()
+			local d = E.getDesc(uid)
+			if not d then
+				return
+			end
+			local m = buildDonor(d)
+			if not m then
+				return
+			end
+			if E.preCache[uid] then
+				pcall(function()
+					m:Destroy()
+				end)
+				return
+			end
+			E.preCache[uid] = { desc = d, model = m }
+			table.insert(E.preOrder, uid)
+			E.preEvict()
+		end)
+		E.preJobs[uid] = nil
+	end)
+end
+
+-- antrean prefetch latar belakang (maks 2 paralel) untuk kartu yang sedang terlihat
+E.bgQ, E.bgWorkers = {}, 0
+function E.prefetchBg(uid)
+	if E.remote or E.preCache[uid] or E.preJobs[uid] then
+		return
+	end
+	for _, q in ipairs(E.bgQ) do
+		if q == uid then
+			return
+		end
+	end
+	table.insert(E.bgQ, uid)
+	while E.bgWorkers < 2 and #E.bgQ > 0 do
+		E.bgWorkers = E.bgWorkers + 1
+		task.spawn(function()
+			while #E.bgQ > 0 and not stale() do
+				local u = table.remove(E.bgQ, 1)
+				if not E.preCache[u] and not E.preJobs[u] then
+					E.prefetchUser(u)
+					local t0 = os.clock()
+					while E.preJobs[u] and os.clock() - t0 < 10 do
+						task.wait(0.05)
+					end
+				end
+			end
+			E.bgWorkers = E.bgWorkers - 1
+		end)
+	end
+end
+
+-- foto profil: antrean preload paralel (3 pekerja x 24 gambar) supaya semua kartu terisi secepat mungkin
+E.thumbQ, E.thumbWorkers = {}, 0
+function E.preloadImg(img)
+	table.insert(E.thumbQ, img)
+	while E.thumbWorkers < 3 and #E.thumbQ > 0 do
+		E.thumbWorkers = E.thumbWorkers + 1
+		task.spawn(function()
+			local CP = game:GetService("ContentProvider")
+			while #E.thumbQ > 0 and not stale() do
+				local batch = {}
+				for _ = 1, 24 do
+					local im = table.remove(E.thumbQ, 1)
+					if not im then
+						break
+					end
+					if im.Parent and not im.IsLoaded then
+						batch[#batch + 1] = im
+					end
+				end
+				if #batch > 0 then
+					pcall(function()
+						CP:PreloadAsync(batch)
+					end)
+				end
+			end
+			E.thumbWorkers = E.thumbWorkers - 1
+		end)
+	end
+end
+
 function E.applyUserVisual(userId, displayName, keepLook)
-	local desc, derr = descFromUser(userId)
+	local desc, derr
+	local rec = E.preCache[userId]
+	if not rec and E.preJobs[userId] then
+		local t0 = os.clock()
+		while E.preJobs[userId] and os.clock() - t0 < 8 do
+			task.wait(0.03)
+		end
+		rec = E.preCache[userId]
+	end
+	if rec then
+		desc = rec.desc
+	else
+		desc, derr = E.getDesc(userId)
+	end
 	if not desc then
 		logf("ambil avatar %s gagal: %s", tostring(userId), tostring(derr))
 		return false, "gagal mengambil avatar: " .. tostring(derr)
@@ -1937,11 +2452,12 @@ end
 
 function E.applyUser(userId, displayName)
 	if E.busy then
-		toast("Tunggu sebentar, avatar masih diproses...", "warn")
+		E.nextUser = { userId, displayName } -- klik terakhir dipasang begitu yang sekarang selesai
+		toast("Antre: " .. tostring(displayName or userId) .. " dipasang sesudah proses ini", "warn")
 		return false
 	end
 	if E.remote then
-		local desc = descFromUser(userId)
+		local desc = E.getDesc(userId)
 		if not desc then
 			toast("Avatar pemain tidak bisa dimuat", "danger")
 			return false
@@ -1952,16 +2468,22 @@ function E.applyUser(userId, displayName)
 		end
 		return done
 	end
+	local t0 = os.clock()
 	E.busy = true
 	local ok, res, why = pcall(E.applyUserVisual, userId, displayName)
 	E.busy = false
+	local nx = E.nextUser
+	E.nextUser = nil
 	if ok and res then
 		E.lastMethod = "donor-render"
-		toast("Avatar dipakai: " .. tostring(displayName or userId) .. "  (donor-render)", "ok")
-		return true
+		toast(string.format("Avatar dipakai: %s  (%.1f dtk)", tostring(displayName or userId), os.clock() - t0), "ok")
+	else
+		toast("Avatar tidak bisa dipasang: " .. tostring(ok and why or res) .. "  (lihat output/console)", "danger")
 	end
-	toast("Avatar tidak bisa dipasang: " .. tostring(ok and why or res) .. "  (lihat output/console)", "danger")
-	return false
+	if nx and nx[1] ~= userId then
+		task.spawn(E.applyUser, nx[1], nx[2])
+	end
+	return ok and res and true or false
 end
 
 function E.removeAll()
@@ -2156,7 +2678,7 @@ function E.probe()
 		pending = pending - 1
 	end)
 	local t0 = os.clock()
-	while pending > 0 and os.clock() - t0 < 8 do
+	while pending > 0 and os.clock() - t0 < 5 do
 		task.wait(0.05)
 	end
 	E.cap = cap
@@ -2604,6 +3126,14 @@ local MOST_MIN_ITEMS = 6     -- mode "Item terbanyak": hanya avatar dengan minim
 local GENDER_MIN_DIFF = 2    -- selisih skor minimal untuk memastikan cowo/cewe (makin besar = makin teliti, hasil makin sedikit)
 local ROBLOX_CREATORS = { [1] = true, [1200769] = true } -- ID akun / grup resmi Roblox
 
+local PREWARM_SKIN = true -- render boneka sekali di awal supaya klik pertama sudah cepat (set false kalau avatar terlihat berubah di awal)
+local FEED_FIRST = 130    -- kartu avatar yang langsung muncul
+local FEED_MORE = 60      -- tambahan tiap gulir
+local FEED_CONC = 24      -- pengecekan avatar paralel
+local FEED_KEEP = 160     -- jumlah kartu avatar minimal yang dijaga tetap terisi di latar belakang
+local AV_SAVE_MAX = 400   -- maksimal avatar yang disimpan ke file config (supaya saat masuk lagi langsung tampil)
+local AV_FILE = "leon4951hub_avatars.json"
+
 local Theme = {
 	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
 	Accent = rgb(0, 122, 255), TabActiveBg = rgb(18, 32, 54), TabActiveBorder = rgb(0, 122, 255),
@@ -2854,6 +3384,113 @@ local function isPlainAvatar(userId)
 end
 
 ----------------------------------------------------------------------------
+-- [7b] FAVORIT + CONFIG AVATAR (tersimpan ke file kalau executor punya writefile)
+----------------------------------------------------------------------------
+local FAV_FILE = "leon4951hub_fav.json"
+local FAV = { avatars = {}, items = {}, listeners = {} }
+
+local function favSave()
+	if type(writefile) ~= "function" then
+		return
+	end
+	pcall(function()
+		writefile(FAV_FILE, HttpService:JSONEncode({ avatars = FAV.avatars, items = FAV.items }))
+	end)
+end
+pcall(function()
+	if type(readfile) == "function" and type(isfile) == "function" and isfile(FAV_FILE) then
+		local d = HttpService:JSONDecode(readfile(FAV_FILE))
+		if type(d) == "table" then
+			FAV.avatars = type(d.avatars) == "table" and d.avatars or {}
+			FAV.items = type(d.items) == "table" and d.items or {}
+		end
+	end
+end)
+
+function FAV.listen(fn)
+	table.insert(FAV.listeners, fn)
+end
+function FAV.fire()
+	local i = 1
+	while i <= #FAV.listeners do
+		local ok, keep = pcall(FAV.listeners[i])
+		if ok and keep == false then
+			table.remove(FAV.listeners, i)
+		else
+			i = i + 1
+		end
+	end
+end
+function FAV.itemKey(item)
+	return (item.Type == "Bundle" and "B" or "A") .. tostring(item.Id) .. ":" .. tostring(item.slot or 0)
+end
+function FAV.toggleAvatar(id, name)
+	local k = tostring(id)
+	if FAV.avatars[k] then
+		FAV.avatars[k] = nil
+	else
+		FAV.avatars[k] = { id = id, name = tostring(name), t = os.time() }
+	end
+	favSave()
+	FAV.fire()
+end
+function FAV.toggleItem(item)
+	local k = FAV.itemKey(item)
+	if FAV.items[k] then
+		FAV.items[k] = nil
+	else
+		FAV.items[k] = {
+			Id = item.Id, Type = item.Type, Name = item.Name, slot = item.slot, slotName = item.slotName,
+			tid = item.Type == "Asset" and E.types[item.Id] or nil, t = os.time(),
+		}
+	end
+	favSave()
+	FAV.fire()
+end
+
+-- config daftar avatar: daftar kartu di tab avatar disimpan, saat masuk lagi langsung muncul & lanjut memuat
+local function avLoad()
+	local out = {}
+	pcall(function()
+		if type(readfile) == "function" and type(isfile) == "function" and isfile(AV_FILE) then
+			local d = HttpService:JSONDecode(readfile(AV_FILE))
+			if type(d) == "table" and type(d.list) == "table" then
+				out = d.list
+			end
+		end
+	end)
+	return out
+end
+local function avSave(list)
+	if type(writefile) ~= "function" then
+		return
+	end
+	pcall(function()
+		writefile(AV_FILE, HttpService:JSONEncode({ v = 1, list = list }))
+	end)
+end
+
+local function addHeart(card, isFav, onToggle)
+	local h = mk("TextButton", {
+		Size = UDim2.fromOffset(20, 20), Position = UDim2.fromOffset(4, 4), BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.45, BorderSizePixel = 0, Text = "♡", TextSize = 14, Font = Enum.Font.GothamBold,
+		TextColor3 = T.Text, AutoButtonColor = false, ZIndex = 5, Parent = card,
+	})
+	corner(h, 10)
+	local function paint()
+		local f = isFav()
+		h.Text = f and "♥" or "♡"
+		h.TextColor3 = f and T.Danger or T.Text
+	end
+	paint()
+	h.Activated:Connect(function()
+		onToggle()
+		paint()
+	end)
+	return paint
+end
+
+----------------------------------------------------------------------------
 -- [8] KARTU KATALOG
 ----------------------------------------------------------------------------
 local function makeCard(parent, item)
@@ -2917,8 +3554,25 @@ local function makeCard(parent, item)
 		st.Transparency = worn and 0 or 0.3
 	end
 	obj.update()
-	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
+	local paintHeart = addHeart(card, function() return FAV.items[FAV.itemKey(item)] ~= nil end, function() FAV.toggleItem(item) end)
+	FAV.listen(function()
+		if not card.Parent then
+			return false
+		end
+		paintHeart()
+	end)
+	card.MouseEnter:Connect(function()
+		tween(card, { BackgroundColor3 = T.Surface2 }, 0.12)
+		if isBundle then
+			E.prefetchBundle(item.Id)
+		end
+	end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
+	card.InputBegan:Connect(function(input)
+		if isBundle and input.UserInputType == Enum.UserInputType.Touch then
+			E.prefetchBundle(item.Id)
+		end
+	end)
 	card.Activated:Connect(function()
 		if isBundle then
 			if obj.loading then
@@ -2926,15 +3580,19 @@ local function makeCard(parent, item)
 			end
 			obj.loading = true
 			overlay.Visible = true
+			E.loadingBundles = E.loadingBundles + 1
 			task.spawn(E.equipBundle, item.Id, item.Name, function()
 				overlay.Visible = false
 				obj.loading = false
+				E.loadingBundles = math.max(0, E.loadingBundles - 1)
 			end, item.slot, item.slotName)
 		else
 			badge.Text = "⏳"
 			badge.BackgroundColor3 = T.Warn
 			badge.Visible = true
+			E.pendingClicks = E.pendingClicks + 1
 			task.spawn(E.toggleAsset, item.Id, item.Name, function()
+				E.pendingClicks = math.max(0, E.pendingClicks - 1)
 				obj.update()
 			end)
 		end
@@ -3049,7 +3707,7 @@ local function buildCatalog(page, group)
 					it.slot = st.cat.slot
 					it.slotName = st.cat.name
 					table.insert(cards, makeCard(grid, it))
-					if i % 10 == 0 then
+					if i % 30 == 0 then
 						task.wait()
 						if token ~= st.token then
 							return
@@ -3077,8 +3735,15 @@ local function buildCatalog(page, group)
 		for _, c in ipairs(cards) do
 			if not c.imgLoaded and c.card.AbsoluteSize.Y > 0 then
 				local y = c.card.AbsolutePosition.Y
-				if y + 120 > top - 300 and y < top + h + 300 then
+				if y + 120 > top - 600 and y < top + h + 600 then
 					c.loadImg()
+				end
+			end
+			if c.item.Type == "Bundle" and not c.pf and c.card.AbsoluteSize.Y > 0 then
+				local y = c.card.AbsolutePosition.Y
+				if y + 120 > top and y < top + h + 120 then
+					c.pf = true
+					E.prefetchBundle(c.item.Id)
 				end
 			end
 		end
@@ -3156,12 +3821,56 @@ end
 ----------------------------------------------------------------------------
 local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
 
+-- apakah GUI benar-benar terlihat (semua induk Visible)
+local function UI_SHOWN(g)
+	while g and g:IsA("GuiObject") do
+		if not g.Visible then
+			return false
+		end
+		g = g.Parent
+	end
+	return g ~= nil
+end
+
 local function userCard(parent, userId, name, order, sub)
 	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
 	corner(card, 10)
 	local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
-		BorderSizePixel = 0, Image = thumbURL("AvatarHeadShot", userId, 150), Parent = card })
+		BorderSizePixel = 0, Parent = card })
 	corner(img, 27)
+	-- foto profil: ukuran kecil (cepat) + preload paralel + huruf pengganti selagi memuat
+	local initial = mk("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+		Text = string.upper(string.sub(tostring(name), 1, 1)), TextColor3 = T.Dim, TextSize = 20, Font = Enum.Font.GothamBold, Parent = img })
+	img.Image = thumbURL("AvatarHeadShot", userId, 100)
+	img:GetPropertyChangedSignal("IsLoaded"):Connect(function()
+		if img.IsLoaded then
+			initial.Visible = false
+		end
+	end)
+	E.preloadImg(img)
+	task.spawn(function()
+		-- cadangan: kalau belum jadi, ulangi dengan ukuran lain
+		local sizes = { 150, 60, 180, 100, 352 }
+		local tries, lastSet = 0, os.clock()
+		while img.Parent and not img.IsLoaded and tries < #sizes do
+			task.wait(0.5)
+			if img.Parent and not img.IsLoaded then
+				if UI_SHOWN(img) then
+					if os.clock() - lastSet > 2.5 then
+						tries = tries + 1
+						img.Image = thumbURL("AvatarHeadShot", userId, sizes[tries])
+						lastSet = os.clock()
+						E.preloadImg(img)
+					end
+				else
+					lastSet = os.clock() -- tab tersembunyi: tunggu sampai terlihat
+				end
+			end
+		end
+		if img.IsLoaded then
+			initial.Visible = false
+		end
+	end)
 	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 	nm.Position = UDim2.fromOffset(3, 61)
 	nm.Size = UDim2.new(1, -6, 0, 14)
@@ -3173,23 +3882,65 @@ local function userCard(parent, userId, name, order, sub)
 	hint.TextTruncate = Enum.TextTruncate.AtEnd
 	hint.Name = "HintLbl"
 	card:SetAttribute("Idle", idleText)
-	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
-	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
+
+	local paintHeart = addHeart(card, function() return FAV.avatars[tostring(userId)] ~= nil end, function() FAV.toggleAvatar(userId, name) end)
+	FAV.listen(function()
+		if not card.Parent then
+			return false
+		end
+		paintHeart()
+	end)
+
+	local hoverTok = 0
+	card.MouseEnter:Connect(function()
+		tween(card, { BackgroundColor3 = T.Surface2 }, 0.12)
+		if userId ~= player.UserId then
+			hoverTok = hoverTok + 1
+			local t = hoverTok
+			task.delay(0.05, function()
+				if t == hoverTok then
+					E.prefetchUser(userId)
+				end
+			end)
+		end
+	end)
+	card.MouseLeave:Connect(function()
+		hoverTok = hoverTok + 1
+		tween(card, { BackgroundColor3 = T.Surface }, 0.15)
+	end)
+	card.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch and userId ~= player.UserId then
+			E.prefetchUser(userId)
+		end
+	end)
+
 	local busyCard = false
 	card.Activated:Connect(function()
 		if busyCard then
 			return
 		end
 		busyCard = true
-		hint.Text = "memuat..."
+		local t0 = os.clock()
 		task.spawn(function()
+			while busyCard do
+				hint.Text = string.format("memuat %.1f dtk", os.clock() - t0)
+				task.wait(0.1)
+			end
+		end)
+		task.spawn(function()
+			local ok = true
 			if userId == player.UserId then
 				E.reset()
 			else
-				E.applyUser(userId, name)
+				ok = E.applyUser(userId, name)
 			end
-			hint.Text = card:GetAttribute("Idle") or idleText
 			busyCard = false
+			hint.Text = ok and string.format("✓ %.1f dtk", os.clock() - t0) or (card:GetAttribute("Idle") or idleText)
+			task.delay(1.5, function()
+				if card.Parent and not busyCard then
+					hint.Text = card:GetAttribute("Idle") or idleText
+				end
+			end)
 		end)
 	end)
 	return card
@@ -3263,24 +4014,43 @@ local function parseUserList(bodyTxt)
 	return nil
 end
 
+-- 3 backend diadu bersamaan untuk halaman pertama (yang tercepat dipakai); halaman berikutnya pakai backend yang sama
 local function searchUsersWeb(keyword, state)
 	state = state or {}
-	local first, last = 1, #SEARCH_BUILDERS
 	if state.idx then
-		first, last = state.idx, state.idx
-	end
-	local lastErr = "tidak ada hasil"
-	for i = first, last do
-		local bodyTxt, err = httpGet(SEARCH_BUILDERS[i](keyword, state.cursor))
+		local bodyTxt, err = httpGet(SEARCH_BUILDERS[state.idx](keyword, state.cursor))
 		if bodyTxt then
 			local list, nextCur = parseUserList(bodyTxt)
-			if list and (#list > 0 or state.idx) then
-				return list, { idx = i, cursor = nextCur }
+			if list then
+				return list, { idx = state.idx, cursor = nextCur }
 			end
-			lastErr = list and "kosong" or ("balasan backend " .. i .. " tidak dikenali")
-		else
-			lastErr = tostring(err)
+			return nil, "balasan tidak dikenali"
 		end
+		return nil, tostring(err)
+	end
+	local result, left, lastErr = nil, #SEARCH_BUILDERS, "tidak ada hasil"
+	for i = 1, #SEARCH_BUILDERS do
+		task.spawn(function()
+			local bodyTxt, err = httpGet(SEARCH_BUILDERS[i](keyword, nil))
+			if bodyTxt then
+				local list, nextCur = parseUserList(bodyTxt)
+				if list and #list > 0 and not result then
+					result = { list, { idx = i, cursor = nextCur } }
+				elseif not list then
+					lastErr = "balasan backend " .. i .. " tidak dikenali"
+				end
+			else
+				lastErr = tostring(err)
+			end
+			left = left - 1
+		end)
+	end
+	local t0 = os.clock()
+	while not result and left > 0 and os.clock() - t0 < 10 do
+		task.wait(0.03)
+	end
+	if result then
+		return result[1], result[2]
 	end
 	return nil, lastErr
 end
@@ -3406,7 +4176,10 @@ local function buildAvatars(page)
 		entries, seqN = {}, 0
 	end
 	-- mode "most": hanya avatar dengan item >= MOST_MIN_ITEMS. mode cowo/cewe: hanya yang gendernya pasti cocok
-	local function visibleFor(g, cnt)
+	local function visibleFor(g, cnt, pending)
+		if pending then
+			return sortMode == "most"
+		end
 		if sortMode == "most" then
 			return (cnt or 0) >= MOST_MIN_ITEMS
 		end
@@ -3415,7 +4188,7 @@ local function buildAvatars(page)
 	local function countVisible()
 		local n = 0
 		for _, e in pairs(entries) do
-			if e.card and e.card.Parent and visibleFor(e.gender, e.count) then
+			if e.card and e.card.Parent and visibleFor(e.gender, e.count, e.pending) then
 				n = n + 1
 			end
 		end
@@ -3432,14 +4205,14 @@ local function buildAvatars(page)
 		local e
 		if info then
 			seqN = seqN + 1
-			e = { count = info.count or 0, gender = info.gender, seq = seqN }
+			e = { count = info.count or 0, gender = info.gender, seq = seqN, pending = info.pending, name = name }
 			ord = -(e.count) * 100000 + e.seq
 		end
 		local card = userCard(allSc, id, name, ord, sub)
 		if e then
 			e.card = card
 			entries[id] = e
-			card.Visible = visibleFor(e.gender, e.count)
+			card.Visible = visibleFor(e.gender, e.count, e.pending)
 		end
 		return true
 	end
@@ -3447,7 +4220,7 @@ local function buildAvatars(page)
 	local function applyMode()
 		for _, e in pairs(entries) do
 			if e.card and e.card.Parent then
-				e.card.Visible = visibleFor(e.gender, e.count)
+				e.card.Visible = visibleFor(e.gender, e.count, e.pending)
 				e.card.LayoutOrder = -(e.count) * 100000 + e.seq
 			end
 		end
@@ -3461,29 +4234,6 @@ local function buildAvatars(page)
 				return
 			end
 			addUser(u.id, u.display, "@" .. u.name)
-		end
-	end
-	local function addFiltered(list, myToken)
-		local inflight = 0
-		for _, u in ipairs(list) do
-			while inflight >= 6 and myToken == token do
-				task.wait(0.05)
-			end
-			if myToken ~= token then
-				return
-			end
-			inflight = inflight + 1
-			task.spawn(function()
-				local plain = isPlainAvatar(u.id)
-				if myToken == token and not plain then
-					addUser(u.id, u.display, "@" .. u.name)
-				end
-				inflight = inflight - 1
-			end)
-		end
-		local t0 = os.clock()
-		while inflight > 0 and os.clock() - t0 < 8 and myToken == token do
-			task.wait(0.05)
 		end
 	end
 
@@ -3515,7 +4265,7 @@ local function buildAvatars(page)
 		return v
 	end
 	local function expandFriends(uid, force)
-		if expanded[uid] or (not force and (expanding >= 3 or #pool > 700)) then
+		if expanded[uid] or (not force and (expanding >= 6 or #pool > 600)) then
 			return
 		end
 		expanded[uid] = true
@@ -3524,7 +4274,9 @@ local function buildAvatars(page)
 			local ok, pages = pcall(function()
 				return Players:GetFriendsAsync(uid)
 			end)
-			if ok and pages then
+			local n = 0
+			while ok and pages and n < 3 do
+				n = n + 1
 				local okP, cur = pcall(function()
 					return pages:GetCurrentPage()
 				end)
@@ -3532,6 +4284,9 @@ local function buildAvatars(page)
 					for _, f in ipairs(cur) do
 						poolPush(f.Id, f.DisplayName or f.Username)
 					end
+				end
+				if pages.IsFinished or not pcall(function() pages:AdvanceToNextPageAsync() end) then
+					break
 				end
 			end
 			expanding = expanding - 1
@@ -3542,7 +4297,7 @@ local function buildAvatars(page)
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= player then
 				poolPush(p.UserId, p.DisplayName)
-				if n < 3 then
+				if n < 6 then
 					n = n + 1
 					expandFriends(p.UserId, true)
 				end
@@ -3562,8 +4317,11 @@ local function buildAvatars(page)
 		return (g == "cewe" and "♀") or (g == "cowo" and "♂") or "•"
 	end
 
-	-- kartu langsung tampil begitu lolos filter bacon; gender (mode "terbanyak") dihitung menyusul di latar belakang
-	local function feedBatch(myToken, n)
+	-- deklarasi awal: dipakai feedBatchRandom, diisi di bagian pipeline di bawah
+	local queueGender
+
+	-- kartu langsung tampil begitu lolos filter bacon; gender dihitung menyusul di latar belakang (batch paralel)
+	local function feedBatchRandom(myToken, n)
 		loading = true
 		setStatus("Memuat pemain Roblox...")
 		local found, attempts, inflight, throttled = 0, 0, 0, 0
@@ -3587,10 +4345,14 @@ local function buildAvatars(page)
 						local desc, derr = descFromUser(id)
 						if desc then
 							local a = analyzeDesc(desc)
-							pcall(function()
-								desc:Destroy()
-							end)
 							local plain = FILTER_POLOSAN and a.plain or false
+							if plain then
+								pcall(function()
+									desc:Destroy()
+								end)
+							else
+								E.cacheDesc(id, desc)
+							end
 							if not a.unsure then
 								plainCache[id] = plain
 							end
@@ -3601,28 +4363,14 @@ local function buildAvatars(page)
 									nm = nameFromId(id)
 								end
 								if nm and myToken == token then
-									local g = nil
-									if sortMode ~= "most" then
-										g = genderOf(a)
-									end
-									a.gender = g
 									analysisCache[id] = a
-									if addUser(id, nm, a.count .. " item " .. genderSym(g), nil, { count = a.count, gender = g }) then
-										if visibleFor(g, a.count) then
-											found = found + 1
+									if addUser(id, nm, a.count .. " item •", nil, { count = a.count, gender = nil }) then
+										found = found + 1
+										local e = entries[id]
+										if e then
+											e.a = a
 										end
-										if sortMode == "most" then
-											task.spawn(function()
-												local g2 = genderOf(a)
-												local e = entries[id]
-												if e and e.card and e.card.Parent then
-													e.gender = g2
-													a.gender = g2
-													e.card.Visible = visibleFor(g2, e.count)
-													setSub(e.card, a.count .. " item " .. genderSym(g2))
-												end
-											end)
-										end
+										queueGender(id)
 										setStatus(countVisible() .. " pemain • memuat...")
 									end
 								end
@@ -3654,15 +4402,227 @@ local function buildAvatars(page)
 		end
 	end
 
-	local function startFeed()
+	-- ===== PIPELINE CEPAT: kartu tampil dulu, dicek di latar belakang =====
+	local aQueue, aWorkers = {}, 0
+	local gQueue, gWorkers = {}, 0
+
+	-- gender: 6 pekerja, tiap pekerja mengambil detail item banyak avatar sekaligus (1 panggilan batch)
+	local function genderPump()
+		while gWorkers < 6 and #gQueue > 0 do
+			gWorkers = gWorkers + 1
+			task.spawn(function()
+				while #gQueue > 0 and not stale() do
+					local batch, ids, idSeen = {}, {}, {}
+					while #gQueue > 0 and #batch < 8 do
+						local id = table.remove(gQueue, 1)
+						local e = entries[id]
+						if e and e.a and not e.gdone and e.card and e.card.Parent then
+							e.gdone = true
+							batch[#batch + 1] = id
+							for _, iid in ipairs(e.a.ids) do
+								if not idSeen[iid] and itemInfo[iid] == nil then
+									idSeen[iid] = true
+									ids[#ids + 1] = iid
+								end
+							end
+						end
+					end
+					if #ids > 0 then
+						pcall(ensureDetails, ids) -- 1 panggilan untuk banyak avatar
+					end
+					for _, id in ipairs(batch) do
+						local e = entries[id]
+						if e and e.card and e.card.Parent then
+							e.gender = genderOf(e.a)
+							e.a.gender = e.gender
+							e.card.Visible = visibleFor(e.gender, e.count, e.pending)
+							setSub(e.card, e.count .. " item " .. genderSym(e.gender))
+						end
+					end
+				end
+				gWorkers = gWorkers - 1
+			end)
+		end
+	end
+	queueGender = function(id)
+		table.insert(gQueue, id)
+		genderPump()
+	end
+
+	local function settleEntry(id, a)
+		local e = entries[id]
+		if not e or not e.card or not e.card.Parent then
+			return
+		end
+		if FILTER_POLOSAN and a.plain then
+			e.card:Destroy()
+			entries[id] = nil
+			return
+		end
+		e.pending, e.count, e.a = false, a.count, a
+		if a.gender ~= nil then
+			e.gender, e.gdone = a.gender, true
+		end
+		e.card.LayoutOrder = -(a.count) * 100000 + e.seq
+		e.card.Visible = visibleFor(e.gender, e.count, false)
+		setSub(e.card, a.count .. " item " .. genderSym(e.gender))
+		expandFriends(id)
+		if not e.gdone then
+			queueGender(id)
+		end
+	end
+
+	local function analyzeWorker(myToken)
+		while myToken == token do
+			local id = table.remove(aQueue, 1)
+			if not id then
+				break
+			end
+			local a = analysisCache[id]
+			if not a then
+				local desc, derr = descFromUser(id)
+				if desc then
+					a = analyzeDesc(desc)
+					if not a.unsure then
+						analysisCache[id] = a
+						plainCache[id] = a.plain
+					end
+					if a.plain then
+						pcall(function()
+							desc:Destroy()
+						end)
+					else
+						E.cacheDesc(id, desc) -- klik nanti tidak perlu download lagi
+					end
+				else
+					local s = string.lower(tostring(derr))
+					if s:find("429") or s:find("too many") or s:find("throttl") or s:find("limit") then
+						table.insert(aQueue, id)
+						feedConc = math.max(8, feedConc - 4)
+						task.wait(1.5)
+					else
+						local e = entries[id]
+						if e and e.card then
+							e.card:Destroy()
+						end
+						entries[id] = nil
+					end
+				end
+			end
+			if a and myToken == token then
+				settleEntry(id, a)
+				setStatus(countVisible() .. " pemain • gulir untuk lagi")
+			end
+		end
+		aWorkers = aWorkers - 1
+	end
+	local function pumpAnalysis(myToken)
+		while aWorkers < feedConc and #aQueue > 0 do
+			aWorkers = aWorkers + 1
+			task.spawn(analyzeWorker, myToken)
+		end
+	end
+
+	local function feedBatch(myToken, n)
+		if myToken ~= token then
+			return
+		end
+		local added, guard = 0, 0
+		while added < n and #pool > 0 and guard < n * 4 do
+			guard = guard + 1
+			local c = poolPop()
+			if c and not tried[c.id] then
+				tried[c.id] = true
+				local nm = (c.name ~= "" and c.name) or tostring(c.id)
+				if addUser(c.id, nm, "memeriksa...", nil, { count = 0, pending = true }) then
+					added = added + 1
+					table.insert(aQueue, c.id)
+					if added % 40 == 0 then
+						pumpAnalysis(myToken)
+						task.wait()
+						if myToken ~= token then
+							return
+						end
+					end
+				end
+			end
+		end
+		pumpAnalysis(myToken)
+		if added == 0 and #pool == 0 and not loading then
+			task.spawn(feedBatchRandom, myToken, 8)
+		end
+		setStatus(countVisible() .. " pemain • memeriksa...")
+	end
+
+	-- ===== CONFIG: pulihkan daftar avatar dari file (langsung tampil tanpa dicek ulang) =====
+	local function restoreFeed(myToken)
+		local list = avLoad()
+		local n = 0
+		for _, r in ipairs(list) do
+			if myToken ~= token then
+				return n
+			end
+			local id, cnt = tonumber(r.id), tonumber(r.count)
+			if id and cnt and r.name and not seen[id] then
+				tried[id] = true
+				plainCache[id] = false
+				if addUser(id, tostring(r.name), cnt .. " item " .. genderSym(r.gender), nil, { count = cnt, gender = r.gender }) then
+					n = n + 1
+					if n % 40 == 0 then
+						task.wait()
+					end
+				end
+			end
+		end
+		return n
+	end
+
+	local function startFeed(keep)
 		token = token + 1
 		local myToken = token
 		clearAll()
 		mode, searchState, keyword = "feed", nil, ""
-		feedConc = 24
+		feedConc = FEED_CONC
+		aQueue, gQueue = {}, {}
 		showSection("all")
+		local restoredN = 0
+		if keep then
+			restoredN = restoreFeed(myToken)
+			if restoredN > 0 and myToken == token then
+				setStatus(countVisible() .. " pemain (tersimpan) • memuat lagi...")
+			end
+		end
 		seedPool()
-		task.spawn(feedBatch, myToken, 16)
+		task.spawn(function()
+			local t0 = os.clock()
+			while myToken == token and restoredN == 0 and #pool < 20 and os.clock() - t0 < 1.5 do
+				task.wait(0.05)
+			end
+			feedBatch(myToken, restoredN > 0 and 40 or FEED_FIRST)
+			-- pengisi otomatis: jaga minimal FEED_KEEP kartu tampil dan terus berlanjut
+			while myToken == token and mode == "feed" and not stale() do
+				task.wait(0.3)
+				if count < 900 and countVisible() < FEED_KEEP then
+					if #pool > 0 then
+						feedBatch(myToken, sortMode ~= "most" and 90 or 50)
+					elseif not loading then
+						task.spawn(feedBatchRandom, myToken, 8)
+					end
+				end
+				if #pool < 60 then
+					local n = 0
+					for id in pairs(entries) do
+						if n >= 3 then
+							break
+						end
+						if not expanded[id] then
+							expandFriends(id, true)
+							n = n + 1
+						end
+					end
+				end
+			end
+		end)
 	end
 
 	local function setSortMode(m)
@@ -3671,6 +4631,13 @@ local function buildAvatars(page)
 		end
 		sortMode = m
 		markModes()
+		if m ~= "most" then
+			for id, e in pairs(entries) do
+				if e.a and not e.gdone then
+					queueGender(id)
+				end
+			end
+		end
 		if mode == "feed" then
 			applyMode()
 			local vis = countVisible()
@@ -3679,7 +4646,7 @@ local function buildAvatars(page)
 				task.spawn(feedBatch, token, 12)
 			end
 		else
-			startFeed()
+			startFeed(true)
 		end
 	end
 	for k, c in pairs(modeChips) do
@@ -3691,7 +4658,7 @@ local function buildAvatars(page)
 	local function doSearch()
 		local kw = box.Text:match("^%s*(.-)%s*$")
 		if kw == "" then
-			startFeed()
+			startFeed(true)
 			return
 		end
 		token = token + 1
@@ -3700,43 +4667,51 @@ local function buildAvatars(page)
 		mode, searchState, keyword, loading = "search", nil, kw, true
 		showSection("all")
 		setStatus("Mencari \"" .. kw .. "\"...")
-		task.spawn(function()
-			local exactId = tonumber(kw)
-			local exactName
-			if exactId then
-				exactName = nameFromId(exactId)
-			else
-				exactId = idFromName(kw)
-				if exactId then
-					exactName = nameFromId(exactId) or kw
-				end
-			end
-			if myToken ~= token then
-				return
-			end
-			if exactId and exactName then
-				addUser(exactId, exactName, "ID " .. exactId, true) -- hasil persis tidak disaring
-			end
-			local list, st = searchUsersWeb(kw, nil)
-			if myToken ~= token then
-				return
-			end
-			if list then
-				searchState = st
-				addAll(list, myToken)
-				if myToken ~= token then
-					return
-				end
-				loading = false
-				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " hasil")
-			else
+		local jobs, errMsg = 2, nil
+		local function jobDone()
+			jobs = jobs - 1
+			if jobs == 0 and myToken == token then
 				loading = false
 				if count > 0 then
-					setStatus("Pencarian luas gagal (HTTP diblokir?), hanya hasil persis.")
+					setStatus(count .. " pemain" .. ((searchState and searchState.cursor) and "+" or "") .. " hasil")
 				else
-					setStatus("⚠ " .. string.sub(tostring(st), 1, 60))
+					setStatus("⚠ " .. string.sub(tostring(errMsg or "tidak ada hasil"), 1, 60))
 				end
 			end
+		end
+		task.spawn(function() -- hasil persis (paralel)
+			pcall(function()
+				local exactId = tonumber(kw)
+				local exactName
+				if exactId then
+					exactName = nameFromId(exactId)
+				else
+					exactId = idFromName(kw)
+					if exactId then
+						exactName = nameFromId(exactId) or kw
+					end
+				end
+				if exactId and exactName and myToken == token then
+					addUser(exactId, exactName, "ID " .. exactId, true) -- hasil persis tidak disaring
+					E.prefetchUser(exactId)
+				end
+			end)
+			jobDone()
+		end)
+		task.spawn(function() -- pencarian luas (paralel)
+			local list, st = searchUsersWeb(kw, nil)
+			if myToken == token then
+				if list then
+					searchState = st
+					addAll(list, myToken)
+					for i = 1, math.min(6, #list) do
+						E.prefetchBg(list[i].id)
+					end
+				else
+					errMsg = st
+				end
+			end
+			jobDone()
 		end)
 	end
 
@@ -3746,7 +4721,7 @@ local function buildAvatars(page)
 		end
 		local myToken = token
 		if mode == "feed" then
-			task.spawn(feedBatch, myToken, 12)
+			task.spawn(feedBatch, myToken, FEED_MORE)
 		elseif mode == "search" and searchState and searchState.cursor then
 			loading = true
 			task.spawn(function()
@@ -3782,7 +4757,7 @@ local function buildAvatars(page)
 	end)
 	randBtn.Activated:Connect(function()
 		box.Text = ""
-		startFeed()
+		startFeed(false)
 	end)
 
 	-- ===== PRESET =====
@@ -3790,102 +4765,292 @@ local function buildAvatars(page)
 		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- isi daftar (server / teman): kartu tampil LANGSUNG, bacon / bacon cewe dibuang di latar belakang
-	local ver = {}
-	local function populate(sc, entriesList, emptyText)
-		ver[sc] = (ver[sc] or 0) + 1
-		local v = ver[sc]
-		for _, c in ipairs(sc:GetChildren()) do
-			if c:IsA("GuiObject") then
-				c:Destroy()
-			end
-		end
-		if #entriesList == 0 then
-			mk("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = emptyText,
-				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = sc,
-			})
+	-- ===== DAFTAR SERVER & TEMAN: dimuat sejak awal, kartu langsung tampil =====
+	local listCards = { server = {}, friends = {} }
+	local listCount = { server = 0, friends = 0 }
+	local listSc = { server = serverSc, friends = friendSc }
+	local listInfo = {}
+	local listState = { server = "", friends = "Memuat teman..." }
+	local listSeq = 0
+
+	local function syncInfo(key)
+		local lbl = listInfo[key]
+		if not lbl then
 			return
 		end
-		local cardsList = {}
-		for i, e in ipairs(entriesList) do
-			table.insert(cardsList, { id = e.id, card = userCard(sc, e.id, e.name, i) })
+		lbl.Text = listState[key]
+		lbl.Visible = listSc[key].Visible and listCount[key] == 0 and listState[key] ~= ""
+	end
+	for key, sc in pairs(listSc) do
+		listInfo[key] = mk("TextLabel", {
+			Size = UDim2.new(1, -16, 0, 30), Position = UDim2.fromOffset(8, 72), BackgroundTransparency = 1, Text = "",
+			TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
+			ZIndex = 5, Parent = page,
+		})
+		sc:GetPropertyChangedSignal("Visible"):Connect(function()
+			syncInfo(key)
+		end)
+	end
+
+	-- pemeriksa bacon di latar belakang (server didahulukan, paralel, hasil dicache)
+	local checkQ, checkWorkers = {}, 0
+	local function dropCard(key, id)
+		local c = listCards[key][id]
+		if c then
+			listCards[key][id] = nil
+			listCount[key] = listCount[key] - 1
+			if c.Parent then
+				c:Destroy()
+			end
+			syncInfo(key)
 		end
+	end
+	local function checkWorker()
+		while #checkQ > 0 and not stale() do
+			local job = table.remove(checkQ, 1)
+			local key, id = job[1], job[2]
+			if listCards[key][id] then
+				local plain
+				if plainCache[id] ~= nil then
+					plain = plainCache[id]
+				else
+					local desc, derr = descFromUser(id)
+					if desc then
+						local a = analyzeDesc(desc)
+						if not a.unsure then
+							plainCache[id] = a.plain
+							analysisCache[id] = a
+						end
+						plain = a.plain and not a.unsure -- info gagal dimuat -> jangan disembunyikan
+						if plain then
+							pcall(function()
+								desc:Destroy()
+							end)
+						else
+							E.cacheDesc(id, desc)
+						end
+					else
+						local se = string.lower(tostring(derr))
+						if se:find("429") or se:find("too many") or se:find("throttl") or se:find("limit") then
+							table.insert(checkQ, job)
+							task.wait(1.5)
+						end
+					end
+				end
+				if plain then
+					dropCard(key, id)
+				end
+			end
+		end
+		checkWorkers = checkWorkers - 1
+	end
+	local function queueCheck(key, id)
 		if not FILTER_POLOSAN then
 			return
 		end
-		task.spawn(function()
-			local inflight = 0
-			for _, c in ipairs(cardsList) do
-				while inflight >= 10 and ver[sc] == v do
-					task.wait(0.05)
-				end
-				if ver[sc] ~= v then
-					return
-				end
-				inflight = inflight + 1
-				task.spawn(function()
-					local plain = isPlainAvatar(c.id)
-					if plain and c.card.Parent then
-						c.card:Destroy()
-					end
-					inflight = inflight - 1
-				end)
-			end
-		end)
-	end
-
-	-- ===== PEMAIN DI SERVER =====
-	refreshServer = function()
-		local list = {}
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player then
-				table.insert(list, { id = p.UserId, name = p.DisplayName })
-			end
+		local job = { key, id }
+		if key == "server" then
+			table.insert(checkQ, 1, job)
+		else
+			table.insert(checkQ, job)
 		end
-		populate(serverSc, list, "Tidak ada pemain lain di server ini.")
+		while checkWorkers < 20 and #checkQ > 0 do
+			checkWorkers = checkWorkers + 1
+			task.spawn(checkWorker)
+		end
 	end
 
-	-- ===== TEMAN (dimuat saat tab Teman pertama kali dibuka) =====
-	local friendsLoaded = false
-	loadFriends = function()
-		if friendsLoaded then
+	local function listAdd(key, id, name)
+		if listCards[key][id] then
 			return
 		end
-		friendsLoaded = true
-		mk("TextLabel", {
-			Name = "Memuat", Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Memuat teman...",
-			TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
-		})
-		task.spawn(function()
-			local ok, pages = pcall(function()
-				return Players:GetFriendsAsync(player.UserId)
-			end)
-			if not ok or not pages then
-				populate(friendSc, {}, "Daftar teman tidak bisa dimuat.")
-				return
-			end
-			local list, done = {}, false
-			while not done and #list < 72 do
-				for _, f in ipairs(pages:GetCurrentPage()) do
-					table.insert(list, { id = f.Id, name = f.DisplayName or f.Username })
-				end
-				if pages.IsFinished then
-					done = true
-				elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
-					done = true
-				end
-			end
-			populate(friendSc, list, "Belum ada teman di akun ini.")
-		end)
+		listSeq = listSeq + 1
+		listCards[key][id] = userCard(listSc[key], id, name, listSeq)
+		listCount[key] = listCount[key] + 1
+		syncInfo(key)
+		queueCheck(key, id)
 	end
 
-	startFeed()
+	-- ===== PEMAIN DI SERVER (live: ikut berubah saat ada yang masuk / keluar) =====
+	listState.server = "Tidak ada pemain lain di server ini."
+	local function addServerPlayer(p)
+		if p ~= player and not stale() then
+			listAdd("server", p.UserId, p.DisplayName)
+		end
+	end
+	for _, p in ipairs(Players:GetPlayers()) do
+		addServerPlayer(p)
+	end
+	Players.PlayerAdded:Connect(addServerPlayer)
+	Players.PlayerRemoving:Connect(function(p)
+		if not stale() then
+			dropCard("server", p.UserId)
+		end
+	end)
+	refreshServer = function()
+		syncInfo("server")
+	end
+
+	-- ===== TEMAN (dimuat di latar belakang sejak script jalan, bukan saat tab dibuka) =====
+	loadFriends = function()
+		syncInfo("friends")
+	end
+	task.spawn(function()
+		local ok, pages = pcall(function()
+			return Players:GetFriendsAsync(player.UserId)
+		end)
+		if not ok or not pages then
+			listState.friends = "Daftar teman tidak bisa dimuat."
+			syncInfo("friends")
+			return
+		end
+		local n = 0
+		while not stale() and n < 4 do
+			n = n + 1
+			local okP, cur = pcall(function()
+				return pages:GetCurrentPage()
+			end)
+			if okP and type(cur) == "table" then
+				for i, f in ipairs(cur) do
+					listAdd("friends", f.Id, f.DisplayName or f.Username)
+					if i % 40 == 0 then
+						task.wait()
+					end
+				end
+			end
+			if pages.IsFinished or not pcall(function() pages:AdvanceToNextPageAsync() end) then
+				break
+			end
+		end
+		listState.friends = "Belum ada teman di akun ini."
+		syncInfo("friends")
+	end)
+
+	-- ===== CONFIG: simpan daftar avatar ke file secara berkala (hanya saat mode feed, bukan hasil pencarian) =====
+	local savedSig = ""
+	task.spawn(function()
+		while not stale() and page.Parent do
+			task.wait(5)
+			if mode == "feed" then
+				local list, g = {}, 0
+				for id, e in pairs(entries) do
+					if e.card and e.card.Parent and not e.pending and (e.count or 0) > 0 and e.name then
+						list[#list + 1] = { id = id, name = e.name, count = e.count, gender = e.gender, seq = e.seq }
+						if e.gender then
+							g = g + 1
+						end
+					end
+				end
+				local sig = #list .. ":" .. g
+				if #list >= 5 and sig ~= savedSig then
+					savedSig = sig
+					table.sort(list, function(a, b)
+						if a.count ~= b.count then
+							return a.count > b.count
+						end
+						return a.seq < b.seq
+					end)
+					while #list > AV_SAVE_MAX do
+						list[#list] = nil
+					end
+					for _, r in ipairs(list) do
+						r.seq = nil
+					end
+					avSave(list)
+				end
+			end
+		end
+	end)
+
+	-- ===== PREFETCH: 8 avatar paling atas yang terlihat disiapkan lebih dulu, jadi klik langsung terpasang =====
+	task.spawn(function()
+		while not stale() and page.Parent do
+			task.wait(1)
+			if not E.remote and UI_SHOWN(allSc) then
+				local top = allSc.AbsolutePosition.Y
+				local h = allSc.AbsoluteWindowSize.Y
+				local vis = {}
+				for id, e in pairs(entries) do
+					local c = e.card
+					if c and c.Parent and c.Visible and not e.pending then
+						local pos = c.AbsolutePosition
+						if pos.Y >= top - 20 and pos.Y < top + h then
+							vis[#vis + 1] = { id = id, y = pos.Y, x = pos.X }
+						end
+					end
+				end
+				table.sort(vis, function(a, b)
+					if math.abs(a.y - b.y) > 5 then
+						return a.y < b.y
+					end
+					return a.x < b.x
+				end)
+				for i = 1, math.min(8, #vis) do
+					E.prefetchBg(vis[i].id)
+				end
+			end
+		end
+	end)
+
+	startFeed(true)
 end
 
 ----------------------------------------------------------------------------
--- [10] HALAMAN SEDANG DI PAKAI
+-- [10] HALAMAN SEDANG DI PAKAI (nama item diambil sekaligus, baris dipakai ulang = cepat)
 ----------------------------------------------------------------------------
+-- isi nama banyak item sekaligus (batch paralel, cadangan GetProductInfo)
+function E.fillNames(ids)
+	local need = {}
+	for _, id in ipairs(ids) do
+		if not E.names[id] then
+			need[#need + 1] = id
+		end
+	end
+	if #need == 0 then
+		return
+	end
+	local left = 0
+	for i = 1, #need, 50 do
+		left = left + 1
+		local chunk = table.move(need, i, math.min(i + 49, #need), 1, {})
+		task.spawn(function()
+			local det = fetchDetails(chunk, Enum.AvatarItemType.Asset)
+			for id, d in pairs(det) do
+				if d.Name then
+					E.names[id] = d.Name
+				end
+			end
+			left = left - 1
+		end)
+	end
+	local t0 = os.clock()
+	while left > 0 and os.clock() - t0 < 8 do
+		task.wait()
+	end
+	local rest = {}
+	for _, id in ipairs(need) do
+		if not E.names[id] then
+			rest[#rest + 1] = id
+		end
+	end
+	local left2 = math.min(#rest, 12)
+	for k = 1, left2 do
+		local id = rest[k]
+		task.spawn(function()
+			local info = productInfo(id, Enum.InfoType.Asset)
+			if info then
+				E.names[id] = info.Name
+				E.types[id] = E.types[id] or info.AssetTypeId
+			end
+			left2 = left2 - 1
+		end)
+	end
+	t0 = os.clock()
+	while left2 > 0 and os.clock() - t0 < 6 do
+		task.wait()
+	end
+end
+
 local function buildWorn(page)
 	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
 	label(head, "Sedang dipakai", 15, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
@@ -3902,39 +5067,214 @@ local function buildWorn(page)
 	vlist(list, 6)
 	pad(list, 0, 0, 8, 10)
 
+	local rows = {}
+
+	local function makeRow(e)
+		local r = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = list })
+		corner(r, 10)
+		local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = r })
+		corner(img, 8)
+		local nameL = label(r, E.names[e.Id] or "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
+		nameL.Position = UDim2.fromOffset(50, 6)
+		nameL.Size = UDim2.new(1, -124, 0, 18)
+		nameL.TextTruncate = Enum.TextTruncate.AtEnd
+		local typeL = label(r, e.Label, 10, T.Dim, Enum.Font.Gotham)
+		typeL.Position = UDim2.fromOffset(50, 26)
+		typeL.Size = UDim2.new(1, -124, 0, 14)
+		button(r, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
+			textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
+		return { frame = r, nameL = nameL, typeL = typeL }
+	end
+
 	local function refresh()
-		for _, c in ipairs(list:GetChildren()) do
-			if c:IsA("GuiObject") then
-				c:Destroy()
-			end
-		end
 		local items = E.wornList()
 		sub.Text = #items .. " item aktif pada karakter"
+		local want = {}
+		for _, e in ipairs(items) do
+			want[e.Id] = true
+		end
+		for id, r in pairs(rows) do
+			if not want[id] then
+				r.frame:Destroy()
+				rows[id] = nil
+			end
+		end
+		local need = {}
 		for n, e in ipairs(items) do
-			local r = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
-			corner(r, 10)
-			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
-				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = r })
-			corner(img, 8)
-			local nameL = label(r, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
-			nameL.Position = UDim2.fromOffset(50, 6)
-			nameL.Size = UDim2.new(1, -124, 0, 18)
-			nameL.TextTruncate = Enum.TextTruncate.AtEnd
-			local typeL = label(r, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
-			typeL.Position = UDim2.fromOffset(50, 26)
-			typeL.Size = UDim2.new(1, -124, 0, 14)
-			button(r, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
-				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
+			local r = rows[e.Id]
+			if not r then
+				r = makeRow(e)
+				rows[e.Id] = r
+			end
+			r.frame.LayoutOrder = n
+			r.typeL.Text = e.Label .. (E.failed[e.Id] and "  •  injector" or "")
+			if E.names[e.Id] then
+				r.nameL.Text = E.names[e.Id]
+			else
+				need[#need + 1] = e.Id
+			end
+		end
+		if #need > 0 then
 			task.spawn(function()
-				local nm = E.name(e.Id)
-				if nameL.Parent then
-					nameL.Text = nm
+				E.fillNames(need)
+				for _, id in ipairs(need) do
+					local r = rows[id]
+					if r and r.frame.Parent then
+						r.nameL.Text = E.names[id] or ("Item #" .. id)
+					end
 				end
 			end)
 		end
 	end
 	refresh()
 	return refresh
+end
+
+----------------------------------------------------------------------------
+-- [10b] HALAMAN FAVORIT
+----------------------------------------------------------------------------
+local function buildFavorites(page)
+	local chipRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, Parent = page })
+	mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = chipRow })
+	local function newGrid(cell)
+		local sc = makeScroll(page, UDim2.new(1, 0, 1, -30), UDim2.fromOffset(0, 30))
+		mk("UIGridLayout", { CellSize = cell, CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = sc })
+		pad(sc, 0, 2, 0, 10)
+		return sc
+	end
+	local avSc, itSc = newGrid(UDim2.fromOffset(84, 96)), newGrid(UDim2.fromOffset(84, 110))
+	local emptyMsg = mk("TextLabel", { Size = UDim2.new(1, -16, 0, 60), Position = UDim2.fromOffset(8, 60), BackgroundTransparency = 1,
+		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false, Parent = page })
+	local cur, dirty, cards, chips = "avatar", true, {}, {}
+	local nAv, nIt = 0, 0
+
+	local function show(k)
+		cur = k
+		avSc.Visible, itSc.Visible = k == "avatar", k == "item"
+		for kk, c in pairs(chips) do
+			c.BackgroundColor3 = kk == k and Theme.TabActiveBg or T.Surface2
+			c.TextColor3 = kk == k and T.Accent or T.Text
+		end
+		local empty = (k == "avatar" and nAv == 0) or (k == "item" and nIt == 0)
+		emptyMsg.Visible = empty
+		emptyMsg.Text = k == "avatar" and "Belum ada avatar favorit.\nTekan ♡ di kartu avatar."
+			or "Belum ada item favorit.\nTekan ♡ di kartu item (karakter / animasi / sepatu)."
+	end
+	for i, d in ipairs({ { "avatar", "Avatar" }, { "item", "Item" } }) do
+		local c = mk("TextButton", { Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Text = d[2], TextSize = 11, Font = Enum.Font.GothamBold, TextColor3 = T.Text, AutoButtonColor = false,
+			LayoutOrder = i, Parent = chipRow })
+		corner(c, 8)
+		pad(c, 10, 0, 10, 0)
+		chips[d[1]] = c
+		c.Activated:Connect(function()
+			show(d[1])
+		end)
+	end
+
+	local function clear(sc)
+		for _, c in ipairs(sc:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+	end
+	local function sorted(map)
+		local l = {}
+		for _, r in pairs(map) do
+			table.insert(l, r)
+		end
+		table.sort(l, function(a, b)
+			return (a.t or 0) > (b.t or 0)
+		end)
+		return l
+	end
+
+	local function rebuild()
+		dirty = false
+		clear(avSc)
+		clear(itSc)
+		cards = {}
+		local avs, its = sorted(FAV.avatars), sorted(FAV.items)
+		nAv, nIt = #avs, #its
+		chips.avatar.Text = "Avatar (" .. nAv .. ")"
+		chips.item.Text = "Item (" .. nIt .. ")"
+		for i, r in ipairs(avs) do
+			userCard(avSc, r.id, r.name, i, "favorit")
+		end
+		local rows = {}
+		for i, r in ipairs(its) do
+			local row = { Id = r.Id, Type = r.Type, Name = r.Name, Price = false, Order = i, slot = r.slot, slotName = r.slotName }
+			if r.Type == "Asset" then
+				E.names[r.Id] = E.names[r.Id] or r.Name
+				if r.tid then
+					E.types[r.Id] = r.tid
+				end
+			end
+			table.insert(rows, row)
+			local c = makeCard(itSc, row)
+			c.loadImg()
+			table.insert(cards, c)
+		end
+		show(cur)
+		-- harga & nama terbaru di latar belakang
+		task.spawn(function()
+			local packs = { A = { ids = {}, type = Enum.AvatarItemType.Asset }, B = { ids = {}, type = Enum.AvatarItemType.Bundle } }
+			local byKey = {}
+			for _, row in ipairs(rows) do
+				local p = row.Type == "Bundle" and "B" or "A"
+				table.insert(packs[p].ids, row.Id)
+				byKey[p .. row.Id] = row
+			end
+			for p, pack in pairs(packs) do
+				for i = 1, #pack.ids, 50 do
+					local chunk = table.move(pack.ids, i, math.min(i + 49, #pack.ids), 1, {})
+					local det = fetchDetails(chunk, pack.type)
+					for _, id in ipairs(chunk) do
+						local row, d = byKey[p .. id], det[id]
+						if row then
+							if d then
+								row.Name = d.Name or row.Name
+								row.Price = d.PriceInRobux
+							else
+								row.Price = nil
+							end
+							if row.onUpdate then
+								pcall(row.onUpdate)
+							end
+						end
+					end
+				end
+			end
+		end)
+	end
+
+	FAV.listen(function()
+		if not page.Parent then
+			return false
+		end
+		if page.Visible then
+			rebuild()
+		else
+			dirty = true
+		end
+	end)
+	show("avatar")
+	rebuild()
+	return function()
+		if dirty then
+			if page.Visible then
+				rebuild()
+			end
+			return
+		end
+		local set = collect(E.look)
+		for _, c in ipairs(cards) do
+			c.update(set)
+		end
+	end
 end
 
 ----------------------------------------------------------------------------
@@ -4048,6 +5388,29 @@ waBtn.Activated:Connect(function()
 end)
 
 mk("Frame", { Size = UDim2.new(1, -32, 0, 1), Position = UDim2.new(0, 16, 0, 48), BackgroundColor3 = Theme.CardBorder, BorderSizePixel = 0, Parent = mainFrame })
+-- bar loading di bawah header (aktif saat avatar / item sedang diproses)
+local loadTrack = mk("Frame", { Size = UDim2.new(1, -32, 0, 3), Position = UDim2.new(0, 16, 0, 47), BackgroundTransparency = 1,
+	ClipsDescendants = true, ZIndex = 8, Parent = mainFrame })
+local loadBar = mk("Frame", { Size = UDim2.fromScale(0.35, 1), Position = UDim2.fromScale(-0.35, 0), BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0, Visible = false, ZIndex = 8, Parent = loadTrack })
+corner(loadBar, 2)
+task.spawn(function()
+	local x = -0.35
+	while not stale() and UI.gui.Parent do
+		if E.busy or E.worker or E.pending ~= nil or E.loadingBundles > 0 or E.pendingClicks > 0 then
+			loadBar.Visible = true
+			x = x + 0.045
+			if x > 1 then
+				x = -0.35
+			end
+			loadBar.Position = UDim2.fromScale(x, 0)
+			task.wait(0.016)
+		else
+			loadBar.Visible = false
+			task.wait(0.1)
+		end
+	end
+end)
 
 -- body: sidebar + content
 local bodyFrame = mk("Frame", { Name = "Body", Size = UDim2.new(1, -32, 1, -56), Position = UDim2.new(0, 16, 0, 52), BackgroundTransparency = 1, Parent = mainFrame })
@@ -4083,10 +5446,14 @@ local TABS = {
 	{ key = "karakter", name = "karakter", group = "KARAKTER / TUBUH" },
 	{ key = "animasi", name = "animasi", group = "ANIMASI" },
 	{ key = "sepatu", name = "sepatu", group = "SEPATU" },
+	{ key = "favorit", name = "favorit", title = "FAVORIT" },
 	{ key = "worn", name = "dipakai", title = "SEDANG DI PAKAI" },
 }
 
 UI.builders.avatars = buildAvatars
+UI.builders.favorit = function(p)
+	UI.refreshers.favorit = buildFavorites(p)
+end
 UI.builders.worn = function(p)
 	UI.refreshers.worn = buildWorn(p)
 end
@@ -4161,6 +5528,7 @@ end
 -- [11b] CERMIN  -  pratinjau karakter (ViewportFrame) seperti etalase avatar shop
 --   Menyalin karakter yang SEDANG tampil di layar, jadi isi cermin = yang kamu lihat.
 --   Otomatis ikut berubah saat item/avatar dipilih. Geser untuk memutar.
+--   Kamera otomatis menyesuaikan ukuran avatar (kecil / tinggi) dan ukuran panel.
 ----------------------------------------------------------------------------
 do
 local MIRROR_W = 170
@@ -4208,7 +5576,49 @@ local function charSignature()
 	for _ in ipairs(char:GetDescendants()) do
 		n = n + 1
 	end
-	return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod)
+	local ext = ""
+	pcall(function()
+		local s = char:GetExtentsSize()
+		ext = string.format("%.1f,%.1f", s.Y, math.max(s.X, s.Z))
+	end)
+	return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod) .. "|" .. ext
+end
+
+-- ukur bagian yang TERLIHAT saja: tinggi + radius putar dari sumbu tengah
+local function measure(model)
+	local minY, maxY, rad = math.huge, -math.huge, 0
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and d.Transparency < 0.95 then
+			local cf, h = d.CFrame, d.Size / 2
+			for sx = -1, 1, 2 do
+				for sy = -1, 1, 2 do
+					for sz = -1, 1, 2 do
+						local p = cf:PointToWorldSpace(Vector3.new(h.X * sx, h.Y * sy, h.Z * sz))
+						minY = math.min(minY, p.Y)
+						maxY = math.max(maxY, p.Y)
+						rad = math.max(rad, math.sqrt(p.X * p.X + p.Z * p.Z))
+					end
+				end
+			end
+		end
+	end
+	if minY == math.huge then
+		local cf, size = model:GetBoundingBox()
+		minY, maxY = cf.Position.Y - size.Y / 2, cf.Position.Y + size.Y / 2
+		rad = math.max(size.X, size.Z) / 2
+	end
+	local headY, headH
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name == "Head" and d.Transparency < 0.95 then
+			headY, headH = d.Position.Y, d.Size.Y
+			break
+		end
+	end
+	if not headY then
+		headY, headH = maxY - 0.6, 1.2
+	end
+	return { minY = minY, maxY = maxY, height = math.max(maxY - minY, 0.5), cy = (minY + maxY) / 2,
+		radius = math.max(rad, 0.5), headY = headY, headH = headH }
 end
 
 local function mirrorBuild()
@@ -4225,7 +5635,6 @@ local function mirrorBuild()
 	if not okC or not clone then
 		return nil, "gagal menyalin karakter"
 	end
-
 	for _, d in ipairs(clone:GetDescendants()) do
 		pcall(function()
 			if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("BillboardGui") then
@@ -4249,37 +5658,58 @@ local function mirrorBuild()
 	end
 	clone:PivotTo(CFrame.new())
 
-	local bbCF, bbSize = clone:GetBoundingBox()
-	local height = math.clamp(bbSize.Y, 3, 14)
-	local width = math.clamp(math.max(bbSize.X, bbSize.Z), 2, 14)
-	local center = bbCF.Position
-	local fov = math.rad(mirrorCam.FieldOfView)
-	local dist = (math.max(height, width * 0.9) / 2) / math.tan(fov / 2) * 1.18 + width / 2
+	local b = measure(clone)
 
 	local stage = Instance.new("Folder")
 	stage.Name = "Stage"
-
+	local d = math.max(b.radius * 2 * 1.15, 2)
 	local base = Instance.new("Part")
 	base.Name = "Platform"
 	base.Shape = Enum.PartType.Cylinder
-	base.Size = Vector3.new(0.2, width * 1.9, width * 1.9)
-	base.CFrame = CFrame.new(center.X, center.Y - height / 2 - 0.1, center.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	base.Size = Vector3.new(0.2, d, d)
+	base.CFrame = CFrame.new(0, b.minY - 0.1, 0) * CFrame.Angles(0, 0, math.pi / 2)
 	base.Anchored = true
 	base.CanCollide = false
 	base.Material = Enum.Material.Neon
 	base.Color = Theme.Accent
 	base.Transparency = 0.55
 	base.Parent = stage
-
 	clone.Parent = stage
-	return stage, clone, center, dist, height
+	return stage, clone, b
 end
+
+-- atur jarak kamera supaya seluruh avatar (kecil / tinggi) pas di panel
+function Mirror.fit()
+	local b = Mirror.bounds
+	if not b then
+		return
+	end
+	local vs = mirrorVP.AbsoluteSize
+	local aspect = math.max(vs.X, 1) / math.max(vs.Y, 1)
+	local tanV = math.tan(math.rad(mirrorCam.FieldOfView) / 2)
+	local tanH = tanV * aspect
+	-- kamera sejajar tinggi kepala; titik pandang di antara kepala & tengah badan supaya seluruh avatar tetap masuk
+	local camY = b.headY
+	local lookY = (b.headY + b.cy) / 2
+	local halfH = math.max(b.maxY - lookY, lookY - b.minY, b.headH) * 1.12
+	local dist = math.max(halfH / tanV, (b.radius * 1.12) / tanH) + b.radius
+	local target = CFrame.lookAt(Vector3.new(0, camY, dist), Vector3.new(0, lookY, 0))
+	if Mirror.fitted then
+		tween(mirrorCam, { CFrame = target }, 0.25)
+	else
+		mirrorCam.CFrame = target
+		Mirror.fitted = true
+	end
+end
+mirrorVP:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	Mirror.fit()
+end)
 
 function Mirror.refresh()
 	if stale() or not mirrorVP.Parent then
 		return
 	end
-	local ok, stage, model, center, dist, height = pcall(mirrorBuild)
+	local ok, stage, model, bounds = pcall(mirrorBuild)
 	if not ok then
 		logf("cermin gagal: %s", tostring(stage))
 		mirrorMsg.Text = "Cermin gagal: " .. tostring(stage)
@@ -4293,9 +5723,9 @@ function Mirror.refresh()
 	end
 	local old = Mirror.stage
 	stage.Parent = mirrorVP
-	mirrorCam.CFrame = CFrame.lookAt(center + Vector3.new(0, height * 0.04, dist), center)
-	Mirror.stage, Mirror.model = stage, model
+	Mirror.stage, Mirror.model, Mirror.bounds = stage, model, bounds
 	Mirror.sig = charSignature()
+	Mirror.fit()
 	mirrorMsg.Visible = false
 	if old then
 		old:Destroy()
@@ -4515,6 +5945,18 @@ end
 -- segarkan kartu/daftar saat avatar berubah
 E.onChanged(function()
 	updateSub()
+	-- nama item yang dipakai disiapkan lebih awal supaya tab DIPAKAI langsung terisi
+	task.spawn(function()
+		local ids = {}
+		for _, e in ipairs(E.wornList()) do
+			if not E.names[e.Id] then
+				ids[#ids + 1] = e.Id
+			end
+		end
+		if #ids > 0 then
+			pcall(E.fillNames, ids)
+		end
+	end)
 	for key, fn in pairs(UI.refreshers) do
 		if key == State.tab or key ~= "worn" then
 			pcall(fn)
@@ -4535,4 +5977,24 @@ task.spawn(function()
 		return
 	end
 	toast("leon4951hub siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or (E.injectFirst and "INJECTOR (visual klien)" or "native")), "ok")
+	if PREWARM_SKIN and not E.remote and E.useSkin and E.cap.donor ~= false and E.look then
+		E.busy = true
+		pcall(E.apply, E.look)
+		E.busy = false
+		E.reapplyTweaks()
+	end
+end)
+
+-- muat tab katalog lain diam-diam supaya saat dibuka sudah terisi
+task.delay(3, function()
+	for _, tab in ipairs(TABS) do
+		if stale() then
+			return
+		end
+		if tab.group and not UI.built[tab.key] then
+			UI.built[tab.key] = true
+			pcall(UI.builders[tab.key], UI.pages[tab.key])
+			task.wait(0.8)
+		end
+	end
 end)
