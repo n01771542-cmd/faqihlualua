@@ -3,8 +3,12 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL (OPTIMAL v5): antrian render, katalog instan, tab ramping, bug UI fix.
+  VERSI FULL (OPTIMAL v6): antrian render, katalog instan, tab ramping, bug UI fix.
     Tab: avatar | karakter | animasi | sepatu | favorit | dipakai
+  UPDATE v6:
+   - Cowo / Cewe jauh lebih cepat: gender dihitung di latar belakang untuk semua avatar (batch paralel).
+   - Pencarian lebih cepat: 3 backend diadu bersamaan, hasil persis paralel, hasil teratas di-prefetch.
+   - Kamera cermin menyesuaikan ukuran avatar (kecil / tinggi) dan ukuran panel.
   UPDATE v5:
    - CONFIG avatar: daftar avatar di tab avatar disimpan ke file (leon4951hub_avatars.json).
      Saat masuk lagi langsung muncul 100+ kartu sebelumnya lalu lanjut memuat. (butuh writefile/readfile)
@@ -3840,24 +3844,43 @@ local function parseUserList(bodyTxt)
 	return nil
 end
 
+-- 3 backend diadu bersamaan untuk halaman pertama (yang tercepat dipakai); halaman berikutnya pakai backend yang sama
 local function searchUsersWeb(keyword, state)
 	state = state or {}
-	local first, last = 1, #SEARCH_BUILDERS
 	if state.idx then
-		first, last = state.idx, state.idx
-	end
-	local lastErr = "tidak ada hasil"
-	for i = first, last do
-		local bodyTxt, err = httpGet(SEARCH_BUILDERS[i](keyword, state.cursor))
+		local bodyTxt, err = httpGet(SEARCH_BUILDERS[state.idx](keyword, state.cursor))
 		if bodyTxt then
 			local list, nextCur = parseUserList(bodyTxt)
-			if list and (#list > 0 or state.idx) then
-				return list, { idx = i, cursor = nextCur }
+			if list then
+				return list, { idx = state.idx, cursor = nextCur }
 			end
-			lastErr = list and "kosong" or ("balasan backend " .. i .. " tidak dikenali")
-		else
-			lastErr = tostring(err)
+			return nil, "balasan tidak dikenali"
 		end
+		return nil, tostring(err)
+	end
+	local result, left, lastErr = nil, #SEARCH_BUILDERS, "tidak ada hasil"
+	for i = 1, #SEARCH_BUILDERS do
+		task.spawn(function()
+			local bodyTxt, err = httpGet(SEARCH_BUILDERS[i](keyword, nil))
+			if bodyTxt then
+				local list, nextCur = parseUserList(bodyTxt)
+				if list and #list > 0 and not result then
+					result = { list, { idx = i, cursor = nextCur } }
+				elseif not list then
+					lastErr = "balasan backend " .. i .. " tidak dikenali"
+				end
+			else
+				lastErr = tostring(err)
+			end
+			left = left - 1
+		end)
+	end
+	local t0 = os.clock()
+	while not result and left > 0 and os.clock() - t0 < 10 do
+		task.wait(0.03)
+	end
+	if result then
+		return result[1], result[2]
 	end
 	return nil, lastErr
 end
@@ -4124,7 +4147,10 @@ local function buildAvatars(page)
 		return (g == "cewe" and "♀") or (g == "cowo" and "♂") or "•"
 	end
 
-	-- kartu langsung tampil begitu lolos filter bacon; gender (mode "terbanyak") dihitung menyusul di latar belakang
+	-- deklarasi awal: dipakai feedBatchRandom, diisi di bagian pipeline di bawah
+	local queueGender
+
+	-- kartu langsung tampil begitu lolos filter bacon; gender dihitung menyusul di latar belakang (batch paralel)
 	local function feedBatchRandom(myToken, n)
 		loading = true
 		setStatus("Memuat pemain Roblox...")
@@ -4167,28 +4193,14 @@ local function buildAvatars(page)
 									nm = nameFromId(id)
 								end
 								if nm and myToken == token then
-									local g = nil
-									if sortMode ~= "most" then
-										g = genderOf(a)
-									end
-									a.gender = g
 									analysisCache[id] = a
-									if addUser(id, nm, a.count .. " item " .. genderSym(g), nil, { count = a.count, gender = g }) then
-										if visibleFor(g, a.count) then
-											found = found + 1
+									if addUser(id, nm, a.count .. " item •", nil, { count = a.count, gender = nil }) then
+										found = found + 1
+										local e = entries[id]
+										if e then
+											e.a = a
 										end
-										if sortMode == "most" then
-											task.spawn(function()
-												local g2 = genderOf(a)
-												local e = entries[id]
-												if e and e.card and e.card.Parent then
-													e.gender = g2
-													a.gender = g2
-													e.card.Visible = visibleFor(g2, e.count)
-													setSub(e.card, a.count .. " item " .. genderSym(g2))
-												end
-											end)
-										end
+										queueGender(id)
 										setStatus(countVisible() .. " pemain • memuat...")
 									end
 								end
@@ -4224,17 +4236,35 @@ local function buildAvatars(page)
 	local aQueue, aWorkers = {}, 0
 	local gQueue, gWorkers = {}, 0
 
+	-- gender: 6 pekerja, tiap pekerja mengambil detail item banyak avatar sekaligus (1 panggilan batch)
 	local function genderPump()
-		while gWorkers < 3 and #gQueue > 0 do
+		while gWorkers < 6 and #gQueue > 0 do
 			gWorkers = gWorkers + 1
 			task.spawn(function()
-				while #gQueue > 0 do
-					local id = table.remove(gQueue, 1)
-					local e = entries[id]
-					if e and e.a and not e.gdone and e.card and e.card.Parent then
-						e.gdone = true
-						e.gender = genderOf(e.a)
-						if e.card.Parent then
+				while #gQueue > 0 and not stale() do
+					local batch, ids, idSeen = {}, {}, {}
+					while #gQueue > 0 and #batch < 8 do
+						local id = table.remove(gQueue, 1)
+						local e = entries[id]
+						if e and e.a and not e.gdone and e.card and e.card.Parent then
+							e.gdone = true
+							batch[#batch + 1] = id
+							for _, iid in ipairs(e.a.ids) do
+								if not idSeen[iid] and itemInfo[iid] == nil then
+									idSeen[iid] = true
+									ids[#ids + 1] = iid
+								end
+							end
+						end
+					end
+					if #ids > 0 then
+						pcall(ensureDetails, ids) -- 1 panggilan untuk banyak avatar
+					end
+					for _, id in ipairs(batch) do
+						local e = entries[id]
+						if e and e.card and e.card.Parent then
+							e.gender = genderOf(e.a)
+							e.a.gender = e.gender
 							e.card.Visible = visibleFor(e.gender, e.count, e.pending)
 							setSub(e.card, e.count .. " item " .. genderSym(e.gender))
 						end
@@ -4244,7 +4274,7 @@ local function buildAvatars(page)
 			end)
 		end
 	end
-	local function queueGender(id)
+	queueGender = function(id)
 		table.insert(gQueue, id)
 		genderPump()
 	end
@@ -4260,11 +4290,14 @@ local function buildAvatars(page)
 			return
 		end
 		e.pending, e.count, e.a = false, a.count, a
+		if a.gender ~= nil then
+			e.gender, e.gdone = a.gender, true
+		end
 		e.card.LayoutOrder = -(a.count) * 100000 + e.seq
 		e.card.Visible = visibleFor(e.gender, e.count, false)
 		setSub(e.card, a.count .. " item " .. genderSym(e.gender))
 		expandFriends(id)
-		if sortMode ~= "most" then
+		if not e.gdone then
 			queueGender(id)
 		end
 	end
@@ -4398,10 +4431,10 @@ local function buildAvatars(page)
 			feedBatch(myToken, restoredN > 0 and 40 or FEED_FIRST)
 			-- pengisi otomatis: jaga minimal FEED_KEEP kartu tampil dan terus berlanjut
 			while myToken == token and mode == "feed" and not stale() do
-				task.wait(0.6)
+				task.wait(0.3)
 				if count < 900 and countVisible() < FEED_KEEP then
 					if #pool > 0 then
-						feedBatch(myToken, 50)
+						feedBatch(myToken, sortMode ~= "most" and 90 or 50)
 					elseif not loading then
 						task.spawn(feedBatchRandom, myToken, 8)
 					end
@@ -4464,43 +4497,51 @@ local function buildAvatars(page)
 		mode, searchState, keyword, loading = "search", nil, kw, true
 		showSection("all")
 		setStatus("Mencari \"" .. kw .. "\"...")
-		task.spawn(function()
-			local exactId = tonumber(kw)
-			local exactName
-			if exactId then
-				exactName = nameFromId(exactId)
-			else
-				exactId = idFromName(kw)
-				if exactId then
-					exactName = nameFromId(exactId) or kw
-				end
-			end
-			if myToken ~= token then
-				return
-			end
-			if exactId and exactName then
-				addUser(exactId, exactName, "ID " .. exactId, true) -- hasil persis tidak disaring
-			end
-			local list, st = searchUsersWeb(kw, nil)
-			if myToken ~= token then
-				return
-			end
-			if list then
-				searchState = st
-				addAll(list, myToken)
-				if myToken ~= token then
-					return
-				end
-				loading = false
-				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " hasil")
-			else
+		local jobs, errMsg = 2, nil
+		local function jobDone()
+			jobs = jobs - 1
+			if jobs == 0 and myToken == token then
 				loading = false
 				if count > 0 then
-					setStatus("Pencarian luas gagal (HTTP diblokir?), hanya hasil persis.")
+					setStatus(count .. " pemain" .. ((searchState and searchState.cursor) and "+" or "") .. " hasil")
 				else
-					setStatus("⚠ " .. string.sub(tostring(st), 1, 60))
+					setStatus("⚠ " .. string.sub(tostring(errMsg or "tidak ada hasil"), 1, 60))
 				end
 			end
+		end
+		task.spawn(function() -- hasil persis (paralel)
+			pcall(function()
+				local exactId = tonumber(kw)
+				local exactName
+				if exactId then
+					exactName = nameFromId(exactId)
+				else
+					exactId = idFromName(kw)
+					if exactId then
+						exactName = nameFromId(exactId) or kw
+					end
+				end
+				if exactId and exactName and myToken == token then
+					addUser(exactId, exactName, "ID " .. exactId, true) -- hasil persis tidak disaring
+					E.prefetchUser(exactId)
+				end
+			end)
+			jobDone()
+		end)
+		task.spawn(function() -- pencarian luas (paralel)
+			local list, st = searchUsersWeb(kw, nil)
+			if myToken == token then
+				if list then
+					searchState = st
+					addAll(list, myToken)
+					for i = 1, math.min(6, #list) do
+						E.prefetchBg(list[i].id)
+					end
+				else
+					errMsg = st
+				end
+			end
+			jobDone()
 		end)
 	end
 
@@ -5317,6 +5358,7 @@ end
 -- [11b] CERMIN  -  pratinjau karakter (ViewportFrame) seperti etalase avatar shop
 --   Menyalin karakter yang SEDANG tampil di layar, jadi isi cermin = yang kamu lihat.
 --   Otomatis ikut berubah saat item/avatar dipilih. Geser untuk memutar.
+--   Kamera otomatis menyesuaikan ukuran avatar (kecil / tinggi) dan ukuran panel.
 ----------------------------------------------------------------------------
 do
 local MIRROR_W = 170
@@ -5364,7 +5406,38 @@ local function charSignature()
 	for _ in ipairs(char:GetDescendants()) do
 		n = n + 1
 	end
-	return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod)
+	local ext = ""
+	pcall(function()
+		local s = char:GetExtentsSize()
+		ext = string.format("%.1f,%.1f", s.Y, math.max(s.X, s.Z))
+	end)
+	return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod) .. "|" .. ext
+end
+
+-- ukur bagian yang TERLIHAT saja: tinggi + radius putar dari sumbu tengah
+local function measure(model)
+	local minY, maxY, rad = math.huge, -math.huge, 0
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and d.Transparency < 0.95 then
+			local cf, h = d.CFrame, d.Size / 2
+			for sx = -1, 1, 2 do
+				for sy = -1, 1, 2 do
+					for sz = -1, 1, 2 do
+						local p = cf:PointToWorldSpace(Vector3.new(h.X * sx, h.Y * sy, h.Z * sz))
+						minY = math.min(minY, p.Y)
+						maxY = math.max(maxY, p.Y)
+						rad = math.max(rad, math.sqrt(p.X * p.X + p.Z * p.Z))
+					end
+				end
+			end
+		end
+	end
+	if minY == math.huge then
+		local cf, size = model:GetBoundingBox()
+		minY, maxY = cf.Position.Y - size.Y / 2, cf.Position.Y + size.Y / 2
+		rad = math.max(size.X, size.Z) / 2
+	end
+	return { minY = minY, height = math.max(maxY - minY, 0.5), cy = (minY + maxY) / 2, radius = math.max(rad, 0.5) }
 end
 
 local function mirrorBuild()
@@ -5381,7 +5454,6 @@ local function mirrorBuild()
 	if not okC or not clone then
 		return nil, "gagal menyalin karakter"
 	end
-
 	for _, d in ipairs(clone:GetDescendants()) do
 		pcall(function()
 			if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("BillboardGui") then
@@ -5405,37 +5477,54 @@ local function mirrorBuild()
 	end
 	clone:PivotTo(CFrame.new())
 
-	local bbCF, bbSize = clone:GetBoundingBox()
-	local height = math.clamp(bbSize.Y, 3, 14)
-	local width = math.clamp(math.max(bbSize.X, bbSize.Z), 2, 14)
-	local center = bbCF.Position
-	local fov = math.rad(mirrorCam.FieldOfView)
-	local dist = (math.max(height, width * 0.9) / 2) / math.tan(fov / 2) * 1.18 + width / 2
+	local b = measure(clone)
 
 	local stage = Instance.new("Folder")
 	stage.Name = "Stage"
-
+	local d = math.max(b.radius * 2 * 1.15, 2)
 	local base = Instance.new("Part")
 	base.Name = "Platform"
 	base.Shape = Enum.PartType.Cylinder
-	base.Size = Vector3.new(0.2, width * 1.9, width * 1.9)
-	base.CFrame = CFrame.new(center.X, center.Y - height / 2 - 0.1, center.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	base.Size = Vector3.new(0.2, d, d)
+	base.CFrame = CFrame.new(0, b.minY - 0.1, 0) * CFrame.Angles(0, 0, math.pi / 2)
 	base.Anchored = true
 	base.CanCollide = false
 	base.Material = Enum.Material.Neon
 	base.Color = Theme.Accent
 	base.Transparency = 0.55
 	base.Parent = stage
-
 	clone.Parent = stage
-	return stage, clone, center, dist, height
+	return stage, clone, b
 end
+
+-- atur jarak kamera supaya seluruh avatar (kecil / tinggi) pas di panel
+function Mirror.fit()
+	local b = Mirror.bounds
+	if not b then
+		return
+	end
+	local vs = mirrorVP.AbsoluteSize
+	local aspect = math.max(vs.X, 1) / math.max(vs.Y, 1)
+	local tanV = math.tan(math.rad(mirrorCam.FieldOfView) / 2)
+	local tanH = tanV * aspect
+	local dist = math.max((b.height / 2 * 1.12) / tanV, (b.radius * 1.12) / tanH) + b.radius
+	local target = CFrame.lookAt(Vector3.new(0, b.cy + b.height * 0.03, dist), Vector3.new(0, b.cy, 0))
+	if Mirror.fitted then
+		tween(mirrorCam, { CFrame = target }, 0.25)
+	else
+		mirrorCam.CFrame = target
+		Mirror.fitted = true
+	end
+end
+mirrorVP:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	Mirror.fit()
+end)
 
 function Mirror.refresh()
 	if stale() or not mirrorVP.Parent then
 		return
 	end
-	local ok, stage, model, center, dist, height = pcall(mirrorBuild)
+	local ok, stage, model, bounds = pcall(mirrorBuild)
 	if not ok then
 		logf("cermin gagal: %s", tostring(stage))
 		mirrorMsg.Text = "Cermin gagal: " .. tostring(stage)
@@ -5449,9 +5538,9 @@ function Mirror.refresh()
 	end
 	local old = Mirror.stage
 	stage.Parent = mirrorVP
-	mirrorCam.CFrame = CFrame.lookAt(center + Vector3.new(0, height * 0.04, dist), center)
-	Mirror.stage, Mirror.model = stage, model
+	Mirror.stage, Mirror.model, Mirror.bounds = stage, model, bounds
 	Mirror.sig = charSignature()
+	Mirror.fit()
 	mirrorMsg.Visible = false
 	if old then
 		old:Destroy()
