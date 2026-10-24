@@ -3,8 +3,10 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL (OPTIMAL v6): antrian render, katalog instan, tab ramping, bug UI fix.
+  VERSI FULL (OPTIMAL v7): antrian render, katalog instan, tab ramping, bug UI fix.
     Tab: avatar | karakter | animasi | sepatu | favorit | dipakai
+  UPDATE v7:
+   - Kamera cermin sejajar tinggi kepala avatar. Tab karakter: bundle bagian tubuh dipasang kilat (tukar mesh + prefetch).
   UPDATE v6:
    - Cowo / Cewe jauh lebih cepat: gender dihitung di latar belakang untuk semua avatar (batch paralel).
    - Pencarian lebih cepat: 3 backend diadu bersamaan, hasil persis paralel, hasil teratas di-prefetch.
@@ -2020,6 +2022,106 @@ function E.removeAsset(id)
 	return true
 end
 
+local BODY_PARTS = {
+	[17] = { "Head" },
+	[27] = { "UpperTorso", "LowerTorso" },
+	[28] = { "RightUpperArm", "RightLowerArm", "RightHand" },
+	[29] = { "LeftUpperArm", "LeftLowerArm", "LeftHand" },
+	[30] = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" },
+	[31] = { "RightUpperLeg", "RightLowerLeg", "RightFoot" },
+}
+E.bodyPre, E.bodyPreOrder = {}, {}
+
+local function bodyDesc(assets)
+	local d = Instance.new("HumanoidDescription")
+	for _, a in ipairs(assets) do
+		addToDesc(d, a.id, a.tid)
+	end
+	return d
+end
+
+-- tukar mesh bagian tubuh langsung di boneka skin (tanpa render ulang seluruh avatar)
+function E.fastBody(bundleId, assets)
+	if E.remote or not E.skinActive then
+		return false
+	end
+	local char = player.Character
+	local skin = char and char:FindFirstChild(SKIN_NAME)
+	local hum = E.humanoid()
+	if not skin or hum.RigType ~= Enum.HumanoidRigType.R15 then
+		return false
+	end
+	local model = E.bodyPre[bundleId]
+	if model then
+		E.bodyPre[bundleId] = nil
+		for i, id in ipairs(E.bodyPreOrder) do
+			if id == bundleId then
+				table.remove(E.bodyPreOrder, i)
+				break
+			end
+		end
+	else
+		model = buildDonor(bodyDesc(assets))
+	end
+	if not model then
+		return false
+	end
+	local changed, n = {}, 0
+	for _, a in ipairs(assets) do
+		for _, pn in ipairs(BODY_PARTS[a.tid] or {}) do
+			local dp, cp = model:FindFirstChild(pn), skin:FindFirstChild(pn)
+			if dp and cp and dp:IsA("MeshPart") and cp:IsA("MeshPart") then
+				pcall(function()
+					cp.MeshId = dp.MeshId
+					cp.TextureID = dp.TextureID
+					cp.Size = dp.Size
+				end)
+				pcall(function()
+					for _, x in ipairs(cp:GetChildren()) do
+						if x:IsA("SurfaceAppearance") then
+							x:Destroy()
+						end
+					end
+					local sa = dp:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						sa:Clone().Parent = cp
+					end
+				end)
+				for _, da in ipairs(dp:GetChildren()) do
+					if da:IsA("Attachment") then
+						local ca = cp:FindFirstChild(da.Name)
+						if ca and ca:IsA("Attachment") then
+							ca.CFrame = da.CFrame
+						end
+					end
+				end
+				changed[pn] = true
+				n = n + 1
+			end
+		end
+	end
+	if n > 0 then
+		local ours = {}
+		for _, d in ipairs(skin:GetDescendants()) do
+			if d:IsA("Motor6D") and not ours[d.Name] then
+				ours[d.Name] = d
+			end
+		end
+		for _, m in ipairs(model:GetDescendants()) do
+			if m:IsA("Motor6D") and ours[m.Name] and m.Part0 and m.Part1 and (changed[m.Part0.Name] or changed[m.Part1.Name]) then
+				pcall(function()
+					ours[m.Name].C0 = m.C0
+					ours[m.Name].C1 = m.C1
+				end)
+			end
+		end
+	end
+	pcall(function()
+		model:Destroy()
+	end)
+	return n > 0
+end
+
 function E.resolveBundle(bundleId)
 	local c = E.bundleCache[bundleId]
 	if c then
@@ -2062,9 +2164,44 @@ function E.resolveBundle(bundleId)
 	return results, n
 end
 
+-- antrean prefetch bundle (3 paralel). Bundle bagian tubuh juga disiapkan model donornya (maks 6)
+E.bQ, E.bWorkers = {}, 0
 function E.prefetchBundle(id)
-	if not E.bundleCache[id] then
-		task.spawn(E.resolveBundle, id)
+	if E.bundleCache[id] then
+		return
+	end
+	table.insert(E.bQ, 1, id)
+	while E.bWorkers < 3 and #E.bQ > 0 do
+		E.bWorkers = E.bWorkers + 1
+		task.spawn(function()
+			while #E.bQ > 0 and not stale() do
+				local b = table.remove(E.bQ, 1)
+				if not E.bundleCache[b] then
+					pcall(function()
+						local results, n = E.resolveBundle(b)
+						if results and not E.remote and E.skinActive and #E.bodyPreOrder < 6 and not E.bodyPre[b] then
+							local assets, only = {}, true
+							for i = 1, n do
+								local r = results[i]
+								if r and r.kind == "asset" and r.tid and BODY_PARTS[r.tid] then
+									assets[#assets + 1] = { id = r.id, tid = r.tid }
+								elseif r then
+									only = false
+								end
+							end
+							if only and #assets > 0 then
+								local m = buildDonor(bodyDesc(assets))
+								if m then
+									E.bodyPre[b] = m
+									table.insert(E.bodyPreOrder, b)
+								end
+							end
+						end
+					end)
+				end
+			end
+			E.bWorkers = E.bWorkers - 1
+		end)
 	end
 end
 
@@ -2085,16 +2222,42 @@ function E.equipBundle(bundleId, bundleName, onDone, slot, slotName)
 	end
 	local nl = (E.pending or E.look):Clone()
 	local applied = 0
+	local bodyAssets, onlyBody = {}, true
 	for i = 1, n do
 		local r = results[i]
 		if r then
 			if r.kind == "outfit" and r.d and not slot then
 				mergeDescription(nl, r.d)
 				applied = applied + 1
+				onlyBody = false
 			elseif r.kind == "asset" and r.tid and (not slot or r.tid == slot) then
 				addToDesc(nl, r.id, r.tid)
 				applied = applied + 1
+				if BODY_PARTS[r.tid] then
+					bodyAssets[#bodyAssets + 1] = { id = r.id, tid = r.tid }
+				else
+					onlyBody = false
+				end
 			end
+		end
+	end
+	-- jalur kilat: bundle hanya berisi bagian tubuh -> tukar mesh di boneka (target ~2 detik)
+	if applied > 0 and onlyBody and #bodyAssets > 0 and not E.remote and E.skinActive and not E.busy and not E.pending then
+		local t0 = os.clock()
+		E.busy = true
+		local okF, resF = pcall(E.fastBody, bundleId, bodyAssets)
+		E.busy = false
+		if okF and resF then
+			if E.look then
+				table.insert(E.history, E.look)
+				E.redo = {}
+			end
+			E.look = nl
+			E.failed = {}
+			E.lastMethod = "badan-cepat"
+			fire()
+			toast(string.format("%s dipakai: %s  (%.1f dtk)", tostring(slotName or "Bundle"), tostring(bundleName or bundleId), os.clock() - t0), "ok")
+			return finish(true)
 		end
 	end
 	if slot and applied == 0 then
@@ -3574,6 +3737,13 @@ local function buildCatalog(page, group)
 				local y = c.card.AbsolutePosition.Y
 				if y + 120 > top - 600 and y < top + h + 600 then
 					c.loadImg()
+				end
+			end
+			if c.item.Type == "Bundle" and not c.pf and c.card.AbsoluteSize.Y > 0 then
+				local y = c.card.AbsolutePosition.Y
+				if y + 120 > top and y < top + h + 120 then
+					c.pf = true
+					E.prefetchBundle(c.item.Id)
 				end
 			end
 		end
@@ -5437,7 +5607,18 @@ local function measure(model)
 		minY, maxY = cf.Position.Y - size.Y / 2, cf.Position.Y + size.Y / 2
 		rad = math.max(size.X, size.Z) / 2
 	end
-	return { minY = minY, height = math.max(maxY - minY, 0.5), cy = (minY + maxY) / 2, radius = math.max(rad, 0.5) }
+	local headY, headH
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name == "Head" and d.Transparency < 0.95 then
+			headY, headH = d.Position.Y, d.Size.Y
+			break
+		end
+	end
+	if not headY then
+		headY, headH = maxY - 0.6, 1.2
+	end
+	return { minY = minY, maxY = maxY, height = math.max(maxY - minY, 0.5), cy = (minY + maxY) / 2,
+		radius = math.max(rad, 0.5), headY = headY, headH = headH }
 end
 
 local function mirrorBuild()
@@ -5507,8 +5688,12 @@ function Mirror.fit()
 	local aspect = math.max(vs.X, 1) / math.max(vs.Y, 1)
 	local tanV = math.tan(math.rad(mirrorCam.FieldOfView) / 2)
 	local tanH = tanV * aspect
-	local dist = math.max((b.height / 2 * 1.12) / tanV, (b.radius * 1.12) / tanH) + b.radius
-	local target = CFrame.lookAt(Vector3.new(0, b.cy + b.height * 0.03, dist), Vector3.new(0, b.cy, 0))
+	-- kamera sejajar tinggi kepala; titik pandang di antara kepala & tengah badan supaya seluruh avatar tetap masuk
+	local camY = b.headY
+	local lookY = (b.headY + b.cy) / 2
+	local halfH = math.max(b.maxY - lookY, lookY - b.minY, b.headH) * 1.12
+	local dist = math.max(halfH / tanV, (b.radius * 1.12) / tanH) + b.radius
+	local target = CFrame.lookAt(Vector3.new(0, camY, dist), Vector3.new(0, lookY, 0))
 	if Mirror.fitted then
 		tween(mirrorCam, { CFrame = target }, 0.25)
 	else
