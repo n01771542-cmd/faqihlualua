@@ -1,26 +1,30 @@
--- ============================================================================
--- LEON4951 HUB v2 + AVATAR ENGINE (full, no feature cut)
--- Tabs: avatar | karakter | animasi | sepatu | sedang di pakai
--- Engine from leon4951hub avatar script — UI shell LEON4951
--- ============================================================================
+--[[ =============================================================================
+  leon4951hub  -  script.lua   (LocalScript / StarterPlayerScripts)
+  Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
+  karakter kamu.
 
--- [ PRE-INITIALIZATION CLEANUP ]
-local CoreGui = game:GetService("CoreGui")
+  VERSI FULL (OPTIMAL v2): antrian render, katalog instan, tab ramping, bug UI fix.
+    Tab: avatar | karakter | animasi | sepatu | favorit | dipakai
+  UPDATE v4 (SUPER CEPAT): 130 kartu avatar langsung muncul, jalur pasang cepat, cache + prefetch,
+   bar loading, tab FAVORIT (tombol hati di kartu avatar & item, tersimpan ke file kalau ada writefile).
+  UPDATE v2:
+   - Filter bacon / bacon cewe jauh lebih ketat (cek pembuat item + cadangan ProductInfo,
+     minimal item "asli" buatan orang lain). Hasil PENCARIAN tetap tidak disaring.
+   - Filter Cowo / Cewe diganti sistem skor (kata kunci kuat/lemah + tipe aksesori).
+     Avatar yang tidak jelas gendernya TIDAK ikut muncul di filter Cowo/Cewe lagi.
+   - "Item terbanyak" hanya menampilkan avatar asli dengan item banyak (lihat MOST_MIN_ITEMS).
+  UPDATE v3 (CEPAT): kandidat dari teman / pemain server / teman-dari-teman (bukan tebak ID acak),
+   kartu langsung muncul begitu lolos filter, gender dihitung di latar belakang, paralel 24.
+  Tekan K untuk buka/tutup UI.
+============================================================================= ]]
+
+----------------------------------------------------------------------------
+-- [1] SERVICES
+----------------------------------------------------------------------------
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local player = LocalPlayer
-
-local function DestroyOldUI(name)
-    local old = CoreGui:FindFirstChild(name) or (LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name))
-    if old then pcall(function() old:Destroy() end) end
-end
-DestroyOldUI("leon4951HubGuiV2")
-DestroyOldUI("leon4951hub")
-
--- [ SERVICES ]
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local Workspace = game:GetService("Workspace")
@@ -28,7 +32,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local InsertService = game:GetService("InsertService")
 local HttpService = game:GetService("HttpService")
 
+local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+local old = playerGui:FindFirstChild("leon4951hub")
+if old then
+	old:Destroy()
+end
+
 local GEN = (tonumber(playerGui:GetAttribute("leon_gen")) or 0) + 1
 playerGui:SetAttribute("leon_gen", GEN)
 local function stale()
@@ -36,9 +47,11 @@ local function stale()
 end
 
 local REMOTE_NAME = "AvatarStudioApply"
-local PAGE_SIZE = 30
+local PAGE_SIZE = 120
+local MAX_ITEMS = 1000
+local TOGGLE_KEY = Enum.KeyCode.K
 
-
+----------------------------------------------------------------------------
 -- [2] TABEL TIPE ITEM
 ----------------------------------------------------------------------------
 local CLASSIC = {
@@ -198,11 +211,13 @@ local function button(parent, o)
 		AnchorPoint = o.anchor or Vector2.zero, LayoutOrder = o.order or 0, Parent = parent,
 	})
 	corner(b, o.radius or 10)
+	b:SetAttribute("Base", bg)
 	b.MouseEnter:Connect(function()
-		tween(b, { BackgroundColor3 = bg:Lerp(Color3.new(1, 1, 1), 0.12) }, 0.12)
+		local base = b:GetAttribute("Base") or bg
+		tween(b, { BackgroundColor3 = base:Lerp(Color3.new(1, 1, 1), 0.12) }, 0.12)
 	end)
 	b.MouseLeave:Connect(function()
-		tween(b, { BackgroundColor3 = bg }, 0.15)
+		tween(b, { BackgroundColor3 = b:GetAttribute("Base") or bg }, 0.15)
 	end)
 	if o.onClick then
 		b.Activated:Connect(o.onClick)
@@ -221,7 +236,7 @@ end
 
 local function thumbURL(kind, id, size)
 	size = size or 150
-	return string.format("rbxthumb://type=%s&id=%d&w=%d&h=%d", kind, id, size, size)
+	return "rbxthumb://type=" .. kind .. "&id=" .. string.format("%.0f", id) .. "&w=" .. size .. "&h=" .. size
 end
 
 local function commas(n)
@@ -231,7 +246,9 @@ local function commas(n)
 end
 
 local function priceText(p)
-	if p == nil then
+	if p == false then
+		return "…"
+	elseif p == nil then
 		return "Tidak dijual"
 	elseif p == 0 then
 		return "Gratis"
@@ -440,6 +457,7 @@ local E = {
 	busy = false, remote = nil, lastMethod = "", injectFirst = false, cap = {}, useSkin = true, skinMode = "puppet", directIds = {},
 	scales = {}, skin = nil, origColors = nil,
 	listeners = {},
+	bundleCache = {}, loadingBundles = 0, pendingClicks = 0,
 }
 
 function E.onChanged(fn)
@@ -475,6 +493,14 @@ function E.name(id)
 		E.assetType(id)
 	end
 	return E.names[id] or ("Item #" .. id)
+end
+
+local function needReady()
+	if E.look and E.original then
+		return true
+	end
+	toast("Karakter masih disiapkan, coba lagi sebentar...", "warn")
+	return false
 end
 
 local function collect(desc)
@@ -624,6 +650,11 @@ end
 -- INJECTOR (jalur cadangan): muat aset lalu pasang langsung ke karakter
 ------------------------------------------------------------------------
 local function donorModel(desc)
+	if E.pre and E.pre.desc == desc then -- model sudah disiapkan lebih awal (prefetch)
+		local m = E.pre.model
+		E.pre = nil
+		return m
+	end
 	local hum = E.humanoid()
 	local rig = (hum.RigType == Enum.HumanoidRigType.R6) and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
 	local ok, m = callAny(Players, { "CreateHumanoidModelFromDescriptionAsync", "CreateHumanoidModelFromDescription" }, desc, rig)
@@ -1609,6 +1640,136 @@ local function isInjectable(t)
 	return t and (ACC[t] or t == 11 or t == 12 or t == 2 or t == 18 or ANIM_SLOT[t])
 end
 
+local FAST_CLASS = { [11] = "Shirt", [12] = "Pants", [2] = "ShirtGraphic" }
+
+-- pasang/lepas 1-3 item langsung di boneka skin (tanpa render ulang donor)
+function E.fastApply(added, removed)
+	local total = #added + #removed
+	if not E.skinActive or not E.useSkin or total == 0 or total > 3 then
+		return false
+	end
+	local char = player.Character
+	local skin = char and char:FindFirstChild(SKIN_NAME)
+	if not skin then
+		return false
+	end
+	local plan = {}
+	for _, id in ipairs(removed) do
+		local tagged
+		for _, ch in ipairs(skin:GetChildren()) do
+			if ch:GetAttribute("ASF") == id then
+				tagged = ch
+				break
+			end
+		end
+		local tid = E.types[id]
+		if tagged then
+			table.insert(plan, { "del", id, tagged })
+		elseif tid and FAST_CLASS[tid] then
+			table.insert(plan, { "delclass", id, FAST_CLASS[tid] })
+		else
+			return false -- item dari render donor: pakai render penuh
+		end
+	end
+	for _, id in ipairs(added) do
+		local tid = E.types[id] or E.assetType(id)
+		local acc = tid and ACC[tid]
+		if acc and not acc[2] and tid ~= 76 and tid ~= 77 then
+			table.insert(plan, { "acc", id, tid })
+		elseif tid and FAST_CLASS[tid] then
+			table.insert(plan, { "cls", id, tid })
+		else
+			return false -- layered / alis / bulu mata / bodypart / animasi: render penuh
+		end
+	end
+	for _, p in ipairs(plan) do
+		local kind, id = p[1], p[2]
+		if kind == "del" then
+			p[3]:Destroy()
+		elseif kind == "delclass" then
+			for _, ch in ipairs(skin:GetChildren()) do
+				if ch:IsA(p[3]) then
+					ch:Destroy()
+				end
+			end
+		elseif kind == "acc" then
+			if not E.attachDirect(id, skin) then
+				return false
+			end
+			local c = skin:FindFirstChild("AS_" .. id)
+			if c then
+				c:SetAttribute("ASF", id)
+			end
+		else
+			local class = FAST_CLASS[p[3]]
+			local objs, how = loadAsset(id, p[3])
+			if not objs then
+				return false
+			end
+			local inst = findIn(objs, class)
+			if not inst then
+				if how == "donor" then
+					pcall(function()
+						objs[1]:Destroy()
+					end)
+				end
+				return false
+			end
+			for _, ch in ipairs(skin:GetChildren()) do
+				if ch:IsA(class) then
+					ch:Destroy()
+				end
+			end
+			local c = inst:Clone()
+			c.Name = "AS_" .. id
+			c:SetAttribute("ASF", id)
+			c.Parent = skin
+			if how == "donor" then
+				pcall(function()
+					objs[1]:Destroy()
+				end)
+			end
+		end
+	end
+	return true
+end
+
+-- pastikan aksesori benar-benar ada di boneka; kalau kurang, pasang langsung
+function E.ensureWorn(id)
+	if E.remote or not E.skinActive then
+		return true
+	end
+	local char = player.Character
+	local skin = char and char:FindFirstChild(SKIN_NAME)
+	if not skin then
+		return false
+	end
+	local tid = E.types[id]
+	if not (tid and ACC[tid]) then
+		return true
+	end
+	local n = 0
+	for _, ch in ipairs(skin:GetChildren()) do
+		if ch:IsA("Accessory") then
+			n = n + 1
+		end
+	end
+	if n >= #E.look:GetAccessories(true) then
+		return true
+	end
+	if skin:FindFirstChild("AS_" .. id) then
+		return true
+	end
+	if E.attachDirect(id, skin) then
+		local c = skin:FindFirstChild("AS_" .. id)
+		if c then
+			c:SetAttribute("ASF", id)
+		end
+		return true
+	end
+	return false
+end
+
 function E._commit(newLook, text, skipHist, force)
 	local hum, char = E.humanoid()
 	local prevSet = collect(E.look)
@@ -1625,7 +1786,23 @@ function E._commit(newLook, text, skipHist, force)
 		end
 	end
 
-	local how
+		if not force and not E.remote and E.fastApply(added, removed) then
+		E.lastMethod = "cepat"
+		if not skipHist and E.look then
+			table.insert(E.history, E.look)
+			while #E.history > 40 do
+				table.remove(E.history, 1)
+			end
+			E.redo = {}
+		end
+		E.look = newLook
+		E.failed = {}
+		task.delay(0.1, E.reapplyTweaks)
+		fire()
+		return true
+	end
+
+local how
 	if E.remote then
 		E.cleanInjected(char)
 		local ok, err = serverApply(newLook)
@@ -1747,71 +1924,249 @@ function E.commit(newLook, text, skipHist, force)
 end
 
 ------------------------------------------------------------------------
+-- ANTRIAN RENDER: klik beruntun digabung, hanya hasil akhir yang dirender
+------------------------------------------------------------------------
+E.pending, E.pendingCbs, E.worker = nil, {}, false
+
+function E.queueLook(nl, onDone)
+	E.pending = nl
+	if onDone then
+		table.insert(E.pendingCbs, onDone)
+	end
+	if E.worker then
+		return
+	end
+	E.worker = true
+	task.spawn(function()
+		while E.pending do
+			local l, cbs = E.pending, E.pendingCbs
+			E.pending, E.pendingCbs = nil, {}
+			while E.busy do
+				task.wait(0.05)
+			end
+			local ok = E.commit(l, "queue")
+			for _, cb in ipairs(cbs) do
+				pcall(cb, ok)
+			end
+		end
+		E.worker = false
+	end)
+end
+
+------------------------------------------------------------------------
 -- API tingkat tinggi
 ------------------------------------------------------------------------
-function E.toggleAsset(id, itemName)
+function E.toggleAsset(id, itemName, onDone)
+	local function finish(ok)
+		if onDone then
+			onDone(ok)
+		end
+		return ok
+	end
+	if not needReady() then
+		return finish(false)
+	end
 	local tid = E.assetType(id)
 	if not tid then
 		toast("Tidak bisa membaca info item ini", "danger")
-		return false
+		return finish(false)
 	end
 	if not ACC[tid] and not CLASSIC[tid] then
 		toast("Tipe item ini belum didukung", "warn")
-		return false
+		return finish(false)
 	end
-	local worn = E.isWorn(id)
-	local nl = E.look:Clone()
+	local t0 = os.clock()
+	local base = E.pending or E.look
+	local worn = (collect(base))[id] == true
+	local nl = base:Clone()
 	if worn then
 		removeFromDesc(nl, id)
 	else
 		addToDesc(nl, id, tid)
 	end
-	local ok = E.commit(nl, itemName)
-	if ok then
-		if worn then
-			toast("Dilepas: " .. tostring(itemName or id), "warn")
-		elseif E.isWorn(id) then
-			toast("Dipakai: " .. tostring(itemName or id) .. "  (" .. E.lastMethod .. ")", "ok")
+	E.queueLook(nl, function(ok)
+		if ok then
+			if worn then
+				toast("Dilepas: " .. tostring(itemName or id), "warn")
+			elseif E.isWorn(id) then
+				local okW = E.ensureWorn(id)
+				toast(string.format("Dipakai: %s  (%s, %.1f dtk)", tostring(itemName or id), E.lastMethod, os.clock() - t0), okW and "ok" or "warn")
+			end
 		end
-	end
-	return ok
+		finish(ok)
+	end)
+	return true
 end
 
 function E.removeAsset(id)
-	local nl = E.look:Clone()
-	removeFromDesc(nl, id)
-	return E.commit(nl, "lepas")
-end
-
-function E.equipBundle(bundleId, bundleName)
-	local info = productInfo(bundleId, Enum.InfoType.Bundle)
-	if not info or not info.Items then
-		toast("Gagal membaca isi bundle", "danger")
+	if not needReady() then
 		return false
 	end
-	local nl = E.look:Clone()
-	for _, item in ipairs(info.Items) do
-		if item.Type == "UserOutfit" then
-			local od = descFromOutfit(item.Id)
-			if od then
-				mergeDescription(nl, od)
-			end
-		elseif item.Type == "Asset" then
-			local tid = E.assetType(item.Id)
-			if tid then
-				addToDesc(nl, item.Id, tid)
+	local nl = (E.pending or E.look):Clone()
+	removeFromDesc(nl, id)
+	E.queueLook(nl)
+	return true
+end
+
+function E.resolveBundle(bundleId)
+	local c = E.bundleCache[bundleId]
+	if c then
+		local t0 = os.clock()
+		while not c.done and os.clock() - t0 < 12 do
+			task.wait()
+		end
+		if c.done and not c.failed then
+			return c.results, c.n
+		end
+		return nil
+	end
+	c = { done = false }
+	E.bundleCache[bundleId] = c
+	local info = productInfo(bundleId, Enum.InfoType.Bundle)
+	if not info or not info.Items then
+		c.done, c.failed = true, true
+		E.bundleCache[bundleId] = nil
+		return nil
+	end
+	local n = #info.Items
+	local results, left = {}, n
+	for i, item in ipairs(info.Items) do
+		task.spawn(function()
+			pcall(function()
+				if item.Type == "UserOutfit" then
+					results[i] = { kind = "outfit", d = descFromOutfit(item.Id) }
+				elseif item.Type == "Asset" then
+					results[i] = { kind = "asset", id = item.Id, tid = E.assetType(item.Id) }
+				end
+			end)
+			left = left - 1
+		end)
+	end
+	local t0 = os.clock()
+	while left > 0 and os.clock() - t0 < 12 do
+		task.wait()
+	end
+	c.results, c.n, c.done = results, n, true
+	return results, n
+end
+
+function E.prefetchBundle(id)
+	if not E.bundleCache[id] then
+		task.spawn(E.resolveBundle, id)
+	end
+end
+
+function E.equipBundle(bundleId, bundleName, onDone, slot, slotName)
+	local function finish(ok)
+		if onDone then
+			onDone(ok)
+		end
+		return ok
+	end
+	if not needReady() then
+		return finish(false)
+	end
+	local results, n = E.resolveBundle(bundleId)
+	if not results then
+		toast("Gagal membaca isi bundle", "danger")
+		return finish(false)
+	end
+	local nl = (E.pending or E.look):Clone()
+	local applied = 0
+	for i = 1, n do
+		local r = results[i]
+		if r then
+			if r.kind == "outfit" and r.d and not slot then
+				mergeDescription(nl, r.d)
+				applied = applied + 1
+			elseif r.kind == "asset" and r.tid and (not slot or r.tid == slot) then
+				addToDesc(nl, r.id, r.tid)
+				applied = applied + 1
 			end
 		end
 	end
-	local done = E.commit(nl, bundleName)
-	if done then
-		toast("Bundle dipakai: " .. tostring(bundleName or bundleId), "ok")
+	if slot and applied == 0 then
+		toast("Paket ini tidak punya " .. tostring(slotName or "bagian itu") .. ", coba paket lain", "warn")
+		return finish(false)
 	end
-	return done
+	E.queueLook(nl, function(ok)
+		if ok then
+			toast((slot and (tostring(slotName) .. " dipakai dari: ") or "Bundle dipakai: ") .. tostring(bundleName or bundleId), "ok")
+		end
+		finish(ok)
+	end)
+	return true
+end
+
+E.descCache, E.descOrder, E.pre = {}, {}, nil
+
+function E.cacheDesc(uid, desc)
+	if E.descCache[uid] then
+		return
+	end
+	E.descCache[uid] = desc
+	table.insert(E.descOrder, uid)
+	if #E.descOrder > 250 then
+		local oldId = table.remove(E.descOrder, 1)
+		local d = E.descCache[oldId]
+		E.descCache[oldId] = nil
+		pcall(function()
+			d:Destroy()
+		end)
+	end
+end
+
+function E.getDesc(uid)
+	local c = E.descCache[uid]
+	if c then
+		return c:Clone()
+	end
+	local d, err = descFromUser(uid)
+	if d then
+		E.cacheDesc(uid, d)
+		return d:Clone()
+	end
+	return nil, err
+end
+
+-- siapkan donor rig di latar belakang saat kartu di-hover / disentuh
+function E.prefetchUser(uid)
+	if E.pre and E.pre.uid == uid then
+		return
+	end
+	E.preTok = (E.preTok or 0) + 1
+	local tok = E.preTok
+	task.spawn(function()
+		local d = E.getDesc(uid)
+		if not d or tok ~= E.preTok then
+			return
+		end
+		local m = donorModel(d)
+		if not m then
+			return
+		end
+		if tok ~= E.preTok then
+			pcall(function()
+				m:Destroy()
+			end)
+			return
+		end
+		if E.pre then
+			pcall(function()
+				E.pre.model:Destroy()
+			end)
+		end
+		E.pre = { uid = uid, desc = d, model = m }
+	end)
 end
 
 function E.applyUserVisual(userId, displayName, keepLook)
-	local desc, derr = descFromUser(userId)
+	local desc, derr
+	if E.pre and E.pre.uid == userId then
+		desc = E.pre.desc
+	else
+		desc, derr = E.getDesc(userId)
+	end
 	if not desc then
 		logf("ambil avatar %s gagal: %s", tostring(userId), tostring(derr))
 		return false, "gagal mengambil avatar: " .. tostring(derr)
@@ -1841,7 +2196,7 @@ function E.applyUser(userId, displayName)
 		return false
 	end
 	if E.remote then
-		local desc = descFromUser(userId)
+		local desc = E.getDesc(userId)
 		if not desc then
 			toast("Avatar pemain tidak bisa dimuat", "danger")
 			return false
@@ -1865,10 +2220,14 @@ function E.applyUser(userId, displayName)
 end
 
 function E.removeAll()
-	local nl = E.look:Clone()
+	if not needReady() then
+		return false
+	end
+	local nl = (E.pending or E.look):Clone()
 	nl:SetAccessories({}, true)
 	E.failed = {}
-	return E.commit(nl, "lepas semua")
+	E.queueLook(nl)
+	return true
 end
 
 function E.undo()
@@ -1892,6 +2251,10 @@ function E.doRedo()
 end
 
 function E.reset()
+	if not needReady() then
+		return
+	end
+	E.pending = nil
 	if E.skinActive then
 		E.removeSkin()
 		E.userVisual = nil
@@ -2002,35 +2365,54 @@ end
 
 function E.probe()
 	local cap = {}
-	local ok, r = pcall(function()
-		return game:GetObjects("rbxassetid://1028606")
-	end)
-	if not ok then
-		cap.getObjects = false
-	elseif type(r) == "table" and #r > 0 then
-		cap.getObjects = true
-	end
-	local ok2, m2 = pcall(function()
-		return InsertService:LoadAsset(1028606)
-	end)
-	if not ok2 then
-		cap.insert = false
-	elseif m2 then
-		cap.insert = true
-		pcall(function()
-			m2:Destroy()
+	local pending = 3
+	task.spawn(function()
+		local ok, r = pcall(function()
+			return game:GetObjects("rbxassetid://1028606")
 		end)
-	end
-	local d = Instance.new("HumanoidDescription")
-	addToDesc(d, 1028606, 8)
-	local dm = donorModel(d)
-	if dm then
-		cap.donor = dm:FindFirstChildOfClass("Accessory") ~= nil or nil
-		pcall(function()
-			dm:Destroy()
+		if not ok then
+			cap.getObjects = false
+		elseif type(r) == "table" and #r > 0 then
+			cap.getObjects = true
+		end
+		pending = pending - 1
+	end)
+	task.spawn(function()
+		local ok2, m2 = pcall(function()
+			return InsertService:LoadAsset(1028606)
 		end)
-	else
-		cap.donor = false
+		if not ok2 then
+			cap.insert = false
+		elseif m2 then
+			cap.insert = true
+			pcall(function()
+				m2:Destroy()
+			end)
+		end
+		pending = pending - 1
+	end)
+	task.spawn(function()
+		local okD = pcall(function()
+			local d = Instance.new("HumanoidDescription")
+			addToDesc(d, 1028606, 8)
+			local dm = donorModel(d)
+			if dm then
+				cap.donor = dm:FindFirstChildOfClass("Accessory") ~= nil or nil
+				pcall(function()
+					dm:Destroy()
+				end)
+			else
+				cap.donor = false
+			end
+		end)
+		if not okD then
+			cap.donor = false
+		end
+		pending = pending - 1
+	end)
+	local t0 = os.clock()
+	while pending > 0 and os.clock() - t0 < 5 do
+		task.wait(0.05)
 	end
 	E.cap = cap
 	E.injectFirst = (cap.getObjects ~= false) or (cap.insert ~= false) or (cap.donor ~= false)
@@ -2087,9 +2469,18 @@ function E.init()
 	E.snapBody(char)
 	E.snapAnim(char)
 	E.hookChar(char)
-	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 2)
+	E.remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME) or ReplicatedStorage:WaitForChild(REMOTE_NAME, 1)
+	local d, gotDesc = nil, false
+	task.spawn(function()
+		d = appliedDesc(hum)
+		gotDesc = true
+	end)
 	E.probe()
-	local d = appliedDesc(hum)
+	local tw = os.clock()
+	while not gotDesc and os.clock() - tw < 10 do
+		task.wait(0.05)
+	end
+	d = d or Instance.new("HumanoidDescription")
 	E.original = d:Clone()
 	E.look = d:Clone()
 	E.origColors = {}
@@ -2123,7 +2514,7 @@ function E.init()
 		end
 	end)
 	task.spawn(function()
-		while task.wait(0.75) do
+		while task.wait(1.2) do
 			if stale() then
 				break
 			end
@@ -2136,16 +2527,42 @@ function E.init()
 end
 
 ----------------------------------------------------------------------------
--- [6] KATALOG  (hanya: Karakter/Tubuh, Animasi, Sepatu)
+-- [6] KATALOG  (Karakter/Tubuh, Animasi, Sepatu)
 ----------------------------------------------------------------------------
+pcall(function()
+	math.randomseed(os.time())
+end)
+
 local CATEGORIES = {}
-local function C(group, id, name, kind, list)
-	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list })
+-- variants (hanya untuk bundle, jalur web cadangan): { Category, Subcategory, kataKunciBawaan }
+local function C(group, id, name, kind, list, variants, slot)
+	table.insert(CATEGORIES, { group = group, id = id, name = name, kind = kind, list = list, httpVariants = variants, slot = slot })
 end
 
-C("SET & BUNDLE", "b_body", "Karakter / Tubuh", "bundle", { "BodyParts" })
-C("SET & BUNDLE", "b_anim", "Animasi", "bundle", { "Animations" })
-C("SET & BUNDLE", "b_shoes", "Sepatu", "bundle", { "Shoes" })
+C("KARAKTER / TUBUH", "b_body", "Paket Karakter", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } })
+C("KARAKTER / TUBUH", "face", "Ekspresi Wajah", "asset", { "Face" })
+C("KARAKTER / TUBUH", "head", "Kepala", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 17)
+C("KARAKTER / TUBUH", "torso", "Badan", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 27)
+C("KARAKTER / TUBUH", "rarm", "Lengan Kanan", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 28)
+C("KARAKTER / TUBUH", "larm", "Lengan Kiri", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 29)
+C("KARAKTER / TUBUH", "rleg", "Kaki Kanan", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 31)
+C("KARAKTER / TUBUH", "lleg", "Kaki Kiri", "bundle", { "BodyParts" }, { { 4, 37 }, { 4 } }, 30)
+C("KARAKTER / TUBUH", "brow", "Alis", "asset", { "EyebrowAccessory" })
+C("KARAKTER / TUBUH", "lash", "Bulu Mata", "asset", { "EyelashAccessory" })
+
+C("ANIMASI", "b_anim", "Paket Animasi", "bundle", { "Animations" }, { { 12, 38 }, { 12 } })
+C("ANIMASI", "a_idle", "Idle", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 51)
+C("ANIMASI", "a_walk", "Jalan", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 55)
+C("ANIMASI", "a_run", "Lari", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 53)
+C("ANIMASI", "a_jump", "Lompat", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 52)
+C("ANIMASI", "a_fall", "Jatuh", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 50)
+C("ANIMASI", "a_climb", "Panjat", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 48)
+C("ANIMASI", "a_swim", "Renang", "bundle", { "Animations" }, { { 12, 38 }, { 12 } }, 54)
+C("ANIMASI", "a_mood", "Mood", "asset", { "MoodAnimation" })
+
+C("SEPATU", "b_shoes", "Set Sepatu", "bundle", { "Shoes" }, { { 4, 37, "shoes" }, { 3, nil, "shoes" }, { 1, 37, "shoes" } })
+C("SEPATU", "lshoe", "Sepatu Kiri", "asset", { "LeftShoeAccessory" })
+C("SEPATU", "rshoe", "Sepatu Kanan", "asset", { "RightShoeAccessory" })
 
 local SORTS = {
 	{ name = "Relevansi", enum = "Relevance" },
@@ -2156,16 +2573,9 @@ local SORTS = {
 	{ name = "Termahal", enum = "PriceHighToLow" },
 }
 
-for _, c in ipairs(CATEGORIES) do
-	if c.id == "b_body" then
-		c.httpCat = 4
-	elseif c.id == "b_anim" then
-		c.httpCat = 12
-	elseif c.id == "b_shoes" then
-		c.httpCat = 3
-	end
-end
+local HOSTS = { "https://catalog.roblox.com", "https://catalog.roproxy.com" }
 
+-- tipe aset -> Category katalog web (dipakai jalur HTTP v1 sebagai cadangan)
 local function httpCategoryFor(tid)
 	if tid == 8 or (tid and tid >= 41 and tid <= 47) or tid == 76 or tid == 77 then
 		return 11
@@ -2269,26 +2679,16 @@ function Query:aesPage()
 	if self.pages.IsFinished then
 		self.finished = true
 	end
-	local assetIds, bundleIds = {}, {}
-	for _, it in ipairs(res) do
-		if it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle then
-			table.insert(bundleIds, it.Id)
-		else
-			table.insert(assetIds, it.Id)
-		end
-	end
-	local aD = fetchDetails(assetIds, Enum.AvatarItemType.Asset)
-	local bD = fetchDetails(bundleIds, Enum.AvatarItemType.Bundle)
-	local items = {}
+	-- daftar langsung ditampilkan; nama & harga menyusul di latar belakang
+	local assetIds, bundleIds, items, byId = {}, {}, {}, {}
 	for _, it in ipairs(res) do
 		local isBundle = it.ItemType == "Bundle" or it.ItemType == Enum.AvatarItemType.Bundle
-		local d = (isBundle and bD or aD)[it.Id] or {}
+		table.insert(isBundle and bundleIds or assetIds, it.Id)
 		self.total = self.total + 1
-		local nm = d.Name or it.Name or ("Item #" .. it.Id)
-		table.insert(items, {
-			Id = it.Id, Type = isBundle and "Bundle" or "Asset", Name = nm,
-			Price = d.PriceInRobux, Order = self.total,
-		})
+		local nm = it.Name or ("Item #" .. it.Id)
+		local row = { Id = it.Id, Type = isBundle and "Bundle" or "Asset", Name = nm, Price = false, Order = self.total }
+		byId[(isBundle and "B" or "A") .. it.Id] = row
+		table.insert(items, row)
 		if not isBundle then
 			E.names[it.Id] = E.names[it.Id] or nm
 			if self.tid then
@@ -2296,28 +2696,72 @@ function Query:aesPage()
 			end
 		end
 	end
+	local function fill(ids, itemType, prefix)
+		if #ids == 0 then
+			return
+		end
+		task.spawn(function()
+			local det = fetchDetails(ids, itemType)
+			for id, d in pairs(det) do
+				local row = byId[prefix .. id]
+				if row then
+					row.Name = d.Name or row.Name
+					row.Price = d.PriceInRobux
+					if prefix == "A" and d.Name then
+						E.names[id] = d.Name
+					end
+					if row.onUpdate then
+						pcall(row.onUpdate)
+					end
+				end
+			end
+			for _, id in ipairs(ids) do
+				local row = byId[prefix .. id]
+				if row and row.Price == false then
+					row.Price = nil
+					if row.onUpdate then
+						pcall(row.onUpdate)
+					end
+				end
+			end
+		end)
+	end
+	fill(assetIds, Enum.AvatarItemType.Asset, "A")
+	fill(bundleIds, Enum.AvatarItemType.Bundle, "B")
 	return items
 end
 
+-- jalur web cadangan. Bundle memakai Category + Subcategory (37 = Bundles, 38 = AnimationBundles)
 function Query:httpPage()
 	local cat = self.cat
-	local common = "&Limit=" .. PAGE_SIZE .. "&SortType=" .. tostring(self.sortNum or 0)
-	if self.keyword ~= "" then
-		common = common .. "&Keyword=" .. urlenc(self.keyword)
-	end
+	local base = "&Limit=" .. PAGE_SIZE .. "&SortType=" .. tostring(self.sortNum or 0)
 	if self.freeOnly then
-		common = common .. "&MaxPrice=0"
+		base = base .. "&MaxPrice=0"
 	end
 	if self.cursor then
-		common = common .. "&cursor=" .. urlenc(self.cursor)
+		base = base .. "&cursor=" .. urlenc(self.cursor)
+	end
+	local function withKeyword(kw)
+		if kw and kw ~= "" then
+			return base .. "&Keyword=" .. urlenc(kw)
+		end
+		return base
 	end
 	local urls = {}
-	for _, host in ipairs({ "https://catalog.roblox.com", "https://catalog.roproxy.com" }) do
+	for _, host in ipairs(HOSTS) do
 		if cat.kind == "asset" and self.tid then
-			table.insert(urls, host .. "/v2/search/items/details?assetTypeIds=" .. self.tid .. common)
-			table.insert(urls, host .. "/v1/search/items/details?Category=" .. httpCategoryFor(self.tid) .. common)
+			local c = withKeyword(self.keyword)
+			table.insert(urls, host .. "/v2/search/items/details?assetTypeIds=" .. self.tid .. c)
+			table.insert(urls, host .. "/v1/search/items/details?Category=" .. httpCategoryFor(self.tid) .. c)
 		else
-			table.insert(urls, host .. "/v1/search/items/details?Category=" .. tostring(cat.httpCat or 1) .. common)
+			for _, v in ipairs(cat.httpVariants or { { 1, 37 } }) do
+				local q = "Category=" .. tostring(v[1])
+				if v[2] then
+					q = q .. "&Subcategory=" .. tostring(v[2])
+				end
+				local kw = (self.keyword ~= "") and self.keyword or v[3]
+				table.insert(urls, host .. "/v1/search/items/details?" .. q .. withKeyword(kw))
+			end
 		end
 	end
 	local a, b = 1, #urls
@@ -2404,415 +2848,360 @@ function Query:nextPage()
 end
 
 ----------------------------------------------------------------------------
-
-
-
+-- [7] TEMA + FILTER BACON / BACON CEWE + ANALISIS (jumlah item, cowo/cewe)
 ----------------------------------------------------------------------------
--- LEON4951 UI SHELL (theme + window)
-----------------------------------------------------------------------------
+-- ===== PENGATURAN FILTER (ubah angka ini kalau mau lebih longgar / lebih ketat) =====
+local FILTER_POLOSAN = true  -- true = sembunyikan avatar bawaan Roblox (bacon / bacon cewe / dll) dari tab avatar. false = tampilkan semua
+local MIN_REAL_ITEMS = 4     -- avatar dengan item kurang dari ini SELALU dianggap bacon (tersembunyi)
+local MIN_FOREIGN_ITEMS = 2  -- avatar asli minimal punya segini item BUKAN buatan Roblox (kalau kurang = bacon / bacon cewe)
+local ROBLOX_ONLY_MAX = 16   -- avatar dengan item sebanyak ini atau kurang yang cuma pakai item Roblox = bacon. Di atas ini langsung dianggap asli
+local MOST_MIN_ITEMS = 6     -- mode "Item terbanyak": hanya avatar dengan minimal segini item yang tampil
+local GENDER_MIN_DIFF = 2    -- selisih skor minimal untuk memastikan cowo/cewe (makin besar = makin teliti, hasil makin sedikit)
+local ROBLOX_CREATORS = { [1] = true, [1200769] = true } -- ID akun / grup resmi Roblox
+
+local PREWARM_SKIN = true -- render boneka sekali di awal supaya klik pertama sudah cepat (set false kalau avatar terlihat berubah di awal)
+local FEED_FIRST = 130    -- kartu avatar yang langsung muncul
+local FEED_MORE = 60      -- tambahan tiap gulir
+local FEED_CONC = 24      -- pengecekan avatar paralel
+
 local Theme = {
-    Background = Color3.fromRGB(7, 10, 17),
-    CardBg = Color3.fromRGB(14, 20, 32),
-    CardBorder = Color3.fromRGB(34, 48, 73),
-    Accent = Color3.fromRGB(0, 122, 255),
-    AccentBlue = Color3.fromRGB(0, 122, 255),
-    TabActiveBg = Color3.fromRGB(18, 32, 54),
-    TabActiveBorder = Color3.fromRGB(0, 122, 255),
-    TextPrimary = Color3.fromRGB(245, 247, 255),
-    TextMuted = Color3.fromRGB(130, 145, 175),
-    BorderColor = Color3.fromRGB(0, 122, 255),
-    WaGreen = Color3.fromRGB(37, 211, 102),
-    WaDarkGreen = Color3.fromRGB(18, 38, 28),
-    Surface = Color3.fromRGB(14, 20, 32),
-    Surface2 = Color3.fromRGB(20, 28, 42),
+	Background = rgb(7, 10, 17), CardBg = rgb(14, 20, 32), CardBorder = rgb(34, 48, 73),
+	Accent = rgb(0, 122, 255), TabActiveBg = rgb(18, 32, 54), TabActiveBorder = rgb(0, 122, 255),
+	TextPrimary = rgb(245, 247, 255), TextMuted = rgb(130, 145, 175),
+	WaGreen = rgb(37, 211, 102), WaDarkGreen = rgb(18, 38, 28),
 }
--- Map engine T colors to hub Theme for shared look
-T.Bg = Theme.Background
-T.Surface = Theme.CardBg
-T.Surface2 = Theme.Surface2
-T.Accent = Theme.Accent
-T.Text = Theme.TextPrimary
-T.Dim = Theme.TextMuted
-T.Stroke = Theme.CardBorder
-
 local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
-local Categories = {
-    { key = "Avatar",   name = "avatar",   page = "avatars" },
-    { key = "Karakter", name = "karakter", page = "karakter" },
-    { key = "Animasi",  name = "animasi",  page = "animasi" },
-    { key = "Sepatu",   name = "sepatu",   page = "sepatu" },
-    { key = "Dipakai",  name = "sedang di pakai", page = "worn" },
+-- samakan warna helper lama (button, label, toast, kartu) dengan tema baru
+T.Bg = Theme.Background
+T.Surface = Theme.CardBg
+T.Surface2 = rgb(22, 32, 50)
+T.Hover = rgb(30, 44, 70)
+T.Stroke = Theme.CardBorder
+T.Text = Theme.TextPrimary
+T.Dim = Theme.TextMuted
+T.Accent = Theme.Accent
+
+-- cache info item: nama (huruf kecil) + apakah buatan Roblox. Item default berulang, jadi cache menghemat banyak request
+local itemInfo = {}
+local itemMiss = {}
+local plainCache = {}
+local analysisCache = {}
+
+local PLAIN_PROPS = {
+	"Shirt", "Pants", "GraphicTShirt", "ClimbAnimation", "FallAnimation", "IdleAnimation",
+	"JumpAnimation", "RunAnimation", "SwimAnimation", "WalkAnimation", "MoodAnimation",
 }
-local activeCategoryIndex = 1
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "leon4951HubGuiV2"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = playerGui end
-
--- toast on ScreenGui
-toastHolder = mk("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(440, 300),
-	BackgroundTransparency = 1, ZIndex = 200, Parent = ScreenGui,
-})
-mk("UIListLayout", {
-	FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
-	HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = toastHolder,
-})
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.fromOffset(560, 340)
-MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-MainFrame.Position = UDim2.fromScale(0.5, 0.5)
-MainFrame.BackgroundColor3 = Theme.Background
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Visible = false
-MainFrame.Parent = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Theme.BorderColor
-MainStroke.Thickness = 6
-MainStroke.Parent = MainFrame
-local MainScale = Instance.new("UIScale")
-MainScale.Scale = 0
-MainScale.Parent = MainFrame
-
-local function CreateFLogo(size, rotation)
-    local container = Instance.new("Frame")
-    container.Size = size
-    container.BackgroundTransparency = 1
-    container.Rotation = rotation or -12
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))
-    topBar.BackgroundColor3 = Theme.AccentBlue
-    topBar.BorderSizePixel = 0
-    topBar.Parent = container
-    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 2)
-    local midBar = Instance.new("Frame")
-    midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))
-    midBar.Position = UDim2.new(0.2, 0, 0.4, 0)
-    midBar.BackgroundColor3 = Theme.AccentBlue
-    midBar.BorderSizePixel = 0
-    midBar.Parent = container
-    Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 2)
-    local stem = Instance.new("Frame")
-    stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)
-    stem.Position = UDim2.new(0.08, 0, 0, 0)
-    stem.BackgroundColor3 = Theme.AccentBlue
-    stem.BorderSizePixel = 0
-    stem.Parent = container
-    Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 2)
-    return container
+local function robloxMade(creatorId, creatorName)
+	local cid = tonumber(creatorId)
+	if cid and ROBLOX_CREATORS[cid] then
+		return true
+	end
+	return tostring(creatorName or "") == "Roblox"
 end
 
-local ToggleMainUI
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 52)
-Header.BackgroundTransparency = 1
-Header.Active = true
-Header.Parent = MainFrame
-local LogoF = CreateFLogo(UDim2.fromOffset(26, 26), -12)
-LogoF.Position = UDim2.new(0, 16, 0, 13)
-LogoF.Parent = Header
-local Title = Instance.new("TextLabel")
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 20
-Title.TextColor3 = Theme.Accent
-Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(0, 160, 0, 26)
-Title.Position = UDim2.new(0, 50, 0, 13)
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Text = "LEON4951 HUB"
-Title.Parent = Header
+-- nama dinormalkan: "bow tie" & "tie dye" dibuang supaya tidak salah dikira kata gender
+local function normName(name)
+	local s = string.lower(tostring(name or ""))
+	s = s:gsub("bow%s*tie", " "):gsub("tie%s*%-?%s*dye", " ")
+	return s
+end
 
--- undo/redo di header
-local UndoBtn = button(Header, { text = "↶", size = UDim2.fromOffset(28, 28), position = UDim2.new(1, -200, 0, 12), textSize = 14,
-	onClick = function() task.spawn(E.undo) end })
-local RedoBtn = button(Header, { text = "↷", size = UDim2.fromOffset(28, 28), position = UDim2.new(1, -168, 0, 12), textSize = 14,
-	onClick = function() task.spawn(E.doRedo) end })
+local function storeInfo(id, name, creatorId, creatorName)
+	itemInfo[id] = { name = normName(name), roblox = robloxMade(creatorId, creatorName) }
+end
 
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.fromOffset(36, 36)
-CloseBtn.Position = UDim2.new(1, -44, 0, 8)
-CloseBtn.BackgroundColor3 = Theme.CardBg
-CloseBtn.Text = "X"
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 16
-CloseBtn.TextColor3 = Theme.TextPrimary
-CloseBtn.AutoButtonColor = false
-CloseBtn.Parent = Header
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 10)
-Instance.new("UIStroke", CloseBtn).Color = Theme.CardBorder
-CloseBtn.MouseButton1Click:Connect(function() if ToggleMainUI then ToggleMainUI(false) end end)
+-- isi itemInfo untuk semua id. Coba batch 2x, lalu cadangan GetProductInfo per item. return true kalau SEMUA id terisi
+local function ensureDetails(ids)
+	local function missing()
+		local need, now = {}, os.clock()
+		for _, id in ipairs(ids) do
+			if itemInfo[id] == nil and (now - (itemMiss[id] or -100)) > 15 then
+				table.insert(need, id)
+			end
+		end
+		return need
+	end
+	for attempt = 1, 2 do
+		local need = missing()
+		if #need == 0 then
+			break
+		end
+		for i = 1, #need, 50 do
+			local chunk = {}
+			for j = i, math.min(i + 49, #need) do
+				table.insert(chunk, need[j])
+			end
+			local det = fetchDetails(chunk, Enum.AvatarItemType.Asset)
+			for _, id in ipairs(chunk) do
+				local dd = det[id]
+				if dd then
+					storeInfo(id, dd.Name, dd.CreatorTargetId, dd.CreatorName)
+				end
+			end
+		end
+		if attempt == 1 and #missing() > 0 then
+			task.wait(0.4)
+		end
+	end
+	local need = missing()
+	for k, id in ipairs(need) do
+		if k > 16 then
+			break
+		end
+		local info = productInfo(id, Enum.InfoType.Asset)
+		if info then
+			local c = info.Creator or {}
+			storeInfo(id, info.Name, c.Id or c.TargetId, c.Name)
+		else
+			itemMiss[id] = os.clock()
+		end
+	end
+	for _, id in ipairs(ids) do
+		if itemInfo[id] == nil then
+			return false
+		end
+	end
+	return true
+end
 
-local WaBtn = Instance.new("TextButton")
-WaBtn.Size = UDim2.fromOffset(100, 26)
-WaBtn.Position = UDim2.new(1, -150, 0, 13)
-WaBtn.BackgroundColor3 = Theme.WaGreen
-WaBtn.Text = "💬 WA"
-WaBtn.Font = Enum.Font.GothamBold
-WaBtn.TextSize = 9
-WaBtn.TextColor3 = Theme.TextPrimary
-WaBtn.AutoButtonColor = false
-WaBtn.Parent = Header
-Instance.new("UICorner", WaBtn).CornerRadius = UDim.new(0, 8)
-WaBtn.MouseButton1Click:Connect(function()
-	if setclipboard then setclipboard(WA_CHANNEL_LINK) elseif toclipboard then toclipboard(WA_CHANNEL_LINK) end
+-- hitung item pada avatar (aksesori + baju/celana/animasi), tentukan bacon / bacon cewe atau avatar asli.
+-- Bagian tubuh klasik (kepala, badan, tangan, kaki, wajah) tidak dihitung, karena itu bawaan semua akun.
+-- Aturan (semua harus lolos agar dianggap AVATAR ASLI):
+--   1) item >= MIN_REAL_ITEMS
+--   2) item > ROBLOX_ONLY_MAX  ATAU  minimal MIN_FOREIGN_ITEMS item buatan selain Roblox
+-- Kalau info item gagal dimuat dan belum terbukti asli -> dianggap bacon + ditandai unsure (disembunyikan, aman).
+local function analyzeDesc(desc)
+	local ids, types, seen = {}, {}, {}
+	local okA, accs = pcall(function()
+		return desc:GetAccessories(true)
+	end)
+	if okA then
+		for _, a in ipairs(accs) do
+			if not seen[a.AssetId] then
+				seen[a.AssetId] = true
+				table.insert(ids, a.AssetId)
+				types[a.AssetId] = a.AccessoryType.Name
+			end
+		end
+	end
+	for _, prop in ipairs(PLAIN_PROPS) do
+		local v = getProp(desc, prop)
+		if type(v) == "number" and v > 0 and not seen[v] then
+			seen[v] = true
+			table.insert(ids, v)
+		end
+	end
+	local count = #ids
+	local a = { count = count, ids = ids, types = types, plain = false, unsure = false, foreign = 0 }
+	if count < MIN_REAL_ITEMS then
+		a.plain = true
+		return a
+	end
+	if count > ROBLOX_ONLY_MAX then
+		a.foreign = count
+		return a
+	end
+	local complete = ensureDetails(ids)
+	local foreign = 0
+	for _, id in ipairs(ids) do
+		local inf = itemInfo[id]
+		if inf and not inf.roblox then
+			foreign = foreign + 1
+		end
+	end
+	a.foreign = foreign
+	if foreign >= MIN_FOREIGN_ITEMS then
+		a.plain = false
+	elseif complete then
+		a.plain = true
+	else
+		a.plain = true
+		a.unsure = true
+	end
+	return a
+end
+
+----------------------------------------------------------------------------
+-- DETEKSI COWO / CEWE (sistem skor)
+-- Roblox tidak menyimpan gender akun, jadi dinilai dari NAMA item + tipe aksesori.
+-- {kata, bobot}: bobot 2 = petunjuk kuat, 1 = petunjuk lemah. Skor per item dibatasi maks 3.
+-- Kalau selisih skor < GENDER_MIN_DIFF -> avatar dianggap "tidak jelas" dan TIDAK muncul di filter Cowo / Cewe.
+----------------------------------------------------------------------------
+local FEMALE_WORDS = {
+	{ "girl", 2 }, { "female", 2 }, { "woman", 2 }, { "women", 2 }, { "lady", 2 }, { "dress", 2 }, { "skirt", 2 },
+	{ "miniskirt", 2 }, { "sundress", 2 }, { "bikini", 2 }, { "ponytail", 2 }, { "pigtail", 2 }, { "twintail", 2 },
+	{ "twin tail", 2 }, { "heel", 2 }, { "lipstick", 2 }, { "makeup", 2 }, { "princess", 2 }, { "braid", 2 },
+	{ "blouse", 2 }, { "kawaii", 2 }, { "gyaru", 2 }, { "cewek", 2 }, { "wanita", 2 }, { "maid", 2 }, { "hime", 2 },
+	{ "mermaid", 2 }, { "fairy", 2 }, { "queen", 2 }, { "bride", 2 }, { "lolita", 2 }, { "bra", 2 }, { "stocking", 2 },
+	{ "tutu", 2 }, { "gown", 2 }, { "crop top", 2 }, { "corset", 2 }, { "babydoll", 2 }, { "waifu", 2 },
+	{ "bunny", 1 }, { "legging", 1 }, { "lash", 1 }, { "eyelash", 1 }, { "bangs", 1 }, { "bun", 1 }, { "bob", 1 },
+	{ "ribbon", 1 }, { "bow", 1 }, { "pink", 1 }, { "cute", 1 }, { "heart", 1 }, { "kitty", 1 }, { "pastel", 1 },
+	{ "sparkle", 1 }, { "glitter", 1 }, { "floral", 1 }, { "flower", 1 }, { "angel", 1 }, { "idol", 1 },
+}
+local MALE_WORDS = {
+	{ "boy", 2 }, { "male", 2 }, { "man", 2 }, { "men", 2 }, { "guy", 2 }, { "beard", 2 }, { "mustache", 2 },
+	{ "moustache", 2 }, { "stubble", 2 }, { "dude", 2 }, { "gentleman", 2 }, { "king", 2 }, { "cowok", 2 },
+	{ "pria", 2 }, { "goatee", 2 }, { "sideburn", 2 }, { "buzz cut", 2 }, { "crew cut", 2 }, { "undercut", 2 },
+	{ "mohawk", 2 }, { "pompadour", 2 }, { "tuxedo", 2 },
+	{ "bro", 1 }, { "suit", 1 }, { "necktie", 1 }, { "tie", 1 }, { "hoodie", 1 }, { "beanie", 1 }, { "cap", 1 },
+	{ "snapback", 1 }, { "jeans", 1 }, { "jersey", 1 }, { "tracksuit", 1 }, { "muscle", 1 }, { "bandana", 1 },
+	{ "skater", 1 }, { "streetwear", 1 }, { "sneaker", 1 }, { "bald", 1 }, { "spiky", 1 }, { "slick", 1 },
+}
+
+local function scoreWords(name, list)
+	local s = 0
+	for _, w in ipairs(list) do
+		if string.find(name, "%f[%a]" .. w[1] .. "e?s?%f[%A]") then
+			s = s + w[2]
+		end
+	end
+	return s
+end
+
+-- return "cewe" / "cowo" / nil (tidak jelas)
+local function genderOf(a)
+	ensureDetails(a.ids)
+	local f, m = 0, 0
+	for _, id in ipairs(a.ids) do
+		local inf = itemInfo[id]
+		local fi, mi = 0, 0
+		if inf then
+			fi = scoreWords(inf.name, FEMALE_WORDS)
+			mi = scoreWords(inf.name, MALE_WORDS)
+		end
+		local t = a.types[id]
+		if t == "DressSkirt" then
+			fi = fi + 3
+		elseif t == "Eyelash" then
+			fi = fi + 1
+		end
+		f = f + math.min(fi, 3)
+		m = m + math.min(mi, 3)
+	end
+	if f - m >= GENDER_MIN_DIFF then
+		return "cewe"
+	end
+	if m - f >= GENDER_MIN_DIFF then
+		return "cowo"
+	end
+	return nil
+end
+
+-- return: polosan (bacon / bacon cewe)?, sudah-pasti?
+local function isPlainAvatar(userId)
+	if not FILTER_POLOSAN then
+		return false, true
+	end
+	if plainCache[userId] ~= nil then
+		return plainCache[userId], true
+	end
+	local desc = descFromUser(userId)
+	if not desc then
+		return false, false
+	end
+	local a = analyzeDesc(desc)
+	pcall(function()
+		desc:Destroy()
+	end)
+	if a.unsure then
+		return true, false
+	end
+	plainCache[userId] = a.plain
+	analysisCache[userId] = a
+	return a.plain, true
+end
+
+----------------------------------------------------------------------------
+-- [7b] FAVORIT (tersimpan ke file kalau executor punya writefile)
+----------------------------------------------------------------------------
+local FAV_FILE = "leon4951hub_fav.json"
+local FAV = { avatars = {}, items = {}, listeners = {} }
+
+local function favSave()
+	if type(writefile) ~= "function" then
+		return
+	end
+	pcall(function()
+		writefile(FAV_FILE, HttpService:JSONEncode({ avatars = FAV.avatars, items = FAV.items }))
+	end)
+end
+pcall(function()
+	if type(readfile) == "function" and type(isfile) == "function" and isfile(FAV_FILE) then
+		local d = HttpService:JSONDecode(readfile(FAV_FILE))
+		if type(d) == "table" then
+			FAV.avatars = type(d.avatars) == "table" and d.avatars or {}
+			FAV.items = type(d.items) == "table" and d.items or {}
+		end
+	end
 end)
 
-local HeaderLine = Instance.new("Frame")
-HeaderLine.Size = UDim2.new(1, -32, 0, 1)
-HeaderLine.Position = UDim2.new(0, 16, 0, 48)
-HeaderLine.BackgroundColor3 = Theme.CardBorder
-HeaderLine.BorderSizePixel = 0
-HeaderLine.Parent = MainFrame
-
-local Body = Instance.new("Frame")
-Body.Size = UDim2.new(1, -32, 1, -56)
-Body.Position = UDim2.new(0, 16, 0, 52)
-Body.BackgroundTransparency = 1
-Body.Parent = MainFrame
-
-local Sidebar = Instance.new("ScrollingFrame")
-Sidebar.Size = UDim2.new(0, 135, 1, 0)
-Sidebar.BackgroundTransparency = 1
-Sidebar.BorderSizePixel = 0
-Sidebar.ScrollBarThickness = 0
-Sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Sidebar.Parent = Body
-Instance.new("UIListLayout", Sidebar).Padding = UDim.new(0, 6)
-Sidebar:FindFirstChildOfClass("UIListLayout").SortOrder = Enum.SortOrder.LayoutOrder
-
-local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -145, 1, 0)
-Content.Position = UDim2.new(0, 145, 0, 0)
-Content.BackgroundTransparency = 1
-Content.ClipsDescendants = true
-Content.Parent = Body
-
-local ContentTitle = Instance.new("TextLabel")
-ContentTitle.Font = Enum.Font.GothamBold
-ContentTitle.TextSize = 14
-ContentTitle.TextColor3 = Theme.TextPrimary
-ContentTitle.BackgroundTransparency = 1
-ContentTitle.Size = UDim2.new(1, 0, 0, 18)
-ContentTitle.Position = UDim2.new(0, 0, 0, 0)
-ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
-ContentTitle.Text = "AVATAR"
-ContentTitle.Parent = Content
-
-local ContentHost = Instance.new("Frame")
-ContentHost.Name = "ContentHost"
-ContentHost.Size = UDim2.new(1, 0, 1, -22)
-ContentHost.Position = UDim2.new(0, 0, 0, 22)
-ContentHost.BackgroundTransparency = 1
-ContentHost.ClipsDescendants = true
-ContentHost.Parent = Content
-
--- page frames (one per tab, built once)
-local PageFrames = {}
-local PageBuilt = {}
-for _, cat in ipairs(Categories) do
-	local p = Instance.new("Frame")
-	p.Name = "Page_" .. cat.key
-	p.Size = UDim2.new(1, 0, 1, 0)
-	p.BackgroundTransparency = 1
-	p.Visible = false
-	p.Parent = ContentHost
-	PageFrames[cat.page] = p
+function FAV.listen(fn)
+	table.insert(FAV.listeners, fn)
 end
-
-local sidebarTabButtons = {}
-local function showPage(pageKey)
-	for k, fr in pairs(PageFrames) do
-		fr.Visible = (k == pageKey)
-	end
-end
-
-local function SetActiveCategory(index)
-	activeCategoryIndex = index
-	local cat = Categories[index]
-	for i, bd in ipairs(sidebarTabButtons) do
-		local on = (i == index)
-		bd.frame.BackgroundTransparency = on and 0 or 1
-		bd.frame.BackgroundColor3 = on and Theme.TabActiveBg or Color3.fromRGB(0,0,0)
-		bd.stroke.Enabled = on
-		bd.stroke.Color = on and Theme.TabActiveBorder or Color3.fromRGB(0,0,0)
-		bd.label.TextColor3 = on and Theme.TextPrimary or Theme.TextMuted
-		bd.indicator.Visible = on
-	end
-	ContentTitle.Text = string.upper(cat.name)
-	showPage(cat.page)
-	if not PageBuilt[cat.page] then
-		PageBuilt[cat.page] = true
-		if cat.page == "avatars" and UI and UI.builders and UI.builders.avatars then
-			UI.builders.avatars(PageFrames.avatars)
-		elseif cat.page == "worn" and UI and UI.builders and UI.builders.worn then
-			UI.builders.worn(PageFrames.worn)
-		elseif (cat.page == "karakter" or cat.page == "animasi" or cat.page == "sepatu") and buildCatalogPage then
-			buildCatalogPage(PageFrames[cat.page], cat.page)
+function FAV.fire()
+	local i = 1
+	while i <= #FAV.listeners do
+		local ok, keep = pcall(FAV.listeners[i])
+		if ok and keep == false then
+			table.remove(FAV.listeners, i)
+		else
+			i = i + 1
 		end
 	end
-	if UI and UI.onShow and UI.onShow[cat.page] then
-		pcall(UI.onShow[cat.page])
+end
+function FAV.itemKey(item)
+	return (item.Type == "Bundle" and "B" or "A") .. tostring(item.Id) .. ":" .. tostring(item.slot or 0)
+end
+function FAV.toggleAvatar(id, name)
+	local k = tostring(id)
+	if FAV.avatars[k] then
+		FAV.avatars[k] = nil
+	else
+		FAV.avatars[k] = { id = id, name = tostring(name), t = os.time() }
 	end
+	favSave()
+	FAV.fire()
+end
+function FAV.toggleItem(item)
+	local k = FAV.itemKey(item)
+	if FAV.items[k] then
+		FAV.items[k] = nil
+	else
+		FAV.items[k] = {
+			Id = item.Id, Type = item.Type, Name = item.Name, slot = item.slot, slotName = item.slotName,
+			tid = item.Type == "Asset" and E.types[item.Id] or nil, t = os.time(),
+		}
+	end
+	favSave()
+	FAV.fire()
 end
 
-local function RenderSidebarTabs()
-	for _, c in ipairs(Sidebar:GetChildren()) do
-		if not c:IsA("UIListLayout") then c:Destroy() end
-	end
-	sidebarTabButtons = {}
-	for i, category in ipairs(Categories) do
-		local tabBtn = Instance.new("TextButton")
-		tabBtn.Size = UDim2.new(1, 0, 0, 42)
-		tabBtn.BackgroundColor3 = (i == 1) and Theme.TabActiveBg or Color3.fromRGB(0,0,0)
-		tabBtn.BackgroundTransparency = (i == 1) and 0 or 1
-		tabBtn.Text = ""
-		tabBtn.AutoButtonColor = false
-		tabBtn.LayoutOrder = i
-		tabBtn.Parent = Sidebar
-		Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
-		local tabStroke = Instance.new("UIStroke")
-		tabStroke.Color = Theme.TabActiveBorder
-		tabStroke.Thickness = 1.5
-		tabStroke.Enabled = (i == 1)
-		tabStroke.Parent = tabBtn
-		local indicator = Instance.new("Frame")
-		indicator.Size = UDim2.new(0, 4, 0, 26)
-		indicator.Position = UDim2.new(0, 5, 0.5, -13)
-		indicator.BackgroundColor3 = Theme.Accent
-		indicator.BorderSizePixel = 0
-		indicator.Visible = (i == 1)
-		indicator.Parent = tabBtn
-		Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
-		local label = Instance.new("TextLabel")
-		label.Font = Enum.Font.GothamBold
-		label.TextSize = 11
-		label.TextColor3 = (i == 1) and Theme.TextPrimary or Theme.TextMuted
-		label.BackgroundTransparency = 1
-		label.Size = UDim2.new(1, -22, 1, 0)
-		label.Position = UDim2.new(0, 15, 0, 0)
-		label.TextXAlignment = Enum.TextXAlignment.Left
-		label.Text = string.upper(category.name)
-		label.Parent = tabBtn
-		table.insert(sidebarTabButtons, { frame = tabBtn, stroke = tabStroke, label = label, indicator = indicator })
-		tabBtn.MouseButton1Click:Connect(function() SetActiveCategory(i) end)
-	end
-end
-
--- Stub UI table for builders compatibility
-UI = UI or {}
-UI.builders = UI.builders or {}
-UI.onShow = UI.onShow or {}
-UI.refreshCards = nil
-UI.refreshWorn = nil
-State = State or { tab = "avatars", cat = nil, keyword = "", sortIdx = 1, freeOnly = false, favorites = {}, favOrder = {}, recent = {}, token = 0 }
-
--- Catalog page builder adapted for karakter/animasi/sepatu
-function buildCatalogPage(page, which)
-	local catMap = {
-		karakter = CATEGORIES[1], -- b_body
-		animasi = CATEGORIES[2],
-		sepatu = CATEGORIES[3],
-	}
-	local fixedCat = catMap[which]
-	if not fixedCat then return end
-	State.cat = fixedCat
-	State.keyword = ""
-	State.sortIdx = 1
-	State.freeOnly = false
-
-	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = page })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -140, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row2 })
-	corner(sbFrame, 8)
-	stroke(sbFrame, T.Stroke, 1)
-	local sbBox = mk("TextBox", {
-		Size = UDim2.new(1, -12, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Cari...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = sbFrame,
+local function addHeart(card, isFav, onToggle)
+	local h = mk("TextButton", {
+		Size = UDim2.fromOffset(20, 20), Position = UDim2.fromOffset(4, 4), BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.45, BorderSizePixel = 0, Text = "♡", TextSize = 14, Font = Enum.Font.GothamBold,
+		TextColor3 = T.Text, AutoButtonColor = false, ZIndex = 5, Parent = card,
 	})
-	local startQuery
-	local sortBtn = button(row2, { text = "↕", size = UDim2.fromOffset(32, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -70, 0, 0), textSize = 12, onClick = function()
-			State.sortIdx = State.sortIdx % #SORTS + 1
-			startQuery()
-		end })
-	local freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(56, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -6, 0, 0), textSize = 11, onClick = function()
-			State.freeOnly = not State.freeOnly
-			startQuery()
-		end })
-	sbBox.FocusLost:Connect(function(enter)
-		if enter then State.keyword = sbBox.Text startQuery() end
+	corner(h, 10)
+	local function paint()
+		local f = isFav()
+		h.Text = f and "♥" or "♡"
+		h.TextColor3 = f and T.Danger or T.Text
+	end
+	paint()
+	h.Activated:Connect(function()
+		onToggle()
+		paint()
 	end)
-
-	local grid = makeScroll(page, UDim2.new(1, 0, 1, -34), UDim2.fromOffset(0, 34))
-	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(98, 116), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
-	})
-	local msg = mk("TextLabel", {
-		Size = UDim2.new(1, -10, 0, 40), Position = UDim2.fromOffset(5, 40), BackgroundTransparency = 1, Text = "",
-		TextColor3 = T.Dim, TextSize = 11, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false, Parent = page,
-	})
-	local currentQuery, loading, activeCards = nil, false, {}
-
-	local function clearGrid()
-		msg.Visible = false
-		activeCards = {}
-		for _, c in ipairs(grid:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
-	end
-	local function loadPage(token)
-		if loading or not currentQuery or currentQuery.finished then return end
-		loading = true
-		local q = currentQuery
-		task.spawn(function()
-			local items, err = q:nextPage()
-			if token ~= State.token then return end
-			loading = false
-			if not items then
-				msg.Text = "Gagal: " .. tostring(err)
-				msg.Visible = true
-				return
-			end
-			for _, it in ipairs(items) do
-				table.insert(activeCards, makeCard(grid, it))
-			end
-			if q.total == 0 then
-				msg.Text = "Tidak ada hasil."
-				msg.Visible = true
-			end
-		end)
-	end
-	startQuery = function()
-		State.token = (State.token or 0) + 1
-		local token = State.token
-		loading = false
-		clearGrid()
-		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
-		currentQuery = newQuery(fixedCat, State.keyword, State.sortIdx, State.freeOnly)
-		loadPage(token)
-	end
-	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
-			loadPage(State.token)
-		end
-	end)
-	UI.refreshCards = function()
-		for _, c in ipairs(activeCards) do if c.update then c.update() end end
-	end
-	startQuery()
+	return paint
 end
 
-
-local function makeCard(parent, item, onFav)
+----------------------------------------------------------------------------
+-- [8] KARTU KATALOG
+----------------------------------------------------------------------------
+local function makeCard(parent, item)
 	local isBundle = item.Type == "Bundle"
 	local card = mk("TextButton", {
 		AutoButtonColor = false, Text = "", BackgroundColor3 = T.Surface, BorderSizePixel = 0,
@@ -2821,145 +3210,174 @@ local function makeCard(parent, item, onFav)
 	corner(card, 10)
 	local st = stroke(card, T.Stroke, 1.5, 0.3)
 	local img = mk("ImageLabel", {
-		Size = UDim2.new(1, -10, 0, 72), Position = UDim2.fromOffset(5, 5), BackgroundColor3 = T.Surface2,
-		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit,
-		Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150), Parent = card,
+		Size = UDim2.new(1, -8, 0, 64), Position = UDim2.fromOffset(4, 4), BackgroundColor3 = T.Surface2,
+		BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit, Parent = card,
 	})
 	corner(img, 8)
 	local nm = label(card, item.Name, 11, T.Text, Enum.Font.GothamBold)
-	nm.Position = UDim2.fromOffset(6, 80)
-	nm.Size = UDim2.new(1, -12, 0, 14)
+	nm.Position = UDim2.fromOffset(5, 71)
+	nm.Size = UDim2.new(1, -10, 0, 14)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
 	local pr = label(card, priceText(item.Price), 10, item.Price == 0 and T.Ok or T.Dim, Enum.Font.GothamMedium)
-	pr.Position = UDim2.fromOffset(6, 96)
-	pr.Size = UDim2.new(1, -12, 0, 12)
-
+	pr.Position = UDim2.fromOffset(5, 88)
+	pr.Size = UDim2.new(1, -10, 0, 12)
+	item.onUpdate = function()
+		if not card.Parent then
+			return
+		end
+		nm.Text = item.Name
+		pr.Text = priceText(item.Price)
+		pr.TextColor3 = item.Price == 0 and T.Ok or T.Dim
+	end
 	local badge = mk("TextLabel", {
 		Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8),
 		BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
 		BorderSizePixel = 0, Visible = false, ZIndex = 3, Parent = card,
 	})
 	corner(badge, 9)
-	local fav = mk("TextButton", {
-		Size = UDim2.fromOffset(22, 22), Position = UDim2.fromOffset(8, 8), BackgroundTransparency = 0.35,
-		BackgroundColor3 = Color3.new(0, 0, 0), Text = "♡", TextSize = 13, Font = Enum.Font.GothamBold,
-		TextColor3 = Color3.new(1, 1, 1), AutoButtonColor = false, ZIndex = 3, Parent = card,
-	})
-	corner(fav, 11)
 	local overlay = mk("TextLabel", {
 		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45,
 		Text = "⏳", TextSize = 22, Visible = false, ZIndex = 6, Parent = card,
 	})
 	corner(overlay, 10)
 
-	local obj = { card = card, item = item, loading = false }
-	function obj.update()
-		local worn = (not isBundle) and E.isWorn(item.Id)
+	local obj = { card = card, item = item, loading = false, imgLoaded = false }
+	function obj.loadImg()
+		obj.imgLoaded = true
+		img.Image = thumbURL(isBundle and "BundleThumbnail" or "Asset", item.Id, 150)
+	end
+	function obj.update(set)
+		local worn = false
+		if not isBundle then
+			if set then
+				worn = set[item.Id] == true
+			else
+				worn = E.isWorn(item.Id)
+			end
+		end
+		badge.Text = "✓"
+		badge.BackgroundColor3 = T.Ok
 		badge.Visible = worn
 		st.Color = worn and T.Ok or T.Stroke
 		st.Transparency = worn and 0 or 0.3
-		local isFav = State.favorites[item.Id] ~= nil
-		fav.Text = isFav and "♥" or "♡"
-		fav.TextColor3 = isFav and T.Danger or Color3.new(1, 1, 1)
 	end
 	obj.update()
-
-	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
+	local paintHeart = addHeart(card, function() return FAV.items[FAV.itemKey(item)] ~= nil end, function() FAV.toggleItem(item) end)
+	FAV.listen(function()
+		if not card.Parent then
+			return false
+		end
+		paintHeart()
+	end)
+	card.MouseEnter:Connect(function()
+		tween(card, { BackgroundColor3 = T.Surface2 }, 0.12)
+		if isBundle then
+			E.prefetchBundle(item.Id)
+		end
+	end)
 	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
-	fav.Activated:Connect(function()
-		toggleFavorite(item)
-		obj.update()
-		if onFav then
-			onFav()
+	card.InputBegan:Connect(function(input)
+		if isBundle and input.UserInputType == Enum.UserInputType.Touch then
+			E.prefetchBundle(item.Id)
 		end
 	end)
 	card.Activated:Connect(function()
-		if obj.loading then
-			return
+		if isBundle then
+			if obj.loading then
+				return
+			end
+			obj.loading = true
+			overlay.Visible = true
+			E.loadingBundles = E.loadingBundles + 1
+			task.spawn(E.equipBundle, item.Id, item.Name, function()
+				overlay.Visible = false
+				obj.loading = false
+				E.loadingBundles = math.max(0, E.loadingBundles - 1)
+			end, item.slot, item.slotName)
+		else
+			badge.Text = "⏳"
+			badge.BackgroundColor3 = T.Warn
+			badge.Visible = true
+			E.pendingClicks = E.pendingClicks + 1
+			task.spawn(E.toggleAsset, item.Id, item.Name, function()
+				E.pendingClicks = math.max(0, E.pendingClicks - 1)
+				obj.update()
+			end)
 		end
-		obj.loading = true
-		overlay.Visible = true
-		task.spawn(function()
-			local ok
-			if isBundle then
-				ok = E.equipBundle(item.Id, item.Name)
-			else
-				ok = E.toggleAsset(item.Id, item.Name)
-			end
-			if ok and (isBundle or E.isWorn(item.Id)) then
-				addRecent(item)
-			end
-			overlay.Visible = false
-			obj.loading = false
-		end)
 	end)
 	return obj
 end
 
-UI.builders.catalog = function(page)
-	-- baris 1: kategori (3 tombol)
-	local catRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = page })
+-- satu halaman katalog untuk satu grup kategori (KARAKTER / TUBUH, ANIMASI, SEPATU)
+local function buildCatalog(page, group)
+	local cats = {}
+	for _, c in ipairs(CATEGORIES) do
+		if c.group == group then
+			table.insert(cats, c)
+		end
+	end
+	local st = { cat = cats[1], keyword = "", sortIdx = 1, freeOnly = false, token = 0 }
+	local cards, loading, currentQuery = {}, false, nil
+
+	-- baris kategori (chip, geser kiri-kanan)
+	local chipBar = mk("ScrollingFrame", {
+		Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+		AutomaticCanvasSize = Enum.AutomaticSize.X, CanvasSize = UDim2.new(), ScrollingDirection = Enum.ScrollingDirection.X,
+		Parent = page,
+	})
 	mk("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
-		Parent = catRow,
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder,
+		VerticalAlignment = Enum.VerticalAlignment.Center, Parent = chipBar,
 	})
 
-	-- baris 2: cari, sort, gratis, refresh
-	local row2 = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = page })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -206, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row2 })
+	-- baris cari | urut | gratis | refresh
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 32), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -202, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local sbBox = mk("TextBox", {
-		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Cari (Enter)...", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
-		ClearTextOnFocus = false, TextSize = 13, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = sbFrame,
+		Size = UDim2.new(1, -14, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Cari (Enter)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text, ClearTextOnFocus = false,
+		TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, Parent = sbFrame,
 	})
 	local startQuery
 	sbBox.FocusLost:Connect(function(enter)
 		if enter then
-			State.keyword = sbBox.Text
+			st.keyword = sbBox.Text
 			startQuery()
 		end
 	end)
-	local sortBtn = button(row2, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(96, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -104, 0, 0), textSize = 12,
+	local sortBtn = button(row, { text = "↕ " .. SORTS[1].name, size = UDim2.fromOffset(84, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -110, 0, 0), textSize = 10,
 		onClick = function()
-			State.sortIdx = State.sortIdx % #SORTS + 1
+			st.sortIdx = st.sortIdx % #SORTS + 1
 			startQuery()
 		end })
-	local freeBtn
-	freeBtn = button(row2, { text = "Gratis", size = UDim2.fromOffset(62, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -38, 0, 0), textSize = 12,
+	local freeBtn = button(row, { text = "Gratis", size = UDim2.fromOffset(52, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -52, 0, 0), textSize = 11,
 		onClick = function()
-			State.freeOnly = not State.freeOnly
+			st.freeOnly = not st.freeOnly
 			startQuery()
 		end })
-	button(row2, { text = "⟳", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
-		textSize = 17, onClick = function() startQuery() end })
-
-	-- jumlah item (disembunyikan karena ruang sempit, dipakai logika bawah)
-	local countL = label(page, "", 11, T.Dim, Enum.Font.GothamMedium, Enum.TextXAlignment.Right)
-	countL.Visible = false
+	button(row, { text = "Ulang", size = UDim2.fromOffset(46, 30), anchor = Vector2.new(1, 0), position = UDim2.new(1, 0, 0, 0),
+		textSize = 11, onClick = function() startQuery() end })
 
 	-- grid
-	local grid = makeScroll(page, UDim2.new(1, 0, 1, -70), UDim2.fromOffset(0, 70))
+	local grid = makeScroll(page, UDim2.new(1, 0, 1, -68), UDim2.fromOffset(0, 68))
 	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(98, 116), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		CellSize = UDim2.fromOffset(84, 110), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
 	})
 	pad(grid, 0, 2, 0, 10)
 	local msg = mk("TextLabel", {
-		Size = UDim2.new(1, -20, 0, 70), Position = UDim2.fromOffset(10, 100), BackgroundTransparency = 1, Text = "",
+		Size = UDim2.new(1, -16, 0, 90), Position = UDim2.fromOffset(8, 90), BackgroundTransparency = 1, Text = "",
 		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
 		ZIndex = 5, Parent = page,
 	})
 
-	local currentQuery, loading = nil, false
-
 	local function clearGrid()
 		msg.Visible = false
-		activeCards = {}
+		cards = {}
 		for _, c in ipairs(grid:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
@@ -2967,15 +3385,6 @@ UI.builders.catalog = function(page)
 		end
 		grid.CanvasPosition = Vector2.new(0, 0)
 	end
-
-	local function addCard(item)
-		table.insert(activeCards, makeCard(grid, item, function()
-			if State.cat.kind == "fav" then
-				startQuery()
-			end
-		end))
-	end
-
 	local function showMsg(text)
 		msg.Text = text
 		msg.Visible = true
@@ -2987,209 +3396,211 @@ UI.builders.catalog = function(page)
 		end
 		loading = true
 		local q = currentQuery
+		local target = q.total + MAX_ITEMS
 		task.spawn(function()
-			local items, err = q:nextPage()
-			if token ~= State.token then
-				return
+			while token == st.token and not q.finished and q.total < target do
+				local items, err = q:nextPage()
+				if token ~= st.token then
+					return
+				end
+				if not items then
+					logf("katalog gagal: %s", tostring(err))
+					if q.total == 0 then
+						showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
+					end
+					break
+				end
+				msg.Visible = false
+				for i, it in ipairs(items) do
+					it.slot = st.cat.slot
+					it.slotName = st.cat.name
+					table.insert(cards, makeCard(grid, it))
+					if i % 30 == 0 then
+						task.wait()
+						if token ~= st.token then
+							return
+						end
+					end
+				end
+				if q.total == 0 then
+					showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
+					break
+				end
 			end
-			loading = false
-			if not items then
-				logf("katalog gagal: %s", tostring(err))
-				showMsg("⚠ Gagal memuat katalog:\n" .. tostring(err))
-				countL.Text = ""
-				return
+			if token == st.token then
+				loading = false
 			end
-			msg.Visible = false
-			for _, it in ipairs(items) do
-				addCard(it)
-			end
-			if q.total == 0 then
-				showMsg("🔎 Tidak ada hasil. Coba kata kunci lain atau matikan filter Gratis.")
-			end
-			countL.Text = q.total .. " item" .. (q.finished and "" or "+") .. (q.backend and ("  •  " .. q.backend) or "")
 		end)
 	end
 
+	-- gambar kartu dimuat hanya yang dekat layar (supaya 1000 item tetap ringan)
+	local function refreshImages()
+		local top = grid.AbsolutePosition.Y
+		local h = grid.AbsoluteWindowSize.Y
+		if h <= 0 then
+			return
+		end
+		for _, c in ipairs(cards) do
+			if not c.imgLoaded and c.card.AbsoluteSize.Y > 0 then
+				local y = c.card.AbsolutePosition.Y
+				if y + 120 > top - 600 and y < top + h + 600 then
+					c.loadImg()
+				end
+			end
+		end
+	end
+	task.spawn(function()
+		while not stale() and page.Parent do
+			task.wait(0.15)
+			if page.Visible then
+				pcall(refreshImages)
+			end
+		end
+	end)
+
 	startQuery = function()
-		State.token = State.token + 1
-		local token = State.token
+		st.token = st.token + 1
+		local token = st.token
 		loading = false
 		clearGrid()
-		sortBtn.Text = "↕ " .. SORTS[State.sortIdx].name
-		freeBtn.BackgroundColor3 = State.freeOnly and T.Ok or T.Surface2
-		freeBtn.Text = (State.freeOnly and "✓ " or "") .. "Gratis"
-		currentQuery = newQuery(State.cat, State.keyword, State.sortIdx, State.freeOnly)
+		sortBtn.Text = "↕ " .. SORTS[st.sortIdx].name
+		local fc = st.freeOnly and T.Ok or T.Surface2
+		freeBtn.BackgroundColor3 = fc
+		freeBtn:SetAttribute("Base", fc)
+		freeBtn.Text = (st.freeOnly and "✓ " or "") .. "Gratis"
+		showMsg("⏳ Memuat...")
+		currentQuery = newQuery(st.cat, st.keyword, st.sortIdx, st.freeOnly)
 		loadPage(token)
 	end
 
 	grid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 200 then
-			loadPage(State.token)
+		if grid.CanvasPosition.Y + grid.AbsoluteWindowSize.Y >= grid.AbsoluteCanvasSize.Y - 600 then
+			loadPage(st.token)
 		end
 	end)
 
-	-- tombol kategori
-	local catBtns = {}
-	local function markCat()
-		for id, b in pairs(catBtns) do
-			b.BackgroundColor3 = (id == State.cat.id) and T.Accent or T.Surface2
+	local chipRefs = {}
+	local function markChips()
+		for id, c in pairs(chipRefs) do
+			local active = id == st.cat.id
+			c.BackgroundColor3 = active and Theme.TabActiveBg or T.Surface2
+			c.TextColor3 = active and T.Accent or T.Text
 		end
 	end
 	local function selectCat(cat)
-		State.cat = cat
-		State.keyword = ""
+		st.cat = cat
+		st.keyword = ""
 		sbBox.Text = ""
-		markCat()
+		markChips()
 		startQuery()
 	end
-	for i, cat in ipairs(CATEGORIES) do
-		local b = mk("TextButton", {
-			Size = UDim2.new(1 / #CATEGORIES, -4, 1, 0), BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
-			Text = cat.name, TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
-			AutoButtonColor = false, LayoutOrder = i, Parent = catRow,
+	for i, cat in ipairs(cats) do
+		local c = mk("TextButton", {
+			Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Text = cat.name, TextSize = 11, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
+			AutoButtonColor = false, LayoutOrder = i, Parent = chipBar,
 		})
-		corner(b, 8)
-		catBtns[cat.id] = b
-		b.Activated:Connect(function()
+		corner(c, 8)
+		pad(c, 10, 0, 10, 0)
+		chipRefs[cat.id] = c
+		c.Activated:Connect(function()
 			selectCat(cat)
 		end)
 	end
 
-	UI.refreshCards = function()
-		for _, c in ipairs(activeCards) do
-			c.update()
+	selectCat(cats[1])
+	return function()
+		local set = collect(E.look)
+		for _, c in ipairs(cards) do
+			c.update(set)
 		end
 	end
-	UI.onShow.catalog = UI.refreshCards
-
-	selectCat(CATEGORIES[1])
 end
 
 ----------------------------------------------------------------------------
--- [9] HALAMAN DIPAKAI
-----------------------------------------------------------------------------
-
-UI.builders.worn = function(page)
-	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
-	label(head, "Sedang dipakai", 16, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
-	local sub = label(head, "", 11, T.Dim, Enum.Font.Gotham)
-	sub.Position = UDim2.fromOffset(0, 20)
-	sub.Size = UDim2.new(0.5, 0, 0, 14)
-	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
-		onClick = function() task.spawn(E.removeAll) end })
-	button(head, { text = "↺ Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
-
-	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
-	vlist(list, 6)
-	pad(list, 0, 0, 8, 10)
-
-	UI.refreshWorn = function()
-		for _, c in ipairs(list:GetChildren()) do
-			if c:IsA("GuiObject") then
-				c:Destroy()
-			end
-		end
-		local items = E.wornList()
-		sub.Text = #items .. " item aktif pada karakter"
-		for n, e in ipairs(items) do
-			local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
-			corner(row, 10)
-			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
-				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = row })
-			corner(img, 8)
-			local nameL = label(row, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
-			nameL.Position = UDim2.fromOffset(50, 6)
-			nameL.Size = UDim2.new(1, -124, 0, 18)
-			nameL.TextTruncate = Enum.TextTruncate.AtEnd
-			local typeL = label(row, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
-			typeL.Position = UDim2.fromOffset(50, 26)
-			typeL.Size = UDim2.new(1, -124, 0, 14)
-			button(row, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
-				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
-			task.spawn(function()
-				local nm = E.name(e.Id)
-				if nameL.Parent then
-					nameL.Text = nm
-				end
-			end)
-		end
-	end
-	UI.onShow.worn = UI.refreshWorn
-	UI.refreshWorn()
-end
-
-----------------------------------------------------------------------------
--- [10] HALAMAN AVATAR  (cari semua pemain Roblox + preset + server + teman)
+-- [9] KARTU PEMAIN + PENCARIAN (halaman AVATAR)
 ----------------------------------------------------------------------------
 local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
 
 local function userCard(parent, userId, name, order, sub)
 	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
-	corner(card, 12)
-	local img = mk("ImageLabel", { Size = UDim2.fromOffset(60, 60), Position = UDim2.new(0.5, -30, 0, 6), BackgroundColor3 = T.Surface2,
+	corner(card, 10)
+	local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
 		BorderSizePixel = 0, Image = thumbURL("AvatarHeadShot", userId, 150), Parent = card })
-	corner(img, 30)
+	corner(img, 27)
 	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
-	nm.Position = UDim2.fromOffset(4, 68)
-	nm.Size = UDim2.new(1, -8, 0, 14)
+	nm.Position = UDim2.fromOffset(3, 61)
+	nm.Size = UDim2.new(1, -6, 0, 14)
 	nm.TextTruncate = Enum.TextTruncate.AtEnd
 	local idleText = sub or "klik untuk pakai"
-	local hint = label(card, idleText, 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
-	hint.Position = UDim2.fromOffset(4, 83)
-	hint.Size = UDim2.new(1, -8, 0, 12)
+	local hint = label(card, idleText, 9, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+	hint.Position = UDim2.fromOffset(3, 76)
+	hint.Size = UDim2.new(1, -6, 0, 12)
 	hint.TextTruncate = Enum.TextTruncate.AtEnd
-	card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = T.Surface2 }, 0.12) end)
-	card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = T.Surface }, 0.15) end)
+	hint.Name = "HintLbl"
+	card:SetAttribute("Idle", idleText)
+
+	local paintHeart = addHeart(card, function() return FAV.avatars[tostring(userId)] ~= nil end, function() FAV.toggleAvatar(userId, name) end)
+	FAV.listen(function()
+		if not card.Parent then
+			return false
+		end
+		paintHeart()
+	end)
+
+	local hoverTok = 0
+	card.MouseEnter:Connect(function()
+		tween(card, { BackgroundColor3 = T.Surface2 }, 0.12)
+		if userId ~= player.UserId then
+			hoverTok = hoverTok + 1
+			local t = hoverTok
+			task.delay(0.12, function()
+				if t == hoverTok then
+					E.prefetchUser(userId)
+				end
+			end)
+		end
+	end)
+	card.MouseLeave:Connect(function()
+		hoverTok = hoverTok + 1
+		tween(card, { BackgroundColor3 = T.Surface }, 0.15)
+	end)
+	card.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch and userId ~= player.UserId then
+			E.prefetchUser(userId)
+		end
+	end)
+
 	local busyCard = false
 	card.Activated:Connect(function()
 		if busyCard then
 			return
 		end
 		busyCard = true
-		hint.Text = "memuat..."
+		local t0 = os.clock()
 		task.spawn(function()
+			while busyCard do
+				hint.Text = string.format("memuat %.1f dtk", os.clock() - t0)
+				task.wait(0.1)
+			end
+		end)
+		task.spawn(function()
+			local ok = true
 			if userId == player.UserId then
 				E.reset()
 			else
-				E.applyUser(userId, name)
+				ok = E.applyUser(userId, name)
 			end
-			hint.Text = idleText
 			busyCard = false
+			hint.Text = ok and string.format("✓ %.1f dtk", os.clock() - t0) or (card:GetAttribute("Idle") or idleText)
+			task.delay(1.5, function()
+				if card.Parent and not busyCard then
+					hint.Text = card:GetAttribute("Idle") or idleText
+				end
+			end)
 		end)
 	end)
 	return card
-end
-
-local function userGrid(parent, order)
-	local g = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = order, Parent = parent })
-	mk("UIGridLayout", { CellSize = UDim2.fromOffset(92, 100), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = g })
-	return g
-end
-
--- pencarian pemain Roblox mana pun (tanpa harus satu server / berteman)
-local function searchUsers(keyword, cursor)
-	local path = "/v1/users/search?keyword=" .. urlenc(keyword) .. "&limit=25"
-	if cursor then
-		path = path .. "&cursor=" .. urlenc(cursor)
-	end
-	local lastErr = "tidak ada URL"
-	for _, host in ipairs({ "https://users.roblox.com", "https://users.roproxy.com" }) do
-		local bodyTxt, err = httpGet(host .. path)
-		if bodyTxt then
-			local ok, data = pcall(function()
-				return HttpService:JSONDecode(bodyTxt)
-			end)
-			if ok and type(data) == "table" and type(data.data) == "table" then
-				return data.data, data.nextPageCursor
-			end
-			lastErr = "JSON tidak valid dari " .. host
-		else
-			lastErr = tostring(err)
-		end
-	end
-	return nil, lastErr
 end
 
 local function nameFromId(uid)
@@ -3208,69 +3619,671 @@ local function idFromName(name)
 	return nil
 end
 
+local SESSION_ID = "leon-" .. tostring(os.time())
+pcall(function()
+	SESSION_ID = HttpService:GenerateGUID(false)
+end)
 
-UI.builders.avatars = function(page)
-	local scroll = makeScroll(page)
-	vlist(scroll, 8)
-	pad(scroll, 0, 0, 8, 12)
+local SEARCH_BUILDERS = {
+	function(kw, cur)
+		return "https://users.roblox.com/v1/users/search?keyword=" .. urlenc(kw) .. "&limit=25" .. (cur and ("&cursor=" .. urlenc(cur)) or "")
+	end,
+	function(kw, cur)
+		return "https://users.roproxy.com/v1/users/search?keyword=" .. urlenc(kw) .. "&limit=25" .. (cur and ("&cursor=" .. urlenc(cur)) or "")
+	end,
+	function(kw, cur)
+		return "https://apis.roblox.com/search-api/omni-search?searchQuery=" .. urlenc(kw) .. "&pageType=all&sessionId="
+			.. urlenc(SESSION_ID) .. (cur and ("&pageToken=" .. urlenc(cur)) or "")
+	end,
+}
 
-	-- baris pencarian
-	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = 1, Parent = scroll })
-	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+local function parseUserList(bodyTxt)
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(bodyTxt)
+	end)
+	if not ok or type(data) ~= "table" then
+		return nil
+	end
+	local out = {}
+	if type(data.data) == "table" then
+		for _, u in ipairs(data.data) do
+			if tonumber(u.id) then
+				table.insert(out, { id = tonumber(u.id), name = tostring(u.name), display = tostring(u.displayName or u.name) })
+			end
+		end
+		return out, data.nextPageCursor
+	end
+	if type(data.searchResults) == "table" then
+		for _, grp in ipairs(data.searchResults) do
+			if type(grp.contents) == "table" then
+				for _, c in ipairs(grp.contents) do
+					if (c.contentType == "User" or grp.contentGroupType == "User") and tonumber(c.contentId) then
+						table.insert(out, {
+							id = tonumber(c.contentId), name = tostring(c.username or c.contentId),
+							display = tostring(c.displayName or c.username or c.contentId),
+						})
+					end
+				end
+			end
+		end
+		return out, data.nextPageToken
+	end
+	return nil
+end
+
+local function searchUsersWeb(keyword, state)
+	state = state or {}
+	local first, last = 1, #SEARCH_BUILDERS
+	if state.idx then
+		first, last = state.idx, state.idx
+	end
+	local lastErr = "tidak ada hasil"
+	for i = first, last do
+		local bodyTxt, err = httpGet(SEARCH_BUILDERS[i](keyword, state.cursor))
+		if bodyTxt then
+			local list, nextCur = parseUserList(bodyTxt)
+			if list and (#list > 0 or state.idx) then
+				return list, { idx = i, cursor = nextCur }
+			end
+			lastErr = list and "kosong" or ("balasan backend " .. i .. " tidak dikenali")
+		else
+			lastErr = tostring(err)
+		end
+	end
+	return nil, lastErr
+end
+
+local function buildAvatars(page)
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -120, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
 	corner(sbFrame, 8)
 	stroke(sbFrame, T.Stroke, 1)
 	local box = mk("TextBox", {
 		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
-		PlaceholderText = "🔍 Username / nama / UserId (semua Roblox)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		PlaceholderText = "🔍 Username / nama / UserId", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
 		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = sbFrame,
 	})
 	local searchBtn = button(row, { text = "Cari", size = UDim2.fromOffset(60, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, -42, 0, 0), bg = T.Accent, textSize = 12 })
-	local randBtn = button(row, { text = "🎲", size = UDim2.fromOffset(36, 30), anchor = Vector2.new(1, 0),
-		position = UDim2.new(1, 0, 0, 0), textSize = 15 })
+		position = UDim2.new(1, -50, 0, 0), bg = T.Accent, textSize = 12 })
+	local randBtn = button(row, { text = "Acak", size = UDim2.fromOffset(44, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 0), textSize = 11 })
 
-	local status = label(scroll, "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak.", 11, T.Dim, Enum.Font.Gotham)
-	status.LayoutOrder = 2
-	status.Size = UDim2.new(1, 0, 0, 14)
+	local status = label(page, "", 10, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Right)
+	status.Position = UDim2.fromOffset(248, 34)
+	status.Size = UDim2.new(1, -248, 0, 24)
+	status.TextTruncate = Enum.TextTruncate.AtEnd
+	local chipRow = mk("Frame", { Size = UDim2.new(0, 240, 0, 24), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, ZIndex = 2, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = chipRow,
+	})
 
-	local resultGrid = userGrid(scroll, 3)
-	local moreBtn = button(scroll, { text = "Muat lebih banyak", size = UDim2.new(1, 0, 0, 28), order = 4, textSize = 12 })
-	moreBtn.Visible = false
+	-- baris filter urutan (hanya untuk tab "Semua"): item terbanyak / cowo / cewe
+	local sortMode = "most" -- "most" | "cowo" | "cewe"
+	local entries, seqN = {}, 0
+	local modeRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 62), BackgroundTransparency = 1, ZIndex = 2, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = modeRow,
+	})
+	local modeChips = {}
+	local MODE_DEFS = { { "most", "🏆 Item terbanyak" }, { "cowo", "♂ Cowo" }, { "cewe", "♀ Cewe" } }
+	local function markModes()
+		for k, c in pairs(modeChips) do
+			local active = k == sortMode
+			c.BackgroundColor3 = active and Theme.TabActiveBg or T.Surface2
+			c.TextColor3 = active and T.Accent or T.Text
+		end
+	end
+	for i, d in ipairs(MODE_DEFS) do
+		local c = mk("TextButton", {
+			Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Text = d[2], TextSize = 11, Font = Enum.Font.GothamBold, TextColor3 = T.Text,
+			AutoButtonColor = false, LayoutOrder = i, Parent = modeRow,
+		})
+		corner(c, 8)
+		pad(c, 10, 0, 10, 0)
+		modeChips[d[1]] = c
+	end
+	markModes()
 
-	local token, nextCursor, keyword, loading, count, seen = 0, nil, "", false, 0, {}
+	local secs, chips = {}, {}
+	local function makeSection(key)
+		local sc = makeScroll(page, UDim2.new(1, 0, 1, -64), UDim2.fromOffset(0, 64))
+		mk("UIGridLayout", {
+			CellSize = UDim2.fromOffset(84, 96), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = sc,
+		})
+		pad(sc, 0, 2, 0, 10)
+		sc.Visible = false
+		secs[key] = sc
+		return sc
+	end
+	local allSc = makeSection("all")
+	allSc.Position = UDim2.fromOffset(0, 90)
+	allSc.Size = UDim2.new(1, 0, 1, -90)
+	local presetSc = makeSection("preset")
+	local serverSc = makeSection("server")
+	local friendSc = makeSection("friends")
 
-	local function clearResults()
-		for _, c in ipairs(resultGrid:GetChildren()) do
+	local refreshServer, loadFriends
+	local function showSection(key)
+		for k, sc in pairs(secs) do
+			sc.Visible = k == key
+		end
+		for k, c in pairs(chips) do
+			c.BackgroundColor3 = (k == key) and T.Accent or T.Surface2
+		end
+		status.Visible = key == "all"
+		modeRow.Visible = key == "all"
+		if key == "server" and refreshServer then
+			refreshServer()
+		elseif key == "friends" and loadFriends then
+			loadFriends()
+		end
+	end
+	local chipDefs = { { "all", "Semua" }, { "preset", "Preset" }, { "server", "Server" }, { "friends", "Teman" } }
+	for i, d in ipairs(chipDefs) do
+		local c = mk("TextButton", {
+			Size = UDim2.fromOffset(58, 24), BackgroundColor3 = T.Surface2, BorderSizePixel = 0, Text = d[2], TextSize = 11,
+			Font = Enum.Font.GothamBold, TextColor3 = T.Text, AutoButtonColor = false, LayoutOrder = i, Parent = chipRow,
+		})
+		corner(c, 8)
+		chips[d[1]] = c
+		c.Activated:Connect(function()
+			showSection(d[1])
+		end)
+	end
+
+	-- ===== SEMUA PEMAIN ROBLOX (bacon & bacon cewe disaring, urut item terbanyak) =====
+	local token, loading, mode, searchState, keyword = 0, false, "feed", nil, ""
+	local count, seen = 0, {}
+
+	local function setStatus(t)
+		status.Text = t
+	end
+	local function clearAll()
+		for _, c in ipairs(allSc:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
 			end
 		end
+		allSc.CanvasPosition = Vector2.new(0, 0)
 		count, seen = 0, {}
-		moreBtn.Visible = false
+		entries, seqN = {}, 0
 	end
-
-	local function addUser(id, name, sub, front)
+	-- mode "most": hanya avatar dengan item >= MOST_MIN_ITEMS. mode cowo/cewe: hanya yang gendernya pasti cocok
+	local function visibleFor(g, cnt, pending)
+		if pending then
+			return sortMode == "most"
+		end
+		if sortMode == "most" then
+			return (cnt or 0) >= MOST_MIN_ITEMS
+		end
+		return g == sortMode
+	end
+	local function countVisible()
+		local n = 0
+		for _, e in pairs(entries) do
+			if e.card and e.card.Parent and visibleFor(e.gender, e.count, e.pending) then
+				n = n + 1
+			end
+		end
+		return n
+	end
+	-- info (opsional): { count = jumlah item, gender = "cowo"/"cewe"/nil } -> dipakai untuk urutan + filter
+	local function addUser(id, name, sub, front, info)
 		if seen[id] then
-			return
+			return false
 		end
 		seen[id] = true
 		count = count + 1
-		userCard(resultGrid, id, name, front and (-1000 + count) or count, sub)
+		local ord = front and (-1000 + count) or count
+		local e
+		if info then
+			seqN = seqN + 1
+			e = { count = info.count or 0, gender = info.gender, seq = seqN, pending = info.pending }
+			ord = -(e.count) * 100000 + e.seq
+		end
+		local card = userCard(allSc, id, name, ord, sub)
+		if e then
+			e.card = card
+			entries[id] = e
+			card.Visible = visibleFor(e.gender, e.count, e.pending)
+		end
+		return true
+	end
+	-- urutkan ulang kartu sesuai mode: terbanyak di atas, cowo/cewe hanya yang cocok
+	local function applyMode()
+		for _, e in pairs(entries) do
+			if e.card and e.card.Parent then
+				e.card.Visible = visibleFor(e.gender, e.count, e.pending)
+				e.card.LayoutOrder = -(e.count) * 100000 + e.seq
+			end
+		end
+		allSc.CanvasPosition = Vector2.new(0, 0)
+	end
+
+	-- hasil pencarian: tampilkan semua (tidak disaring, bacon / bacon cewe tetap muncul di sini)
+	local function addAll(list, myToken)
+		for _, u in ipairs(list) do
+			if myToken ~= token then
+				return
+			end
+			addUser(u.id, u.display, "@" .. u.name)
+		end
+	end
+	local function addFiltered(list, myToken)
+		local inflight = 0
+		for _, u in ipairs(list) do
+			while inflight >= 6 and myToken == token do
+				task.wait(0.05)
+			end
+			if myToken ~= token then
+				return
+			end
+			inflight = inflight + 1
+			task.spawn(function()
+				local plain = isPlainAvatar(u.id)
+				if myToken == token and not plain then
+					addUser(u.id, u.display, "@" .. u.name)
+				end
+				inflight = inflight - 1
+			end)
+		end
+		local t0 = os.clock()
+		while inflight > 0 and os.clock() - t0 < 8 and myToken == token do
+			task.wait(0.05)
+		end
+	end
+
+	local tried = {}
+
+	-- ===== POOL KANDIDAT (jalur cepat) =====
+	-- Dipakai duluan: teman akun ini, pemain di server, lalu teman-dari-teman avatar yang lolos filter.
+	-- Hampir semuanya akun asli + nama sudah ada (tanpa tebak ID acak yang banyak kosong), jadi kartu muncul jauh lebih cepat.
+	local pool, poolSeen, expanded, expanding = {}, {}, {}, 0
+	local feedConc = 24
+
+	local function poolPush(id, name)
+		id = tonumber(id)
+		if not id or poolSeen[id] or tried[id] or #pool > 1500 then
+			return
+		end
+		poolSeen[id] = true
+		pool[#pool + 1] = { id = id, name = tostring(name or "") }
+	end
+	local function poolPop()
+		local n = #pool
+		if n == 0 then
+			return nil
+		end
+		local i = math.random(1, n)
+		local v = pool[i]
+		pool[i] = pool[n]
+		pool[n] = nil
+		return v
+	end
+	local function expandFriends(uid, force)
+		if expanded[uid] or (not force and (expanding >= 6 or #pool > 600)) then
+			return
+		end
+		expanded[uid] = true
+		expanding = expanding + 1
+		task.spawn(function()
+			local ok, pages = pcall(function()
+				return Players:GetFriendsAsync(uid)
+			end)
+			local n = 0
+			while ok and pages and n < 3 do
+				n = n + 1
+				local okP, cur = pcall(function()
+					return pages:GetCurrentPage()
+				end)
+				if okP and type(cur) == "table" then
+					for _, f in ipairs(cur) do
+						poolPush(f.Id, f.DisplayName or f.Username)
+					end
+				end
+				if pages.IsFinished or not pcall(function() pages:AdvanceToNextPageAsync() end) then
+					break
+				end
+			end
+			expanding = expanding - 1
+		end)
+	end
+	local function seedPool()
+		local n = 0
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				poolPush(p.UserId, p.DisplayName)
+				if n < 6 then
+					n = n + 1
+					expandFriends(p.UserId, true)
+				end
+			end
+		end
+		expandFriends(player.UserId, true)
+	end
+
+	local function setSub(card, text)
+		card:SetAttribute("Idle", text)
+		local h = card:FindFirstChild("HintLbl")
+		if h and h.Text ~= "memuat..." then
+			h.Text = text
+		end
+	end
+	local function genderSym(g)
+		return (g == "cewe" and "♀") or (g == "cowo" and "♂") or "•"
+	end
+
+	-- kartu langsung tampil begitu lolos filter bacon; gender (mode "terbanyak") dihitung menyusul di latar belakang
+	local function feedBatchRandom(myToken, n)
+		loading = true
+		setStatus("Memuat pemain Roblox...")
+		local found, attempts, inflight, throttled = 0, 0, 0, 0
+		local maxAttempts = n * 40
+		while myToken == token and found < n and attempts < maxAttempts do
+			if throttled >= 5 then
+				setStatus("Roblox membatasi permintaan, menunggu...")
+				feedConc = math.max(8, feedConc - 6)
+				task.wait(2)
+				throttled = 0
+			end
+			while myToken == token and inflight < feedConc and found < n and attempts < maxAttempts do
+				attempts = attempts + 1
+				inflight = inflight + 1
+				task.spawn(function()
+					local cand = (math.random() < 0.92) and poolPop() or nil
+					local id = cand and cand.id or (math.floor(math.random() * 5000000000) + 100000)
+					if not tried[id] then
+						tried[id] = true
+						-- cek avatar dulu (gagal cepat untuk akun tidak ada / bacon), nama hanya untuk yang lolos
+						local desc, derr = descFromUser(id)
+						if desc then
+							local a = analyzeDesc(desc)
+							pcall(function()
+								desc:Destroy()
+							end)
+							local plain = FILTER_POLOSAN and a.plain or false
+							if not a.unsure then
+								plainCache[id] = plain
+							end
+							if not plain and myToken == token then
+								expandFriends(id)
+								local nm = (cand and cand.name ~= "" and cand.name) or nil
+								if not nm then
+									nm = nameFromId(id)
+								end
+								if nm and myToken == token then
+									local g = nil
+									if sortMode ~= "most" then
+										g = genderOf(a)
+									end
+									a.gender = g
+									analysisCache[id] = a
+									if addUser(id, nm, a.count .. " item " .. genderSym(g), nil, { count = a.count, gender = g }) then
+										if visibleFor(g, a.count) then
+											found = found + 1
+										end
+										if sortMode == "most" then
+											task.spawn(function()
+												local g2 = genderOf(a)
+												local e = entries[id]
+												if e and e.card and e.card.Parent then
+													e.gender = g2
+													a.gender = g2
+													e.card.Visible = visibleFor(g2, e.count)
+													setSub(e.card, a.count .. " item " .. genderSym(g2))
+												end
+											end)
+										end
+										setStatus(countVisible() .. " pemain • memuat...")
+									end
+								end
+							end
+						else
+							local sErr = string.lower(tostring(derr))
+							if sErr:find("429") or sErr:find("too many") or sErr:find("throttl") or sErr:find("limit") then
+								throttled = throttled + 1
+							end
+						end
+					end
+					inflight = inflight - 1
+				end)
+			end
+			task.wait(0.03)
+		end
+		local t0 = os.clock()
+		while inflight > 0 and os.clock() - t0 < 1.5 and myToken == token do
+			task.wait(0.05)
+		end
+		if myToken == token then
+			loading = false
+			local vis = countVisible()
+			if found == 0 and vis == 0 then
+				setStatus("Belum ketemu avatar yang cocok, tekan Acak / gulir")
+			else
+				setStatus(vis .. " pemain • gulir untuk lagi")
+			end
+		end
+	end
+
+	-- ===== PIPELINE CEPAT: kartu tampil dulu, dicek di latar belakang =====
+	local aQueue, aWorkers = {}, 0
+	local gQueue, gWorkers = {}, 0
+
+	local function genderPump()
+		while gWorkers < 3 and #gQueue > 0 do
+			gWorkers = gWorkers + 1
+			task.spawn(function()
+				while #gQueue > 0 do
+					local id = table.remove(gQueue, 1)
+					local e = entries[id]
+					if e and e.a and not e.gdone and e.card and e.card.Parent then
+						e.gdone = true
+						e.gender = genderOf(e.a)
+						if e.card.Parent then
+							e.card.Visible = visibleFor(e.gender, e.count, e.pending)
+							setSub(e.card, e.count .. " item " .. genderSym(e.gender))
+						end
+					end
+				end
+				gWorkers = gWorkers - 1
+			end)
+		end
+	end
+	local function queueGender(id)
+		table.insert(gQueue, id)
+		genderPump()
+	end
+
+	local function settleEntry(id, a)
+		local e = entries[id]
+		if not e or not e.card or not e.card.Parent then
+			return
+		end
+		if FILTER_POLOSAN and a.plain then
+			e.card:Destroy()
+			entries[id] = nil
+			return
+		end
+		e.pending, e.count, e.a = false, a.count, a
+		e.card.LayoutOrder = -(a.count) * 100000 + e.seq
+		e.card.Visible = visibleFor(e.gender, e.count, false)
+		setSub(e.card, a.count .. " item " .. genderSym(e.gender))
+		expandFriends(id)
+		if sortMode ~= "most" then
+			queueGender(id)
+		end
+	end
+
+	local function analyzeWorker(myToken)
+		while myToken == token do
+			local id = table.remove(aQueue, 1)
+			if not id then
+				break
+			end
+			local a = analysisCache[id]
+			if not a then
+				local desc, derr = descFromUser(id)
+				if desc then
+					a = analyzeDesc(desc)
+					if not a.unsure then
+						analysisCache[id] = a
+						plainCache[id] = a.plain
+					end
+					if a.plain then
+						pcall(function()
+							desc:Destroy()
+						end)
+					else
+						E.cacheDesc(id, desc) -- klik nanti tidak perlu download lagi
+					end
+				else
+					local s = string.lower(tostring(derr))
+					if s:find("429") or s:find("too many") or s:find("throttl") or s:find("limit") then
+						table.insert(aQueue, id)
+						feedConc = math.max(8, feedConc - 4)
+						task.wait(1.5)
+					else
+						local e = entries[id]
+						if e and e.card then
+							e.card:Destroy()
+						end
+						entries[id] = nil
+					end
+				end
+			end
+			if a and myToken == token then
+				settleEntry(id, a)
+				setStatus(countVisible() .. " pemain • gulir untuk lagi")
+			end
+		end
+		aWorkers = aWorkers - 1
+	end
+	local function pumpAnalysis(myToken)
+		while aWorkers < feedConc and #aQueue > 0 do
+			aWorkers = aWorkers + 1
+			task.spawn(analyzeWorker, myToken)
+		end
+	end
+
+	local function feedBatch(myToken, n)
+		if myToken ~= token then
+			return
+		end
+		local added, guard = 0, 0
+		while added < n and #pool > 0 and guard < n * 4 do
+			guard = guard + 1
+			local c = poolPop()
+			if c and not tried[c.id] then
+				tried[c.id] = true
+				local nm = (c.name ~= "" and c.name) or tostring(c.id)
+				if addUser(c.id, nm, "memeriksa...", nil, { count = 0, pending = true }) then
+					added = added + 1
+					table.insert(aQueue, c.id)
+					if added % 40 == 0 then
+						pumpAnalysis(myToken)
+						task.wait()
+						if myToken ~= token then
+							return
+						end
+					end
+				end
+			end
+		end
+		pumpAnalysis(myToken)
+		if added == 0 and #pool == 0 and not loading then
+			task.spawn(feedBatchRandom, myToken, 8)
+		end
+		setStatus(countVisible() .. " pemain • memeriksa...")
+	end
+
+	local function startFeed()
+		token = token + 1
+		local myToken = token
+		clearAll()
+		mode, searchState, keyword = "feed", nil, ""
+		feedConc = FEED_CONC
+		aQueue, gQueue = {}, {}
+		showSection("all")
+		seedPool()
+		task.spawn(function()
+			local t0 = os.clock()
+			while myToken == token and #pool < 20 and os.clock() - t0 < 1.5 do
+				task.wait(0.05)
+			end
+			feedBatch(myToken, FEED_FIRST)
+			-- pengisi otomatis: jaga minimal ~100 kartu tampil dan terus berlanjut
+			while myToken == token and mode == "feed" and not stale() do
+				task.wait(0.6)
+				if count < 900 and countVisible() < 100 then
+					if #pool > 0 then
+						feedBatch(myToken, 50)
+					elseif not loading then
+						task.spawn(feedBatchRandom, myToken, 8)
+					end
+				end
+				if #pool < 60 then
+					local n = 0
+					for id in pairs(entries) do
+						if n >= 3 then
+							break
+						end
+						if not expanded[id] then
+							expandFriends(id, true)
+							n = n + 1
+						end
+					end
+				end
+			end
+		end)
+	end
+
+	local function setSortMode(m)
+		if sortMode == m then
+			return
+		end
+		sortMode = m
+		markModes()
+		if m ~= "most" then
+			for id, e in pairs(entries) do
+				if e.a and not e.gdone then
+					queueGender(id)
+				end
+			end
+		end
+		if mode == "feed" then
+			applyMode()
+			local vis = countVisible()
+			setStatus(vis .. " pemain • gulir untuk lagi")
+			if vis < 12 and not loading then
+				task.spawn(feedBatch, token, 12)
+			end
+		else
+			startFeed()
+		end
+	end
+	for k, c in pairs(modeChips) do
+		c.Activated:Connect(function()
+			setSortMode(k)
+		end)
 	end
 
 	local function doSearch()
 		local kw = box.Text:match("^%s*(.-)%s*$")
-		token = token + 1
-		local myToken = token
-		clearResults()
-		nextCursor = nil
 		if kw == "" then
-			status.Text = "Ketik nama untuk mencari semua pemain Roblox, 🎲 untuk acak."
+			startFeed()
 			return
 		end
-		keyword, loading = kw, true
-		status.Text = "Mencari \"" .. kw .. "\"..."
+		token = token + 1
+		local myToken = token
+		clearAll()
+		mode, searchState, keyword, loading = "search", nil, kw, true
+		showSection("all")
+		setStatus("Mencari \"" .. kw .. "\"...")
 		task.spawn(function()
 			local exactId = tonumber(kw)
 			local exactName
@@ -3286,218 +4299,1017 @@ UI.builders.avatars = function(page)
 				return
 			end
 			if exactId and exactName then
-				addUser(exactId, exactName, "ID " .. exactId, true)
+				addUser(exactId, exactName, "ID " .. exactId, true) -- hasil persis tidak disaring
 			end
-			local list, cur = searchUsers(kw, nil)
+			local list, st = searchUsersWeb(kw, nil)
 			if myToken ~= token then
 				return
 			end
-			loading = false
 			if list then
-				nextCursor = cur
-				for _, u in ipairs(list) do
-					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
+				searchState = st
+				addAll(list, myToken)
+				if myToken ~= token then
+					return
 				end
-				status.Text = count == 0 and ("Tidak ada hasil untuk \"" .. kw .. "\".") or (count .. " pemain ditemukan")
-				moreBtn.Visible = nextCursor ~= nil
+				loading = false
+				setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " hasil")
 			else
-				status.Text = (count > 0) and "Pencarian luas gagal (HTTP diblokir), hanya hasil persis."
-					or ("⚠ Pencarian gagal: " .. tostring(cur))
+				loading = false
+				if count > 0 then
+					setStatus("Pencarian luas gagal (HTTP diblokir?), hanya hasil persis.")
+				else
+					setStatus("⚠ " .. string.sub(tostring(st), 1, 60))
+				end
 			end
 		end)
 	end
 
-	moreBtn.Activated:Connect(function()
-		if loading or not nextCursor then
-			return
-		end
-		loading = true
-		local myToken = token
-		task.spawn(function()
-			local list, cur = searchUsers(keyword, nextCursor)
-			if myToken ~= token then
-				return
-			end
-			loading = false
-			if list then
-				nextCursor = cur
-				for _, u in ipairs(list) do
-					addUser(u.id, u.displayName or u.name, "@" .. tostring(u.name))
-				end
-			else
-				nextCursor = nil
-			end
-			moreBtn.Visible = nextCursor ~= nil
-			status.Text = count .. " pemain ditemukan" .. (nextCursor and "+" or "")
-		end)
-	end)
-
-	randBtn.Activated:Connect(function()
+	local function loadMore()
 		if loading then
 			return
 		end
-		loading = true
-		token = token + 1
 		local myToken = token
-		clearResults()
-		nextCursor = nil
-		status.Text = "Mencari pemain acak..."
-		task.spawn(function()
-			local tries = 0
-			while count < 8 and tries < 30 and myToken == token do
-				tries = tries + 1
-				local id = math.random(100000, 3500000000)
-				local nm = nameFromId(id)
-				if nm then
-					addUser(id, nm, "ID " .. id)
+		if mode == "feed" then
+			task.spawn(feedBatch, myToken, FEED_MORE)
+		elseif mode == "search" and searchState and searchState.cursor then
+			loading = true
+			task.spawn(function()
+				local list, st = searchUsersWeb(keyword, searchState)
+				if myToken ~= token then
+					return
 				end
-			end
-			if myToken == token then
+				if list then
+					searchState = st
+					addAll(list, myToken)
+					if myToken ~= token then
+						return
+					end
+					setStatus(count .. " pemain" .. (st.cursor and "+" or "") .. " hasil")
+				else
+					searchState = nil
+				end
 				loading = false
-				status.Text = count .. " pemain acak (tekan 🎲 lagi untuk ganti)"
-			end
-		end)
-	end)
+			end)
+		end
+	end
 
+	allSc:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		if allSc.Visible and allSc.CanvasPosition.Y + allSc.AbsoluteWindowSize.Y >= allSc.AbsoluteCanvasSize.Y - 120 then
+			loadMore()
+		end
+	end)
 	searchBtn.Activated:Connect(doSearch)
 	box.FocusLost:Connect(function(enter)
 		if enter then
 			doSearch()
 		end
 	end)
+	randBtn.Activated:Connect(function()
+		box.Text = ""
+		startFeed()
+	end)
 
-	-- preset
-	local h1 = label(scroll, "PRESET", 11, T.Dim, Enum.Font.GothamBold)
-	h1.LayoutOrder = 5
-	local presetGrid = userGrid(scroll, 6)
+	-- ===== PRESET =====
 	for i, p in ipairs(PRESETS) do
-		userCard(presetGrid, p[2], p[1], i)
+		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- pemain di server
-	local h2 = label(scroll, "PEMAIN DI SERVER INI", 11, T.Dim, Enum.Font.GothamBold)
-	h2.LayoutOrder = 7
-	local serverGrid = userGrid(scroll, 8)
-	local function refreshServer()
-		for _, c in ipairs(serverGrid:GetChildren()) do
+	-- isi daftar (server / teman): kartu tampil LANGSUNG, bacon / bacon cewe dibuang di latar belakang
+	local ver = {}
+	local function populate(sc, entriesList, emptyText)
+		ver[sc] = (ver[sc] or 0) + 1
+		local v = ver[sc]
+		for _, c in ipairs(sc:GetChildren()) do
 			if c:IsA("GuiObject") then
 				c:Destroy()
 			end
 		end
-		local n = 0
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player then
-				n = n + 1
-				userCard(serverGrid, p.UserId, p.DisplayName, n)
-			end
-		end
-	end
-	UI.onShow.avatars = refreshServer
-	refreshServer()
-
-	-- teman
-	local h3 = label(scroll, "TEMAN", 11, T.Dim, Enum.Font.GothamBold)
-	h3.LayoutOrder = 9
-	local friendGrid = userGrid(scroll, 10)
-	local fstatus = label(scroll, "Memuat daftar teman...", 11, T.Dim, Enum.Font.Gotham)
-	fstatus.LayoutOrder = 11
-	task.spawn(function()
-		local ok, pages = pcall(function()
-			return Players:GetFriendsAsync(player.UserId)
-		end)
-		if not ok or not pages then
-			fstatus.Text = "Daftar teman tidak bisa dimuat."
+		if #entriesList == 0 then
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = emptyText,
+				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = sc,
+			})
 			return
 		end
-		local fcount, done = 0, false
-		while not done and fcount < 72 do
-			for _, f in ipairs(pages:GetCurrentPage()) do
-				fcount = fcount + 1
-				userCard(friendGrid, f.Id, f.DisplayName or f.Username, fcount)
+		local cardsList = {}
+		for i, e in ipairs(entriesList) do
+			table.insert(cardsList, { id = e.id, card = userCard(sc, e.id, e.name, i) })
+		end
+		if not FILTER_POLOSAN then
+			return
+		end
+		task.spawn(function()
+			local inflight = 0
+			for _, c in ipairs(cardsList) do
+				while inflight >= 10 and ver[sc] == v do
+					task.wait(0.05)
+				end
+				if ver[sc] ~= v then
+					return
+				end
+				inflight = inflight + 1
+				task.spawn(function()
+					local plain = isPlainAvatar(c.id)
+					if plain and c.card.Parent then
+						c.card:Destroy()
+					end
+					inflight = inflight - 1
+				end)
 			end
-			if pages.IsFinished then
-				done = true
-			elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
-				done = true
+		end)
+	end
+
+	-- ===== PEMAIN DI SERVER =====
+	refreshServer = function()
+		local list = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				table.insert(list, { id = p.UserId, name = p.DisplayName })
 			end
 		end
-		fstatus.Text = fcount == 0 and "Belum ada teman di akun ini." or (fcount .. " teman dimuat")
-	end)
+		populate(serverSc, list, "Tidak ada pemain lain di server ini.")
+	end
+
+	-- ===== TEMAN (dimuat saat tab Teman pertama kali dibuka) =====
+	local friendsLoaded = false
+	loadFriends = function()
+		if friendsLoaded then
+			return
+		end
+		friendsLoaded = true
+		mk("TextLabel", {
+			Name = "Memuat", Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Memuat teman...",
+			TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
+		})
+		task.spawn(function()
+			local ok, pages = pcall(function()
+				return Players:GetFriendsAsync(player.UserId)
+			end)
+			if not ok or not pages then
+				populate(friendSc, {}, "Daftar teman tidak bisa dimuat.")
+				return
+			end
+			local list, done = {}, false
+			while not done and #list < 72 do
+				for _, f in ipairs(pages:GetCurrentPage()) do
+					table.insert(list, { id = f.Id, name = f.DisplayName or f.Username })
+				end
+				if pages.IsFinished then
+					done = true
+				elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
+					done = true
+				end
+			end
+			populate(friendSc, list, "Belum ada teman di akun ini.")
+		end)
+	end
+
+	startFeed()
 end
 
 ----------------------------------------------------------------------------
+-- [10] HALAMAN SEDANG DI PAKAI
+----------------------------------------------------------------------------
+local function buildWorn(page)
+	local head = mk("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = page })
+	label(head, "Sedang dipakai", 15, T.Text, Enum.Font.GothamBold).Size = UDim2.new(0.5, 0, 0, 22)
+	local sub = label(head, "", 11, T.Dim, Enum.Font.Gotham)
+	sub.Position = UDim2.fromOffset(0, 20)
+	sub.Size = UDim2.new(0.5, 0, 0, 14)
+	button(head, { text = "Lepas semua", size = UDim2.fromOffset(96, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 2), bg = T.Danger, textSize = 12,
+		onClick = function() task.spawn(E.removeAll) end })
+	button(head, { text = "Reset", size = UDim2.fromOffset(72, 28), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -102, 0, 2), textSize = 12, onClick = function() task.spawn(E.reset) end })
 
+	local list = makeScroll(page, UDim2.new(1, 0, 1, -42), UDim2.fromOffset(0, 42))
+	vlist(list, 6)
+	pad(list, 0, 0, 8, 10)
 
--- Drag header
-do
-	local dragging, dragStart, startPos = false, nil, nil
-	Header.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging, dragStart, startPos = true, input.Position, MainFrame.Position
+	local function refresh()
+		for _, c in ipairs(list:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
 		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local d = input.Position - dragStart
-			MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		local items = E.wornList()
+		sub.Text = #items .. " item aktif pada karakter"
+		for n, e in ipairs(items) do
+			local r = mk("Frame", { Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = T.Surface, BorderSizePixel = 0, LayoutOrder = n, Parent = list })
+			corner(r, 10)
+			local img = mk("ImageLabel", { Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = T.Surface2,
+				BorderSizePixel = 0, Image = thumbURL("Asset", e.Id, 150), Parent = r })
+			corner(img, 8)
+			local nameL = label(r, "Memuat nama...", 12, T.Text, Enum.Font.GothamBold)
+			nameL.Position = UDim2.fromOffset(50, 6)
+			nameL.Size = UDim2.new(1, -124, 0, 18)
+			nameL.TextTruncate = Enum.TextTruncate.AtEnd
+			local typeL = label(r, e.Label .. (E.failed[e.Id] and "  •  injector" or ""), 10, T.Dim, Enum.Font.Gotham)
+			typeL.Position = UDim2.fromOffset(50, 26)
+			typeL.Size = UDim2.new(1, -124, 0, 14)
+			button(r, { text = "Lepas", size = UDim2.fromOffset(60, 28), anchor = Vector2.new(1, 0.5), position = UDim2.new(1, -8, 0.5, 0),
+				textSize = 12, onClick = function() task.spawn(E.removeAsset, e.Id) end })
+			task.spawn(function()
+				local nm = E.name(e.Id)
+				if nameL.Parent then
+					nameL.Text = nm
+				end
+			end)
 		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
+	end
+	refresh()
+	return refresh
 end
 
--- Floating toggle
-local FloatingBtn = Instance.new("TextButton")
-FloatingBtn.Size = UDim2.fromOffset(44, 44)
-FloatingBtn.AnchorPoint = Vector2.new(0, 0.5)
-FloatingBtn.Position = UDim2.new(0, 20, 0.4, 0)
-FloatingBtn.BackgroundColor3 = Theme.Background
-FloatingBtn.Visible = false
-FloatingBtn.Text = ""
-FloatingBtn.Parent = ScreenGui
-Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 11)
-local fs = Instance.new("UIStroke")
-fs.Color = Theme.AccentBlue
-fs.Thickness = 1.5
-fs.Parent = FloatingBtn
-local fl = CreateFLogo(UDim2.fromOffset(20, 20), -12)
-fl.Position = UDim2.new(0.5, -10, 0.5, -10)
-fl.Parent = FloatingBtn
+----------------------------------------------------------------------------
+-- [10b] HALAMAN FAVORIT
+----------------------------------------------------------------------------
+local function buildFavorites(page)
+	local chipRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, Parent = page })
+	mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = chipRow })
+	local function newGrid(cell)
+		local sc = makeScroll(page, UDim2.new(1, 0, 1, -30), UDim2.fromOffset(0, 30))
+		mk("UIGridLayout", { CellSize = cell, CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = sc })
+		pad(sc, 0, 2, 0, 10)
+		return sc
+	end
+	local avSc, itSc = newGrid(UDim2.fromOffset(84, 96)), newGrid(UDim2.fromOffset(84, 110))
+	local emptyMsg = mk("TextLabel", { Size = UDim2.new(1, -16, 0, 60), Position = UDim2.fromOffset(8, 60), BackgroundTransparency = 1,
+		TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false, Parent = page })
+	local cur, dirty, cards, chips = "avatar", true, {}, {}
+	local nAv, nIt = 0, 0
 
-ToggleMainUI = function(show)
-	if show then
-		MainFrame.Visible = true
-		MainScale.Scale = 0
-		FloatingBtn.Visible = false
-		TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-	else
-		MainScale.Scale = 0
-		MainFrame.Visible = false
-		FloatingBtn.Visible = true
+	local function show(k)
+		cur = k
+		avSc.Visible, itSc.Visible = k == "avatar", k == "item"
+		for kk, c in pairs(chips) do
+			c.BackgroundColor3 = kk == k and Theme.TabActiveBg or T.Surface2
+			c.TextColor3 = kk == k and T.Accent or T.Text
+		end
+		local empty = (k == "avatar" and nAv == 0) or (k == "item" and nIt == 0)
+		emptyMsg.Visible = empty
+		emptyMsg.Text = k == "avatar" and "Belum ada avatar favorit.\nTekan ♡ di kartu avatar."
+			or "Belum ada item favorit.\nTekan ♡ di kartu item (karakter / animasi / sepatu)."
+	end
+	for i, d in ipairs({ { "avatar", "Avatar" }, { "item", "Item" } }) do
+		local c = mk("TextButton", { Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Text = d[2], TextSize = 11, Font = Enum.Font.GothamBold, TextColor3 = T.Text, AutoButtonColor = false,
+			LayoutOrder = i, Parent = chipRow })
+		corner(c, 8)
+		pad(c, 10, 0, 10, 0)
+		chips[d[1]] = c
+		c.Activated:Connect(function()
+			show(d[1])
+		end)
+	end
+
+	local function clear(sc)
+		for _, c in ipairs(sc:GetChildren()) do
+			if c:IsA("GuiObject") then
+				c:Destroy()
+			end
+		end
+	end
+	local function sorted(map)
+		local l = {}
+		for _, r in pairs(map) do
+			table.insert(l, r)
+		end
+		table.sort(l, function(a, b)
+			return (a.t or 0) > (b.t or 0)
+		end)
+		return l
+	end
+
+	local function rebuild()
+		dirty = false
+		clear(avSc)
+		clear(itSc)
+		cards = {}
+		local avs, its = sorted(FAV.avatars), sorted(FAV.items)
+		nAv, nIt = #avs, #its
+		chips.avatar.Text = "Avatar (" .. nAv .. ")"
+		chips.item.Text = "Item (" .. nIt .. ")"
+		for i, r in ipairs(avs) do
+			userCard(avSc, r.id, r.name, i, "favorit")
+		end
+		local rows = {}
+		for i, r in ipairs(its) do
+			local row = { Id = r.Id, Type = r.Type, Name = r.Name, Price = false, Order = i, slot = r.slot, slotName = r.slotName }
+			if r.Type == "Asset" then
+				E.names[r.Id] = E.names[r.Id] or r.Name
+				if r.tid then
+					E.types[r.Id] = r.tid
+				end
+			end
+			table.insert(rows, row)
+			local c = makeCard(itSc, row)
+			c.loadImg()
+			table.insert(cards, c)
+		end
+		show(cur)
+		-- harga & nama terbaru di latar belakang
+		task.spawn(function()
+			local packs = { A = { ids = {}, type = Enum.AvatarItemType.Asset }, B = { ids = {}, type = Enum.AvatarItemType.Bundle } }
+			local byKey = {}
+			for _, row in ipairs(rows) do
+				local p = row.Type == "Bundle" and "B" or "A"
+				table.insert(packs[p].ids, row.Id)
+				byKey[p .. row.Id] = row
+			end
+			for p, pack in pairs(packs) do
+				for i = 1, #pack.ids, 50 do
+					local chunk = table.move(pack.ids, i, math.min(i + 49, #pack.ids), 1, {})
+					local det = fetchDetails(chunk, pack.type)
+					for _, id in ipairs(chunk) do
+						local row, d = byKey[p .. id], det[id]
+						if row then
+							if d then
+								row.Name = d.Name or row.Name
+								row.Price = d.PriceInRobux
+							else
+								row.Price = nil
+							end
+							if row.onUpdate then
+								pcall(row.onUpdate)
+							end
+						end
+					end
+				end
+			end
+		end)
+	end
+
+	FAV.listen(function()
+		if not page.Parent then
+			return false
+		end
+		if page.Visible then
+			rebuild()
+		else
+			dirty = true
+		end
+	end)
+	show("avatar")
+	rebuild()
+	return function()
+		if dirty then
+			if page.Visible then
+				rebuild()
+			end
+			return
+		end
+		local set = collect(E.look)
+		for _, c in ipairs(cards) do
+			c.update(set)
+		end
 	end
 end
-FloatingBtn.MouseButton1Click:Connect(function() ToggleMainUI(true) end)
 
-E.onChanged(function()
-	if UI.refreshCards then pcall(UI.refreshCards) end
-	if UI.refreshWorn then pcall(UI.refreshWorn) end
+----------------------------------------------------------------------------
+-- [11] SHELL UI (gaya LEON4951 HUB v2): header, sidebar 5 tab, drag, resize
+----------------------------------------------------------------------------
+local MAIN_W, MAIN_H = 660, 360
+local State = { tab = "avatars", open = false, sbw = 78 }
+local UI = { builders = {}, built = {}, pages = {}, refreshers = {} }
+
+UI.gui = mk("ScreenGui", {
+	Name = "leon4951hub", ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 50, Parent = playerGui,
+})
+
+toastHolder = mk("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 14), Size = UDim2.fromOffset(420, 300),
+	BackgroundTransparency = 1, ZIndex = 200, Parent = UI.gui,
+})
+mk("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = toastHolder,
+})
+
+local mainFrame = mk("Frame", {
+	Name = "MainFrame", Size = UDim2.fromOffset(MAIN_W, MAIN_H), AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5), BackgroundColor3 = Theme.Background, BorderSizePixel = 0,
+	Active = true, Visible = false, Parent = UI.gui,
+})
+corner(mainFrame, 20)
+stroke(mainFrame, Theme.Accent, 3)
+local mainScale = mk("UIScale", { Scale = 0, Parent = mainFrame })
+
+local function computeScale()
+	local cam = Workspace.CurrentCamera
+	local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+	return math.clamp(math.min((vp.X - 20) / MAIN_W, (vp.Y - 20) / MAIN_H), 0.4, 1)
+end
+
+-- logo "F"
+local function createLogo(size, rotation)
+	local box = mk("Frame", { Size = size, BackgroundTransparency = 1, Rotation = rotation or -12 })
+	local function bar(sz, pos)
+		local f = mk("Frame", { Size = sz, Position = pos, BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = box })
+		corner(f, 2)
+	end
+	bar(UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28)), UDim2.new())
+	bar(UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24)), UDim2.new(0.2, 0, 0.4, 0))
+	bar(UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0), UDim2.new(0.08, 0, 0, 0))
+	return box
+end
+
+-- header
+local header = mk("Frame", { Name = "Header", Size = UDim2.new(1, 0, 0, 52), BackgroundTransparency = 1, Active = true, Parent = mainFrame })
+local logo = createLogo(UDim2.fromOffset(26, 26), -12)
+logo.Position = UDim2.new(0, 16, 0, 13)
+logo.Parent = header
+local logBtn = mk("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0, 14, 0, 11), BackgroundTransparency = 1, Text = "", ZIndex = 5, Parent = header })
+logBtn.Activated:Connect(function()
+	local okC = pcall(function()
+		local txt = table.concat(LOG, "\n")
+		if setclipboard then
+			setclipboard(txt)
+		elseif toclipboard then
+			toclipboard(txt)
+		else
+			error("tidak ada clipboard")
+		end
+	end)
+	toast(okC and "Log disalin ke clipboard (tempel ke chat kalau ada error)" or "Clipboard tidak ada di executor ini, lihat Output/F9", okC and "ok" or "warn")
+end)
+mk("TextLabel", {
+	Font = Enum.Font.GothamBold, TextSize = 20, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
+	Size = UDim2.new(0, 200, 0, 26), Position = UDim2.new(0, 50, 0, 13), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "LEON4951 HUB", Parent = header,
+})
+
+local ToggleMainUI
+
+local closeBtn = mk("TextButton", {
+	Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -44, 0, 8), BackgroundColor3 = Theme.CardBg, Text = "X",
+	Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, AutoButtonColor = false, Parent = header,
+})
+corner(closeBtn, 10)
+stroke(closeBtn, Theme.CardBorder, 1.5)
+closeBtn.Activated:Connect(function()
+	ToggleMainUI(false)
 end)
 
-RenderSidebarTabs()
-SetActiveCategory(1)
+local waBtn = mk("TextButton", {
+	Size = UDim2.fromOffset(120, 26), Position = UDim2.new(1, -175, 0, 13), BackgroundColor3 = Theme.WaGreen,
+	Text = "💬 SALURAN WA", Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = Theme.TextPrimary,
+	AutoButtonColor = false, Parent = header,
+})
+corner(waBtn, 8)
+stroke(waBtn, Theme.WaDarkGreen, 1.5)
+waBtn.Activated:Connect(function()
+	pcall(function()
+		if setclipboard then
+			setclipboard(WA_CHANNEL_LINK)
+		elseif toclipboard then
+			toclipboard(WA_CHANNEL_LINK)
+		end
+	end)
+	local orig = "💬 SALURAN WA"
+	waBtn.Text = "✓ COPIED!"
+	task.delay(1.5, function()
+		if waBtn.Parent then
+			waBtn.Text = orig
+		end
+	end)
+end)
+
+mk("Frame", { Size = UDim2.new(1, -32, 0, 1), Position = UDim2.new(0, 16, 0, 48), BackgroundColor3 = Theme.CardBorder, BorderSizePixel = 0, Parent = mainFrame })
+-- bar loading di bawah header (aktif saat avatar / item sedang diproses)
+local loadTrack = mk("Frame", { Size = UDim2.new(1, -32, 0, 3), Position = UDim2.new(0, 16, 0, 47), BackgroundTransparency = 1,
+	ClipsDescendants = true, ZIndex = 8, Parent = mainFrame })
+local loadBar = mk("Frame", { Size = UDim2.fromScale(0.35, 1), Position = UDim2.fromScale(-0.35, 0), BackgroundColor3 = Theme.Accent,
+	BorderSizePixel = 0, Visible = false, ZIndex = 8, Parent = loadTrack })
+corner(loadBar, 2)
+task.spawn(function()
+	local x = -0.35
+	while not stale() and UI.gui.Parent do
+		if E.busy or E.worker or E.pending ~= nil or E.loadingBundles > 0 or E.pendingClicks > 0 then
+			loadBar.Visible = true
+			x = x + 0.045
+			if x > 1 then
+				x = -0.35
+			end
+			loadBar.Position = UDim2.fromScale(x, 0)
+			task.wait(0.016)
+		else
+			loadBar.Visible = false
+			task.wait(0.1)
+		end
+	end
+end)
+
+-- body: sidebar + content
+local bodyFrame = mk("Frame", { Name = "Body", Size = UDim2.new(1, -32, 1, -56), Position = UDim2.new(0, 16, 0, 52), BackgroundTransparency = 1, Parent = mainFrame })
+local sidebar = mk("ScrollingFrame", {
+	Name = "Sidebar", Size = UDim2.new(0, State.sbw, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Parent = bodyFrame,
+})
+mk("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sidebar })
+
+local contentFrame = mk("Frame", {
+	Name = "Content", Size = UDim2.new(1, -(State.sbw + 8) - 180, 1, 0), Position = UDim2.new(0, State.sbw + 8, 0, 0),
+	BackgroundTransparency = 1, ClipsDescendants = true, Parent = bodyFrame,
+})
+local contentTitle = mk("TextLabel", {
+	Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.TextPrimary, BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Text = "AVATAR", Parent = contentFrame,
+})
+local contentSub = mk("TextLabel", {
+	Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 0, 22), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "", Parent = contentFrame,
+})
+local pageHolder = mk("Frame", { Size = UDim2.new(1, 0, 1, -46), Position = UDim2.fromOffset(0, 46), BackgroundTransparency = 1, Parent = contentFrame })
+
+local function updateSub()
+	local n = #E.wornList()
+	contentSub.Text = n .. " item dipakai  •  mode: " .. (E.lastMethod ~= "" and E.lastMethod or (E.remote and "server" or "native"))
+end
+
+-- daftar tab
+local TABS = {
+	{ key = "avatars", name = "avatar" },
+	{ key = "karakter", name = "karakter", group = "KARAKTER / TUBUH" },
+	{ key = "animasi", name = "animasi", group = "ANIMASI" },
+	{ key = "sepatu", name = "sepatu", group = "SEPATU" },
+	{ key = "favorit", name = "favorit", title = "FAVORIT" },
+{ key = "worn", name = "dipakai", title = "SEDANG DI PAKAI" },
+}
+
+UI.builders.avatars = buildAvatars
+UI.builders.favorit = function(p)
+	UI.refreshers.favorit = buildFavorites(p)
+end
+UI.builders.worn = function(p)
+	UI.refreshers.worn = buildWorn(p)
+end
+for _, tab in ipairs(TABS) do
+	if tab.group then
+		UI.builders[tab.key] = function(p)
+			UI.refreshers[tab.key] = buildCatalog(p, tab.group)
+		end
+	end
+end
+
+local tabBtns = {}
+local function setTab(index)
+	local tab = TABS[index]
+	State.tab = tab.key
+	for i, b in ipairs(tabBtns) do
+		local active = i == index
+		b.frame.BackgroundTransparency = active and 0 or 1
+		b.frame.BackgroundColor3 = Theme.TabActiveBg
+		b.stroke.Enabled = active
+		b.label.TextColor3 = active and Theme.TextPrimary or Theme.TextMuted
+		b.indicator.Visible = active
+	end
+	for k, p in pairs(UI.pages) do
+		p.Visible = k == tab.key
+	end
+	contentTitle.Text = tab.title or string.upper(tab.name)
+	updateSub()
+	if not UI.built[tab.key] then
+		UI.built[tab.key] = true
+		local okB, errB = pcall(UI.builders[tab.key], UI.pages[tab.key])
+		if not okB then
+			logf("GAGAL membuat halaman %s: %s", tab.key, tostring(errB))
+			mk("TextLabel", {
+				Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, TextWrapped = true, TextColor3 = T.Danger,
+				TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top, Text = "⚠ Halaman gagal dibuat:\n" .. tostring(errB),
+				Parent = UI.pages[tab.key],
+			})
+		end
+	elseif UI.refreshers[tab.key] then
+		pcall(UI.refreshers[tab.key])
+	end
+end
+
+for i, tab in ipairs(TABS) do
+	local b = mk("TextButton", {
+		Name = "Tab_" .. tab.key, Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Theme.TabActiveBg, BackgroundTransparency = 1,
+		Text = "", AutoButtonColor = false, LayoutOrder = i, Parent = sidebar,
+	})
+	corner(b, 8)
+	local sk = stroke(b, Theme.TabActiveBorder, 1)
+	sk.Enabled = false
+	local ind = mk("Frame", {
+		Size = UDim2.new(0, 3, 0, 16), Position = UDim2.new(0, 4, 0.5, -8), BackgroundColor3 = Theme.Accent,
+		BorderSizePixel = 0, Visible = false, Parent = b,
+	})
+	corner(ind, 99)
+	local lb = mk("TextLabel", {
+		Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+		Size = UDim2.new(1, -14, 1, 0), Position = UDim2.new(0, 12, 0, 0), TextXAlignment = Enum.TextXAlignment.Left,
+		Text = string.upper(tab.name), Parent = b,
+	})
+	table.insert(tabBtns, { frame = b, stroke = sk, label = lb, indicator = ind })
+	b.Activated:Connect(function()
+		setTab(i)
+	end)
+	UI.pages[tab.key] = mk("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = pageHolder })
+end
+
+----------------------------------------------------------------------------
+-- [11b] CERMIN  -  pratinjau karakter (ViewportFrame) seperti etalase avatar shop
+--   Menyalin karakter yang SEDANG tampil di layar, jadi isi cermin = yang kamu lihat.
+--   Otomatis ikut berubah saat item/avatar dipilih. Geser untuk memutar.
+----------------------------------------------------------------------------
+do
+local MIRROR_W = 170
+local Mirror = { on = true, spin = 0, auto = true, dragging = false, pauseUntil = 0, sig = nil, stage = nil, model = nil, token = 0 }
+
+local mirrorPanel = mk("Frame", {
+	Name = "Mirror", Size = UDim2.new(0, MIRROR_W, 1, 0), Position = UDim2.new(1, -MIRROR_W, 0, 0),
+	BackgroundColor3 = Theme.CardBg, BorderSizePixel = 0, ClipsDescendants = true, Parent = bodyFrame,
+})
+corner(mirrorPanel, 14)
+stroke(mirrorPanel, Theme.Accent, 2)
+mk("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(36, 40, 66), Color3.fromRGB(14, 15, 26)),
+	Rotation = 90, Parent = mirrorPanel,
+})
+
+mk("TextLabel", {
+	Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.Accent, BackgroundTransparency = 1,
+	Size = UDim2.new(1, -16, 0, 20), Position = UDim2.new(0, 10, 0, 6), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "CERMIN", Parent = mirrorPanel,
+})
+
+local mirrorVP = mk("ViewportFrame", {
+	Name = "MirrorVP", Size = UDim2.new(1, -12, 1, -72), Position = UDim2.new(0, 6, 0, 28),
+	BackgroundTransparency = 1, Active = true,
+	Ambient = Color3.fromRGB(175, 175, 190), LightColor = Color3.fromRGB(255, 255, 255),
+	LightDirection = Vector3.new(-0.5, -0.8, -0.6), Parent = mirrorPanel,
+})
+local mirrorCam = mk("Camera", { FieldOfView = 40, Parent = mirrorVP })
+mirrorVP.CurrentCamera = mirrorCam
+
+local mirrorMsg = mk("TextLabel", {
+	Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted, BackgroundTransparency = 1,
+	Size = UDim2.new(1, -20, 0, 40), Position = UDim2.new(0, 10, 0.5, -20), TextWrapped = true,
+	Text = "Memuat karakter...", Parent = mirrorPanel,
+})
+
+
+local function charSignature()
+	local char = player.Character
+	if not char then
+		return "none"
+	end
+	local n = 0
+	for _ in ipairs(char:GetDescendants()) do
+		n = n + 1
+	end
+	return n .. "|" .. tostring(char:FindFirstChild(SKIN_NAME) ~= nil) .. "|" .. tostring(E.lastMethod)
+end
+
+local function mirrorBuild()
+	local char = player.Character
+	if not char or not char.Parent then
+		return nil, "karakter belum siap"
+	end
+	local wasArch = char.Archivable
+	char.Archivable = true
+	local okC, clone = pcall(function()
+		return char:Clone()
+	end)
+	char.Archivable = wasArch
+	if not okC or not clone then
+		return nil, "gagal menyalin karakter"
+	end
+
+	for _, d in ipairs(clone:GetDescendants()) do
+		pcall(function()
+			if d:IsA("LuaSourceContainer") or d:IsA("Sound") or d:IsA("BillboardGui") then
+				d:Destroy()
+			elseif d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+			end
+		end)
+	end
+	local hum = clone:FindFirstChildOfClass("Humanoid")
+	if hum then
+		pcall(function()
+			hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+		end)
+	end
+	local hrp = clone:FindFirstChild("HumanoidRootPart")
+	if hrp and not clone.PrimaryPart then
+		clone.PrimaryPart = hrp
+	end
+	clone:PivotTo(CFrame.new())
+
+	local bbCF, bbSize = clone:GetBoundingBox()
+	local height = math.clamp(bbSize.Y, 3, 14)
+	local width = math.clamp(math.max(bbSize.X, bbSize.Z), 2, 14)
+	local center = bbCF.Position
+	local fov = math.rad(mirrorCam.FieldOfView)
+	local dist = (math.max(height, width * 0.9) / 2) / math.tan(fov / 2) * 1.18 + width / 2
+
+	local stage = Instance.new("Folder")
+	stage.Name = "Stage"
+
+	local base = Instance.new("Part")
+	base.Name = "Platform"
+	base.Shape = Enum.PartType.Cylinder
+	base.Size = Vector3.new(0.2, width * 1.9, width * 1.9)
+	base.CFrame = CFrame.new(center.X, center.Y - height / 2 - 0.1, center.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	base.Anchored = true
+	base.CanCollide = false
+	base.Material = Enum.Material.Neon
+	base.Color = Theme.Accent
+	base.Transparency = 0.55
+	base.Parent = stage
+
+	clone.Parent = stage
+	return stage, clone, center, dist, height
+end
+
+function Mirror.refresh()
+	if stale() or not mirrorVP.Parent then
+		return
+	end
+	local ok, stage, model, center, dist, height = pcall(mirrorBuild)
+	if not ok then
+		logf("cermin gagal: %s", tostring(stage))
+		mirrorMsg.Text = "Cermin gagal: " .. tostring(stage)
+		mirrorMsg.Visible = true
+		return
+	end
+	if not stage then
+		mirrorMsg.Text = tostring(model)
+		mirrorMsg.Visible = true
+		return
+	end
+	local old = Mirror.stage
+	stage.Parent = mirrorVP
+	mirrorCam.CFrame = CFrame.lookAt(center + Vector3.new(0, height * 0.04, dist), center)
+	Mirror.stage, Mirror.model = stage, model
+	Mirror.sig = charSignature()
+	mirrorMsg.Visible = false
+	if old then
+		old:Destroy()
+	end
+end
+
+function Mirror.queue(delay)
+	Mirror.token = Mirror.token + 1
+	local t = Mirror.token
+	task.delay(delay or 0.6, function()
+		if t == Mirror.token then
+			Mirror.refresh()
+		end
+	end)
+end
+
+-- geser untuk memutar
+mirrorVP.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		Mirror.dragging = true
+		Mirror.lastX = input.Position.X
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				Mirror.dragging = false
+				Mirror.pauseUntil = os.clock() + 2
+			end
+		end)
+	end
+end)
+mirrorVP.InputChanged:Connect(function(input)
+	if Mirror.dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local x = input.Position.X
+		Mirror.spin = Mirror.spin + (x - (Mirror.lastX or x)) * 0.012
+		Mirror.lastX = x
+	end
+end)
+
+-- tombol bawah: putar otomatis
+local mirrorAutoBtn = button(mirrorPanel, {
+	text = "⏸ Putar", textSize = 11, bg = Theme.CardBg, size = UDim2.new(1, -12, 0, 26),
+	position = UDim2.new(0, 6, 1, -32), radius = 8, onClick = function() end,
+})
+mirrorAutoBtn.Activated:Connect(function()
+	Mirror.auto = not Mirror.auto
+	mirrorAutoBtn.Text = Mirror.auto and "⏸ Putar" or "▶ Putar"
+end)
+
+
+-- animasi putar
+do
+	local conn
+	conn = RunService.RenderStepped:Connect(function(dt)
+		if stale() or not UI.gui.Parent then
+			conn:Disconnect()
+			return
+		end
+		if not Mirror.model or not Mirror.model.Parent or not mirrorPanel.Visible or not State.open then
+			return
+		end
+		if Mirror.auto and not Mirror.dragging and os.clock() > Mirror.pauseUntil then
+			Mirror.spin = Mirror.spin + dt * 0.8
+		end
+		pcall(function()
+			Mirror.model:PivotTo(CFrame.Angles(0, math.pi + Mirror.spin, 0))
+		end)
+	end)
+end
+
+-- ikuti perubahan avatar
+E.onChanged(function()
+	Mirror.queue(0.8)
+end)
+player.CharacterAdded:Connect(function()
+	Mirror.sig = nil
+	Mirror.queue(2)
+end)
+
+-- pemeriksa berkala (menangkap perubahan susulan: aksesori yang baru selesai dimuat, dll)
+task.spawn(function()
+	local last = 0
+	while not stale() and UI.gui.Parent do
+		task.wait(2)
+		if State.open and mirrorPanel.Visible then
+			if charSignature() ~= Mirror.sig or os.clock() - last > 8 then
+				last = os.clock()
+				Mirror.refresh()
+			end
+		end
+	end
+end)
+Mirror.queue(1.5)
+end
+
+-- tombol mengambang (muncul saat UI ditutup)
+local fab = mk("TextButton", {
+	Name = "FloatingToggleBtn", Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 20, 0.4, 0), BackgroundColor3 = Theme.Background, BorderSizePixel = 0,
+	Visible = false, Active = true, Text = "", ZIndex = 20, Parent = UI.gui,
+})
+corner(fab, 11)
+stroke(fab, Theme.Accent, 1.5)
+local fabLogo = createLogo(UDim2.fromOffset(20, 20), -12)
+fabLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
+fabLogo.Parent = fab
+
+-- resize handle
+local resizeHandle = mk("TextButton", {
+	Name = "ResizeHandle", Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, 0, 1, 0),
+	BackgroundColor3 = Theme.Accent, Text = "◢", Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = Theme.Background,
+	AutoButtonColor = false, ZIndex = 10, Parent = mainFrame,
+})
+corner(resizeHandle, 5)
+
+-- drag / resize / drag tombol mengambang
+local dragging, dragStart, dragOrigin
+local resizing, resizeStart, sizeOrigin
+local floating, floatStart, floatOrigin, floatMoved = false, nil, nil, false
+
+header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging, dragStart, dragOrigin = true, input.Position, mainFrame.Position
+	end
+end)
+resizeHandle.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		resizing, resizeStart, sizeOrigin = true, input.Position, mainFrame.Size
+	end
+end)
+fab.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		floating, floatStart, floatOrigin, floatMoved = true, input.Position, fab.Position, false
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if stale() then
+		return
+	end
+	local moveType = input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch
+	if not moveType then
+		return
+	end
+	if dragging then
+		local d = input.Position - dragStart
+		mainFrame.Position = UDim2.new(dragOrigin.X.Scale, dragOrigin.X.Offset + d.X, dragOrigin.Y.Scale, dragOrigin.Y.Offset + d.Y)
+	end
+	if resizing then
+		local d = (input.Position - resizeStart) / math.max(mainScale.Scale, 0.1)
+		mainFrame.Size = UDim2.fromOffset(
+			math.clamp(sizeOrigin.X.Offset + d.X, 560, 1000),
+			math.clamp(sizeOrigin.Y.Offset + d.Y, 300, 650)
+		)
+	end
+	if floating then
+		local d = input.Position - floatStart
+		if math.abs(d.X) + math.abs(d.Y) > 8 then
+			floatMoved = true
+		end
+		if floatMoved then
+			fab.Position = UDim2.new(floatOrigin.X.Scale, floatOrigin.X.Offset + d.X, floatOrigin.Y.Scale, floatOrigin.Y.Offset + d.Y)
+		end
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging, resizing, floating = false, false, false
+	end
+end)
+fab.Activated:Connect(function()
+	if not floatMoved then
+		ToggleMainUI(true)
+	end
+end)
+
+ToggleMainUI = function(show)
+	State.open = show
+	if show then
+		mainFrame.Visible = true
+		mainScale.Scale = 0
+		fab.Visible = false
+		tween(mainScale, { Scale = computeScale() }, 0.22, Enum.EasingStyle.Back)
+	else
+		mainScale.Scale = 0
+		mainFrame.Visible = false
+		fab.Visible = true
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or E.uiDestroyed or stale() then
+		return
+	end
+	if input.KeyCode == TOGGLE_KEY then
+		ToggleMainUI(not State.open)
+		return
+	end
+	local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+	if ctrl and State.open then
+		if input.KeyCode == Enum.KeyCode.Z then
+			task.spawn(E.undo)
+		elseif input.KeyCode == Enum.KeyCode.Y then
+			task.spawn(E.doRedo)
+		end
+	end
+end)
+
+do
+	local cam = Workspace.CurrentCamera
+	if cam then
+		cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			if State.open then
+				mainScale.Scale = computeScale()
+			end
+		end)
+	end
+end
+
+-- segarkan kartu/daftar saat avatar berubah
+E.onChanged(function()
+	updateSub()
+	for key, fn in pairs(UI.refreshers) do
+		if key == State.tab or key ~= "worn" then
+			pcall(fn)
+		end
+	end
+end)
+
+----------------------------------------------------------------------------
+-- [12] BOOT + START
+----------------------------------------------------------------------------
+setTab(1)
+ToggleMainUI(true)
 
 task.spawn(function()
 	local ok, err = pcall(E.init)
 	if not ok then
-		toast("Gagal init avatar: " .. tostring(err), "danger")
+		toast("Gagal menyiapkan karakter: " .. tostring(err), "danger")
 		return
 	end
-	toast("LEON4951 + Avatar engine siap", "ok")
+	toast("leon4951hub siap! K = buka/tutup  •  mode: " .. (E.remote and "SERVER" or (E.injectFirst and "INJECTOR (visual klien)" or "native")), "ok")
+	if PREWARM_SKIN and not E.remote and E.useSkin and E.cap.donor ~= false and E.look then
+		E.busy = true
+		pcall(E.apply, E.look)
+		E.busy = false
+		E.reapplyTweaks()
+	end
 end)
 
-MainFrame.Visible = true
-MainScale.Scale = 0
-TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+-- muat tab katalog lain diam-diam supaya saat dibuka sudah terisi
+task.delay(3, function()
+	for _, tab in ipairs(TABS) do
+		if stale() then
+			return
+		end
+		if tab.group and not UI.built[tab.key] then
+			UI.built[tab.key] = true
+			pcall(UI.builders[tab.key], UI.pages[tab.key])
+			task.wait(0.8)
+		end
+	end
+end)
