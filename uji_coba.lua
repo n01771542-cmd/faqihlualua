@@ -3522,12 +3522,44 @@ end
 ----------------------------------------------------------------------------
 local PRESETS = { { "Roblox", 1 }, { "builderman", 156 }, { "Shedletsky", 261 }, { "Aku (asli)", player.UserId } }
 
+-- apakah GUI benar-benar terlihat (semua induk Visible)
+local function UI_SHOWN(g)
+	while g and g:IsA("GuiObject") do
+		if not g.Visible then
+			return false
+		end
+		g = g.Parent
+	end
+	return g ~= nil
+end
+
 local function userCard(parent, userId, name, order, sub)
 	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
 	corner(card, 10)
 	local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
-		BorderSizePixel = 0, Image = thumbURL("AvatarHeadShot", userId, 150), Parent = card })
+		BorderSizePixel = 0, Parent = card })
 	corner(img, 27)
+	-- foto profil: dimuat langsung, dan diulang otomatis (ukuran lain) kalau gagal / belum jadi
+	task.spawn(function()
+		local sizes = { 150, 100, 180, 110, 352, 150, 100 }
+		local tries = 1
+		img.Image = thumbURL("AvatarHeadShot", userId, sizes[1])
+		local lastSet = os.clock()
+		while img.Parent and not img.IsLoaded and tries < #sizes do
+			task.wait(0.4)
+			if img.Parent and not img.IsLoaded then
+				if UI_SHOWN(img) then
+					if os.clock() - lastSet > 3 then
+						tries = tries + 1
+						img.Image = thumbURL("AvatarHeadShot", userId, sizes[tries])
+						lastSet = os.clock()
+					end
+				else
+					lastSet = os.clock() -- tab tersembunyi: tunggu sampai terlihat
+				end
+			end
+		end
+	end)
 	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 	nm.Position = UDim2.fromOffset(3, 61)
 	nm.Size = UDim2.new(1, -6, 0, 14)
@@ -4374,95 +4406,166 @@ local function buildAvatars(page)
 		userCard(presetSc, p[2], p[1], i, p[2] == player.UserId and "avatar asli" or nil)
 	end
 
-	-- isi daftar (server / teman): kartu tampil LANGSUNG, bacon / bacon cewe dibuang di latar belakang
-	local ver = {}
-	local function populate(sc, entriesList, emptyText)
-		ver[sc] = (ver[sc] or 0) + 1
-		local v = ver[sc]
-		for _, c in ipairs(sc:GetChildren()) do
-			if c:IsA("GuiObject") then
-				c:Destroy()
-			end
-		end
-		if #entriesList == 0 then
-			mk("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = emptyText,
-				TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = sc,
-			})
+	-- ===== DAFTAR SERVER & TEMAN: dimuat sejak awal, kartu langsung tampil =====
+	local listCards = { server = {}, friends = {} }
+	local listCount = { server = 0, friends = 0 }
+	local listSc = { server = serverSc, friends = friendSc }
+	local listInfo = {}
+	local listState = { server = "", friends = "Memuat teman..." }
+	local listSeq = 0
+
+	local function syncInfo(key)
+		local lbl = listInfo[key]
+		if not lbl then
 			return
 		end
-		local cardsList = {}
-		for i, e in ipairs(entriesList) do
-			table.insert(cardsList, { id = e.id, card = userCard(sc, e.id, e.name, i) })
+		lbl.Text = listState[key]
+		lbl.Visible = listSc[key].Visible and listCount[key] == 0 and listState[key] ~= ""
+	end
+	for key, sc in pairs(listSc) do
+		listInfo[key] = mk("TextLabel", {
+			Size = UDim2.new(1, -16, 0, 30), Position = UDim2.fromOffset(8, 72), BackgroundTransparency = 1, Text = "",
+			TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.GothamMedium, TextWrapped = true, Visible = false,
+			ZIndex = 5, Parent = page,
+		})
+		sc:GetPropertyChangedSignal("Visible"):Connect(function()
+			syncInfo(key)
+		end)
+	end
+
+	-- pemeriksa bacon di latar belakang (server didahulukan, paralel, hasil dicache)
+	local checkQ, checkWorkers = {}, 0
+	local function dropCard(key, id)
+		local c = listCards[key][id]
+		if c then
+			listCards[key][id] = nil
+			listCount[key] = listCount[key] - 1
+			if c.Parent then
+				c:Destroy()
+			end
+			syncInfo(key)
 		end
+	end
+	local function checkWorker()
+		while #checkQ > 0 and not stale() do
+			local job = table.remove(checkQ, 1)
+			local key, id = job[1], job[2]
+			if listCards[key][id] then
+				local plain
+				if plainCache[id] ~= nil then
+					plain = plainCache[id]
+				else
+					local desc, derr = descFromUser(id)
+					if desc then
+						local a = analyzeDesc(desc)
+						if not a.unsure then
+							plainCache[id] = a.plain
+							analysisCache[id] = a
+						end
+						plain = a.plain and not a.unsure -- info gagal dimuat -> jangan disembunyikan
+						if plain then
+							pcall(function()
+								desc:Destroy()
+							end)
+						else
+							E.cacheDesc(id, desc)
+						end
+					else
+						local se = string.lower(tostring(derr))
+						if se:find("429") or se:find("too many") or se:find("throttl") or se:find("limit") then
+							table.insert(checkQ, job)
+							task.wait(1.5)
+						end
+					end
+				end
+				if plain then
+					dropCard(key, id)
+				end
+			end
+		end
+		checkWorkers = checkWorkers - 1
+	end
+	local function queueCheck(key, id)
 		if not FILTER_POLOSAN then
 			return
 		end
-		task.spawn(function()
-			local inflight = 0
-			for _, c in ipairs(cardsList) do
-				while inflight >= 10 and ver[sc] == v do
-					task.wait(0.05)
-				end
-				if ver[sc] ~= v then
-					return
-				end
-				inflight = inflight + 1
-				task.spawn(function()
-					local plain = isPlainAvatar(c.id)
-					if plain and c.card.Parent then
-						c.card:Destroy()
-					end
-					inflight = inflight - 1
-				end)
-			end
-		end)
-	end
-
-	-- ===== PEMAIN DI SERVER =====
-	refreshServer = function()
-		local list = {}
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player then
-				table.insert(list, { id = p.UserId, name = p.DisplayName })
-			end
+		local job = { key, id }
+		if key == "server" then
+			table.insert(checkQ, 1, job)
+		else
+			table.insert(checkQ, job)
 		end
-		populate(serverSc, list, "Tidak ada pemain lain di server ini.")
+		while checkWorkers < 20 and #checkQ > 0 do
+			checkWorkers = checkWorkers + 1
+			task.spawn(checkWorker)
+		end
 	end
 
-	-- ===== TEMAN (dimuat saat tab Teman pertama kali dibuka) =====
-	local friendsLoaded = false
-	loadFriends = function()
-		if friendsLoaded then
+	local function listAdd(key, id, name)
+		if listCards[key][id] then
 			return
 		end
-		friendsLoaded = true
-		mk("TextLabel", {
-			Name = "Memuat", Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Memuat teman...",
-			TextColor3 = T.Dim, TextSize = 12, Font = Enum.Font.Gotham, Parent = friendSc,
-		})
-		task.spawn(function()
-			local ok, pages = pcall(function()
-				return Players:GetFriendsAsync(player.UserId)
-			end)
-			if not ok or not pages then
-				populate(friendSc, {}, "Daftar teman tidak bisa dimuat.")
-				return
-			end
-			local list, done = {}, false
-			while not done and #list < 72 do
-				for _, f in ipairs(pages:GetCurrentPage()) do
-					table.insert(list, { id = f.Id, name = f.DisplayName or f.Username })
-				end
-				if pages.IsFinished then
-					done = true
-				elseif not pcall(function() pages:AdvanceToNextPageAsync() end) then
-					done = true
-				end
-			end
-			populate(friendSc, list, "Belum ada teman di akun ini.")
-		end)
+		listSeq = listSeq + 1
+		listCards[key][id] = userCard(listSc[key], id, name, listSeq)
+		listCount[key] = listCount[key] + 1
+		syncInfo(key)
+		queueCheck(key, id)
 	end
+
+	-- ===== PEMAIN DI SERVER (live: ikut berubah saat ada yang masuk / keluar) =====
+	listState.server = "Tidak ada pemain lain di server ini."
+	local function addServerPlayer(p)
+		if p ~= player and not stale() then
+			listAdd("server", p.UserId, p.DisplayName)
+		end
+	end
+	for _, p in ipairs(Players:GetPlayers()) do
+		addServerPlayer(p)
+	end
+	Players.PlayerAdded:Connect(addServerPlayer)
+	Players.PlayerRemoving:Connect(function(p)
+		if not stale() then
+			dropCard("server", p.UserId)
+		end
+	end)
+	refreshServer = function()
+		syncInfo("server")
+	end
+
+	-- ===== TEMAN (dimuat di latar belakang sejak script jalan, bukan saat tab dibuka) =====
+	loadFriends = function()
+		syncInfo("friends")
+	end
+	task.spawn(function()
+		local ok, pages = pcall(function()
+			return Players:GetFriendsAsync(player.UserId)
+		end)
+		if not ok or not pages then
+			listState.friends = "Daftar teman tidak bisa dimuat."
+			syncInfo("friends")
+			return
+		end
+		local n = 0
+		while not stale() and n < 4 do
+			n = n + 1
+			local okP, cur = pcall(function()
+				return pages:GetCurrentPage()
+			end)
+			if okP and type(cur) == "table" then
+				for i, f in ipairs(cur) do
+					listAdd("friends", f.Id, f.DisplayName or f.Username)
+					if i % 40 == 0 then
+						task.wait()
+					end
+				end
+			end
+			if pages.IsFinished or not pcall(function() pages:AdvanceToNextPageAsync() end) then
+				break
+			end
+		end
+		listState.friends = "Belum ada teman di akun ini."
+		syncInfo("friends")
+	end)
 
 	startFeed()
 end
