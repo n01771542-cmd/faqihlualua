@@ -3,8 +3,13 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL (OPTIMAL v7): antrian render, katalog instan, tab ramping, bug UI fix.
+  VERSI FULL (OPTIMAL v8): antrian render, katalog instan, tab ramping, bug UI fix.
     Tab: avatar | karakter | animasi | sepatu | favorit | dipakai
+  UPDATE v8:
+   - Tab baru: TOPI / WAJAH / BAJU / CELANA / AKSESORIS. Item diambil dari semua avatar pemain yang ditemukan di tab avatar;
+     klik satu item = hanya bagian itu yang dipasang ke karakter kamu.
+   - Kamera cermin sejajar tinggi kepala (benar-benar mengikuti avatar tinggi / pendek).
+   - Load tab avatar lebih ringan (anti lag / FPS drop): kartu dibuat bertahap, status dibatasi, prefetch & preload diperlambat saat FPS turun.
   UPDATE v7:
    - Kamera cermin sejajar tinggi kepala avatar. Tab karakter: bundle bagian tubuh dipasang kilat (tukar mesh + prefetch).
   UPDATE v6:
@@ -468,6 +473,26 @@ local E = {
 
 function E.onChanged(fn)
 	table.insert(E.listeners, fn)
+end
+
+E.smoothDt = 1 / 60
+do
+	local hb
+	hb = RunService.Heartbeat:Connect(function(dt)
+		if stale() then
+			hb:Disconnect()
+			return
+		end
+		E.smoothDt = E.smoothDt * 0.9 + dt * 0.1
+	end)
+end
+-- kalau FPS turun, kerjaan latar belakang diperlambat sebentar supaya game tidak lag
+function E.pace()
+	local n = 0
+	while E.smoothDt > 1 / 38 and n < 6 do
+		n = n + 1
+		task.wait(0.1)
+	end
 end
 
 local function fire()
@@ -1692,6 +1717,8 @@ function E.fastApply(added, removed)
 			table.insert(plan, { "acc", id, tid })
 		elseif tid and FAST_CLASS[tid] then
 			table.insert(plan, { "cls", id, tid })
+		elseif tid == 18 then
+			table.insert(plan, { "face", id, tid })
 		else
 			return false -- layered / alis / bulu mata / bodypart / animasi: render penuh
 		end
@@ -1713,6 +1740,26 @@ function E.fastApply(added, removed)
 			local c = skin:FindFirstChild("AS_" .. id)
 			if c then
 				c:SetAttribute("ASF", id)
+			end
+		elseif kind == "face" then
+			local objs, how = loadAsset(id, 18)
+			if not objs then
+				return false
+			end
+			local decal = findIn(objs, "Decal")
+			local head = skin:FindFirstChild("Head")
+			local face = head and (head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal"))
+			local okF = decal ~= nil and face ~= nil
+			if okF then
+				face.Texture = decal.Texture
+			end
+			if how == "donor" then
+				pcall(function()
+					objs[1]:Destroy()
+				end)
+			end
+			if not okF then
+				return false
 			end
 		else
 			local class = FAST_CLASS[p[3]]
@@ -2171,11 +2218,12 @@ function E.prefetchBundle(id)
 		return
 	end
 	table.insert(E.bQ, 1, id)
-	while E.bWorkers < 3 and #E.bQ > 0 do
+	while E.bWorkers < 2 and #E.bQ > 0 do
 		E.bWorkers = E.bWorkers + 1
 		task.spawn(function()
 			while #E.bQ > 0 and not stale() do
 				local b = table.remove(E.bQ, 1)
+				E.pace()
 				if not E.bundleCache[b] then
 					pcall(function()
 						local results, n = E.resolveBundle(b)
@@ -2279,6 +2327,9 @@ function E.cacheDesc(uid, desc)
 	if E.descCache[uid] then
 		return
 	end
+	if E.harvestHook then
+		pcall(E.harvestHook, desc)
+	end
 	E.descCache[uid] = desc
 	table.insert(E.descOrder, uid)
 	if #E.descOrder > 250 then
@@ -2308,7 +2359,7 @@ end
 -- PREFETCH AVATAR: boneka donor disiapkan lebih dulu, jadi saat kartu diklik
 -- avatar langsung terpasang (tinggal pasang, tidak perlu menunggu download lagi)
 ------------------------------------------------------------------------
-local PRE_MAX = 10
+local PRE_MAX = 6
 
 function E.preEvict()
 	while #E.preOrder > PRE_MAX do
@@ -2364,11 +2415,12 @@ function E.prefetchBg(uid)
 		end
 	end
 	table.insert(E.bgQ, uid)
-	while E.bgWorkers < 2 and #E.bgQ > 0 do
+	while E.bgWorkers < 1 and #E.bgQ > 0 do
 		E.bgWorkers = E.bgWorkers + 1
 		task.spawn(function()
 			while #E.bgQ > 0 and not stale() do
 				local u = table.remove(E.bgQ, 1)
+				E.pace()
 				if not E.preCache[u] and not E.preJobs[u] then
 					E.prefetchUser(u)
 					local t0 = os.clock()
@@ -2386,13 +2438,13 @@ end
 E.thumbQ, E.thumbWorkers = {}, 0
 function E.preloadImg(img)
 	table.insert(E.thumbQ, img)
-	while E.thumbWorkers < 3 and #E.thumbQ > 0 do
+	while E.thumbWorkers < 2 and #E.thumbQ > 0 do
 		E.thumbWorkers = E.thumbWorkers + 1
 		task.spawn(function()
 			local CP = game:GetService("ContentProvider")
 			while #E.thumbQ > 0 and not stale() do
 				local batch = {}
-				for _ = 1, 24 do
+				for _ = 1, 16 do
 					local im = table.remove(E.thumbQ, 1)
 					if not im then
 						break
@@ -2406,6 +2458,7 @@ function E.preloadImg(img)
 						CP:PreloadAsync(batch)
 					end)
 				end
+				task.wait(0.05)
 			end
 			E.thumbWorkers = E.thumbWorkers - 1
 		end)
@@ -3129,7 +3182,7 @@ local ROBLOX_CREATORS = { [1] = true, [1200769] = true } -- ID akun / grup resmi
 local PREWARM_SKIN = true -- render boneka sekali di awal supaya klik pertama sudah cepat (set false kalau avatar terlihat berubah di awal)
 local FEED_FIRST = 130    -- kartu avatar yang langsung muncul
 local FEED_MORE = 60      -- tambahan tiap gulir
-local FEED_CONC = 24      -- pengecekan avatar paralel
+local FEED_CONC = 14      -- pengecekan avatar paralel
 local FEED_KEEP = 160     -- jumlah kartu avatar minimal yang dijaga tetap terisi di latar belakang
 local AV_SAVE_MAX = 400   -- maksimal avatar yang disimpan ke file config (supaya saat masuk lagi langsung tampil)
 local AV_FILE = "leon4951hub_avatars.json"
@@ -3338,8 +3391,11 @@ local function genderOf(a)
 		local inf = itemInfo[id]
 		local fi, mi = 0, 0
 		if inf then
-			fi = scoreWords(inf.name, FEMALE_WORDS)
-			mi = scoreWords(inf.name, MALE_WORDS)
+			if inf.fs == nil then
+				inf.fs = scoreWords(inf.name, FEMALE_WORDS)
+				inf.ms = scoreWords(inf.name, MALE_WORDS)
+			end
+			fi, mi = inf.fs, inf.ms
 		end
 		local t = a.types[id]
 		if t == "DressSkirt" then
@@ -3852,8 +3908,9 @@ local function userCard(parent, userId, name, order, sub)
 		-- cadangan: kalau belum jadi, ulangi dengan ukuran lain
 		local sizes = { 150, 60, 180, 100, 352 }
 		local tries, lastSet = 0, os.clock()
+		task.wait(3 + math.random())
 		while img.Parent and not img.IsLoaded and tries < #sizes do
-			task.wait(0.5)
+			task.wait(1.5)
 			if img.Parent and not img.IsLoaded then
 				if UI_SHOWN(img) then
 					if os.clock() - lastSet > 2.5 then
@@ -4194,6 +4251,16 @@ local function buildAvatars(page)
 		end
 		return n
 	end
+	-- status dibatasi (maks ~2x/detik) supaya tidak menghitung ulang ratusan kartu tiap avatar selesai dicek
+	local lastStat = 0
+	local function softStatus(suffix)
+		local now = os.clock()
+		if now - lastStat < 0.5 then
+			return
+		end
+		lastStat = now
+		setStatus(countVisible() .. suffix)
+	end
 	-- info (opsional): { count = jumlah item, gender = "cowo"/"cewe"/nil } -> dipakai untuk urutan + filter
 	local function addUser(id, name, sub, front, info)
 		if seen[id] then
@@ -4243,7 +4310,7 @@ local function buildAvatars(page)
 	-- Dipakai duluan: teman akun ini, pemain di server, lalu teman-dari-teman avatar yang lolos filter.
 	-- Hampir semuanya akun asli + nama sudah ada (tanpa tebak ID acak yang banyak kosong), jadi kartu muncul jauh lebih cepat.
 	local pool, poolSeen, expanded, expanding = {}, {}, {}, 0
-	local feedConc = 24
+	local feedConc = 14
 
 	local function poolPush(id, name)
 		id = tonumber(id)
@@ -4371,7 +4438,7 @@ local function buildAvatars(page)
 											e.a = a
 										end
 										queueGender(id)
-										setStatus(countVisible() .. " pemain • memuat...")
+										softStatus(" pemain • memuat...")
 									end
 								end
 							end
@@ -4408,10 +4475,11 @@ local function buildAvatars(page)
 
 	-- gender: 6 pekerja, tiap pekerja mengambil detail item banyak avatar sekaligus (1 panggilan batch)
 	local function genderPump()
-		while gWorkers < 6 and #gQueue > 0 do
+		while gWorkers < 3 and #gQueue > 0 do
 			gWorkers = gWorkers + 1
 			task.spawn(function()
 				while #gQueue > 0 and not stale() do
+					E.pace()
 					local batch, ids, idSeen = {}, {}, {}
 					while #gQueue > 0 and #batch < 8 do
 						local id = table.remove(gQueue, 1)
@@ -4478,6 +4546,7 @@ local function buildAvatars(page)
 			if not id then
 				break
 			end
+			E.pace()
 			local a = analysisCache[id]
 			if not a then
 				local desc, derr = descFromUser(id)
@@ -4511,7 +4580,7 @@ local function buildAvatars(page)
 			end
 			if a and myToken == token then
 				settleEntry(id, a)
-				setStatus(countVisible() .. " pemain • gulir untuk lagi")
+				softStatus(" pemain • gulir untuk lagi")
 			end
 		end
 		aWorkers = aWorkers - 1
@@ -4537,9 +4606,10 @@ local function buildAvatars(page)
 				if addUser(c.id, nm, "memeriksa...", nil, { count = 0, pending = true }) then
 					added = added + 1
 					table.insert(aQueue, c.id)
-					if added % 40 == 0 then
+					if added % 10 == 0 then
 						pumpAnalysis(myToken)
 						task.wait()
+						E.pace()
 						if myToken ~= token then
 							return
 						end
@@ -4551,7 +4621,7 @@ local function buildAvatars(page)
 		if added == 0 and #pool == 0 and not loading then
 			task.spawn(feedBatchRandom, myToken, 8)
 		end
-		setStatus(countVisible() .. " pemain • memeriksa...")
+		softStatus(" pemain • memeriksa...")
 	end
 
 	-- ===== CONFIG: pulihkan daftar avatar dari file (langsung tampil tanpa dicek ulang) =====
@@ -4568,8 +4638,9 @@ local function buildAvatars(page)
 				plainCache[id] = false
 				if addUser(id, tostring(r.name), cnt .. " item " .. genderSym(r.gender), nil, { count = cnt, gender = r.gender }) then
 					n = n + 1
-					if n % 40 == 0 then
+					if n % 10 == 0 then
 						task.wait()
+						E.pace()
 					end
 				end
 			end
@@ -4601,10 +4672,10 @@ local function buildAvatars(page)
 			feedBatch(myToken, restoredN > 0 and 40 or FEED_FIRST)
 			-- pengisi otomatis: jaga minimal FEED_KEEP kartu tampil dan terus berlanjut
 			while myToken == token and mode == "feed" and not stale() do
-				task.wait(0.3)
+				task.wait(0.45)
 				if count < 900 and countVisible() < FEED_KEEP then
 					if #pool > 0 then
-						feedBatch(myToken, sortMode ~= "most" and 90 or 50)
+						feedBatch(myToken, sortMode ~= "most" and 60 or 40)
 					elseif not loading then
 						task.spawn(feedBatchRandom, myToken, 8)
 					end
@@ -4966,7 +5037,7 @@ local function buildAvatars(page)
 	task.spawn(function()
 		while not stale() and page.Parent do
 			task.wait(1)
-			if not E.remote and UI_SHOWN(allSc) then
+			if not E.remote and not E.busy and UI_SHOWN(allSc) then
 				local top = allSc.AbsolutePosition.Y
 				local h = allSc.AbsoluteWindowSize.Y
 				local vis = {}
@@ -4985,7 +5056,7 @@ local function buildAvatars(page)
 					end
 					return a.x < b.x
 				end)
-				for i = 1, math.min(8, #vis) do
+				for i = 1, math.min(4, #vis) do
 					E.prefetchBg(vis[i].id)
 				end
 			end
@@ -5278,6 +5349,161 @@ local function buildFavorites(page)
 end
 
 ----------------------------------------------------------------------------
+-- [10c] TAB ITEM DARI SEMUA AVATAR: topi / wajah / baju / celana / aksesoris
+--   Item dikumpulkan otomatis dari avatar pemain yang dimuat di tab AVATAR.
+--   Klik satu item = hanya bagian itu yang dipasang ke karakter kamu.
+----------------------------------------------------------------------------
+local Harvest = {}
+do
+local HARV_MAX = 300
+local HARV_CATS = {
+	{ key = "topi", name = "topi", title = "TOPI", tids = { 8 } },
+	{ key = "wajah", name = "wajah", title = "WAJAH", tids = { 18, 42 } },
+	{ key = "baju", name = "baju", title = "BAJU", tids = { 11, 2, 64, 65, 67, 68 } },
+	{ key = "celana", name = "celana", title = "CELANA", tids = { 12, 66, 69, 72 } },
+	{ key = "aksesoris", name = "aksesoris", title = "AKSESORIS", tids = { 41, 43, 44, 45, 46, 47 } },
+}
+local HARV_BY_TID, TYPE2TID = {}, {}
+for tid, a in pairs(ACC) do
+	TYPE2TID[a[1]] = tid
+end
+for _, c in ipairs(HARV_CATS) do
+	c.list, c.map = {}, {}
+	for _, t in ipairs(c.tids) do
+		HARV_BY_TID[t] = c
+	end
+end
+local HARV_CLASSIC = { { "Shirt", 11 }, { "GraphicTShirt", 2 }, { "Pants", 12 }, { "Face", 18 } }
+
+local function harvAdd(id, tid)
+	if not tid then
+		return
+	end
+	local c = HARV_BY_TID[tid]
+	if not c or c.map[id] or #c.list >= HARV_MAX then
+		return
+	end
+	local rec = { Id = id, tid = tid, Order = #c.list + 1 }
+	c.map[id] = rec
+	c.list[#c.list + 1] = rec
+	E.types[id] = tid
+end
+
+E.harvestHook = function(desc)
+	local ok, accs = pcall(function()
+		return desc:GetAccessories(true)
+	end)
+	if ok then
+		for _, a in ipairs(accs) do
+			harvAdd(a.AssetId, TYPE2TID[a.AccessoryType.Name])
+		end
+	end
+	for _, p in ipairs(HARV_CLASSIC) do
+		local v = getProp(desc, p[1])
+		if type(v) == "number" and v > 0 then
+			harvAdd(v, p[2])
+		end
+	end
+end
+
+local function buildHarvest(page, cat)
+	local info = label(page, "", 10, T.Dim, Enum.Font.Gotham)
+	info.Size = UDim2.new(1, 0, 0, 16)
+	local grid = makeScroll(page, UDim2.new(1, 0, 1, -22), UDim2.fromOffset(0, 22))
+	mk("UIGridLayout", {
+		CellSize = UDim2.fromOffset(84, 110), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
+	})
+	pad(grid, 0, 2, 0, 10)
+	local cards, made = {}, 0
+
+	local function setInfo()
+		if made == 0 then
+			info.Text = "Menunggu avatar pemain dimuat di tab AVATAR..."
+		else
+			info.Text = made .. " item dari avatar pemain  •  klik untuk pakai"
+		end
+	end
+	setInfo()
+
+	local function refreshImages()
+		local top = grid.AbsolutePosition.Y
+		local h = grid.AbsoluteWindowSize.Y
+		if h <= 0 then
+			return
+		end
+		for _, c in ipairs(cards) do
+			if not c.imgLoaded and c.card.AbsoluteSize.Y > 0 then
+				local y = c.card.AbsolutePosition.Y
+				if y + 120 > top - 300 and y < top + h + 300 then
+					c.loadImg()
+				end
+			end
+		end
+	end
+
+	task.spawn(function()
+		while not stale() and page.Parent do
+			task.wait(0.35)
+			if page.Visible then
+				if made < #cat.list then
+					E.pace()
+					local rows, new = {}, 0
+					while made < #cat.list and new < 12 do
+						made = made + 1
+						local rec = cat.list[made]
+						local row = { Id = rec.Id, Type = "Asset", Name = E.names[rec.Id] or "Memuat...", Price = false, Order = rec.Order }
+						cards[#cards + 1] = makeCard(grid, row)
+						rows[#rows + 1] = row
+						new = new + 1
+					end
+					setInfo()
+					task.spawn(function()
+						local ids = {}
+						for _, r in ipairs(rows) do
+							ids[#ids + 1] = r.Id
+						end
+						local det = fetchDetails(ids, Enum.AvatarItemType.Asset)
+						if next(det) == nil then
+							task.wait(2)
+							det = fetchDetails(ids, Enum.AvatarItemType.Asset)
+						end
+						for _, r in ipairs(rows) do
+							local d = det[r.Id]
+							if d then
+								r.Name = d.Name or r.Name
+								r.Price = d.PriceInRobux
+								E.names[r.Id] = r.Name
+							else
+								if r.Name == "Memuat..." then
+									r.Name = "Item #" .. r.Id
+								end
+								r.Price = nil
+							end
+							if r.onUpdate then
+								pcall(r.onUpdate)
+							end
+						end
+					end)
+				end
+				pcall(refreshImages)
+			end
+		end
+	end)
+
+	return function()
+		local set = collect(E.look)
+		for _, c in ipairs(cards) do
+			c.update(set)
+		end
+	end
+end
+
+Harvest.cats = HARV_CATS
+Harvest.build = buildHarvest
+end
+
+----------------------------------------------------------------------------
 -- [11] SHELL UI (gaya LEON4951 HUB v2): header, sidebar 5 tab, drag, resize
 ----------------------------------------------------------------------------
 local MAIN_W, MAIN_H = 660, 360
@@ -5444,6 +5670,11 @@ end
 local TABS = {
 	{ key = "avatars", name = "avatar" },
 	{ key = "karakter", name = "karakter", group = "KARAKTER / TUBUH" },
+	{ key = "topi", name = "topi", title = "TOPI", harv = Harvest.cats[1] },
+	{ key = "wajah", name = "wajah", title = "WAJAH", harv = Harvest.cats[2] },
+	{ key = "baju", name = "baju", title = "BAJU", harv = Harvest.cats[3] },
+	{ key = "celana", name = "celana", title = "CELANA", harv = Harvest.cats[4] },
+	{ key = "aksesoris", name = "aksesoris", title = "AKSESORIS", harv = Harvest.cats[5] },
 	{ key = "animasi", name = "animasi", group = "ANIMASI" },
 	{ key = "sepatu", name = "sepatu", group = "SEPATU" },
 	{ key = "favorit", name = "favorit", title = "FAVORIT" },
@@ -5461,6 +5692,10 @@ for _, tab in ipairs(TABS) do
 	if tab.group then
 		UI.builders[tab.key] = function(p)
 			UI.refreshers[tab.key] = buildCatalog(p, tab.group)
+		end
+	elseif tab.harv then
+		UI.builders[tab.key] = function(p)
+			UI.refreshers[tab.key] = Harvest.build(p, tab.harv)
 		end
 	end
 end
@@ -5688,10 +5923,10 @@ function Mirror.fit()
 	local aspect = math.max(vs.X, 1) / math.max(vs.Y, 1)
 	local tanV = math.tan(math.rad(mirrorCam.FieldOfView) / 2)
 	local tanH = tanV * aspect
-	-- kamera sejajar tinggi kepala; titik pandang di antara kepala & tengah badan supaya seluruh avatar tetap masuk
+	-- kamera PERSIS setinggi kepala avatar (pendek = rendah, tinggi = tinggi); pandangan hampir lurus, jarak diatur agar seluruh badan muat
 	local camY = b.headY
-	local lookY = (b.headY + b.cy) / 2
-	local halfH = math.max(b.maxY - lookY, lookY - b.minY, b.headH) * 1.12
+	local lookY = b.headY - (b.headY - b.cy) * 0.25
+	local halfH = math.max(b.maxY - lookY, lookY - b.minY, b.headH) * 1.1
 	local dist = math.max(halfH / tanV, (b.radius * 1.12) / tanH) + b.radius
 	local target = CFrame.lookAt(Vector3.new(0, camY, dist), Vector3.new(0, lookY, 0))
 	if Mirror.fitted then
@@ -5809,7 +6044,7 @@ task.spawn(function()
 	while not stale() and UI.gui.Parent do
 		task.wait(2)
 		if State.open and mirrorPanel.Visible then
-			if charSignature() ~= Mirror.sig or os.clock() - last > 8 then
+			if charSignature() ~= Mirror.sig or os.clock() - last > 20 then
 				last = os.clock()
 				Mirror.refresh()
 			end
@@ -5958,7 +6193,7 @@ E.onChanged(function()
 		end
 	end)
 	for key, fn in pairs(UI.refreshers) do
-		if key == State.tab or key ~= "worn" then
+		if key == State.tab then
 			pcall(fn)
 		end
 	end
