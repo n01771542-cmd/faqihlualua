@@ -11,19 +11,19 @@ if not player then
 end
 local playerGui = player:WaitForChild("PlayerGui", 15)
 if not playerGui then
-	warn("[Source Hub Finder] PlayerGui not found - aborting")
+	warn("[Leon4951] PlayerGui not found - aborting")
 	return
 end
 
-print("[Source Hub Finder] Loading...")
+print("[Leon4951] Loading...")
 
 local API_URL = "https://privatedontleakorelsejejjkeo3333.lovable.app/api/getPets"
 local REFRESH_INTERVAL = 1
 local MAX_ITEMS = 300
 local DEFAULT_RARITY = "Secret"
 local FORCE_INTERVAL = 3
-local TITLE = "Source Hub Finder"
-local AUTHOR = "Sources Hub Team"
+local TITLE = "Leon4951"
+local AUTHOR = "Leon4951"
 local DISCORD_LINK = "https://discord.gg/REbuVnr4qt"
 
 local POST_URL = "https://privatedontleakorelsejejjkeo3333.lovable.app/api/addPet"
@@ -34,7 +34,7 @@ local POST_COOLDOWN = 300
 
 -- Blacklist (persisted)
 local blacklist = {} -- [petName] = true
-local blacklistFile = "SourcesHub_Blacklist.json"
+local blacklistFile = "Leon4951_Blacklist.json"
 local blacklistMode = false
 local showingBlacklistPanel = false
 
@@ -121,7 +121,7 @@ do
 		end
 	end)
 	if not ok then
-		warn("[Source Hub Finder] Gagal load Assets (rarity pakai fallback API/default):", err)
+		warn("[Leon4951] Gagal load Assets (rarity pakai fallback API/default):", err)
 	end
 end
 
@@ -138,12 +138,12 @@ local function getRarityColor(petName)
 end
 
 local WHITE = Color3.fromRGB(255, 255, 255)
-local ACCENT_HI = Color3.fromRGB(255, 70, 80)
-local ACCENT = Color3.fromRGB(235, 35, 50)
-local ACCENT_DARK = Color3.fromRGB(120, 10, 22)
-local ACCENT_DEEP = Color3.fromRGB(60, 6, 12)
-local SUB_TEXT = Color3.fromRGB(175, 150, 152)
-local MUTED = Color3.fromRGB(130, 95, 98)
+local ACCENT_HI = Color3.fromRGB(70, 140, 255)
+local ACCENT = Color3.fromRGB(35, 100, 235)
+local ACCENT_DARK = Color3.fromRGB(10, 40, 120)
+local ACCENT_DEEP = Color3.fromRGB(6, 20, 60)
+local SUB_TEXT = Color3.fromRGB(150, 165, 190)
+local MUTED = Color3.fromRGB(95, 110, 140)
 
 local FONT_BOLD = Enum.Font.GothamBold
 local FONT_MED = Enum.Font.GothamMedium
@@ -279,7 +279,7 @@ local function httpGet(url)
 end
 
 local gui = new("ScreenGui", {
-	Name = "SourceHubFinder",
+	Name = "Leon4951Finder",
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	IgnoreGuiInset = true,
@@ -289,7 +289,7 @@ local main = new("Frame", {
 	Name = "Main",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(800, 502),
+	Size = UDim2.fromOffset(450, 300),
 	BackgroundColor3 = WHITE,
 	BackgroundTransparency = 0.06,
 	BorderSizePixel = 0,
@@ -299,9 +299,9 @@ corner(main, 14)
 accentStroke(main, 1.6, 0)
 new("UIGradient", {
 	Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 8, 16)),
-		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(14, 8, 10)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 4, 5)),
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(8, 20, 52)),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(8, 12, 22)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 5, 8)),
 	}),
 	Rotation = 35,
 }, main)
@@ -335,12 +335,12 @@ end
 
 local sidebar = new("Frame", {
 	Name = "Sidebar",
-	Size = UDim2.new(0, 160, 1, 0),
+	Size = UDim2.new(0, 120, 1, 0),
 	BackgroundColor3 = WHITE,
 	BackgroundTransparency = 0.15,
 	BorderSizePixel = 0,
 }, main)
-gradient(sidebar, Color3.fromRGB(8, 6, 7), Color3.fromRGB(58, 8, 17), 90)
+gradient(sidebar, Color3.fromRGB(6, 8, 14), Color3.fromRGB(8, 30, 70), 90)
 
 local divider = new("Frame", {
 	AnchorPoint = Vector2.new(1, 0),
@@ -352,7 +352,7 @@ local divider = new("Frame", {
 gradient(divider, ACCENT_HI, ACCENT_DARK, 90)
 
 local titleLabel = label(sidebar, TITLE, 13, FONT_BOLD, WHITE,
-	UDim2.fromOffset(12, 20), UDim2.fromOffset(146, 20))
+	UDim2.fromOffset(12, 20), UDim2.fromOffset(106, 20))
 gradient(titleLabel, WHITE, ACCENT_HI, 0)
 
 new("Frame", {
@@ -367,8 +367,8 @@ local statusLabel = label(sidebar, "Connecting...", 9, FONT_MED, SUB_TEXT,
 local blModeBtn = button(sidebar, {
 	text = "Blacklist",
 	textSize = 11,
-	pos = UDim2.fromOffset(8, 70),
-	size = UDim2.fromOffset(70, 32),
+	pos = UDim2.fromOffset(6, 70),
+	size = UDim2.fromOffset(52, 28),
 	c0 = ACCENT,
 	c1 = ACCENT_DARK,
 	rotation = 0,
@@ -380,10 +380,10 @@ local blModeBtn = button(sidebar, {
 local unblBtn = button(sidebar, {
 	text = "Unblacklist",
 	textSize = 10,
-	pos = UDim2.fromOffset(84, 70),
-	size = UDim2.fromOffset(70, 32),
-	c0 = Color3.fromRGB(44, 10, 15),
-	c1 = Color3.fromRGB(14, 8, 9),
+	pos = UDim2.fromOffset(62, 70),
+	size = UDim2.fromOffset(52, 28),
+	c0 = Color3.fromRGB(10, 30, 70),
+	c1 = Color3.fromRGB(8, 14, 28),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.25,
 	radius = 8,
@@ -399,8 +399,8 @@ local blPanel = new("Frame", {
 	Visible = false,
 	ZIndex = 20,
 }, main)
-blPanel.Position = UDim2.fromOffset(182, 0)
-blPanel.Size = UDim2.new(1, -182, 1, 0)
+blPanel.Position = UDim2.fromOffset(128, 0)
+blPanel.Size = UDim2.new(1, -128, 1, 0)
 corner(blPanel, 8)
 local blPanelTitle = label(blPanel, "BLACKLISTED PETS", 12, FONT_BOLD, ACCENT_HI,
 	UDim2.fromOffset(12, 8), UDim2.new(1, -80, 0, 24))
@@ -456,7 +456,7 @@ local function refreshBlacklistPanel()
 			ZIndex = 22,
 		}, blScroll)
 		corner(row, 8)
-		gradient(row, Color3.fromRGB(50, 12, 16), Color3.fromRGB(18, 10, 12), 0)
+		gradient(row, Color3.fromRGB(12, 28, 60), Color3.fromRGB(10, 16, 28), 0)
 		label(row, name, 13, FONT_BOLD, WHITE,
 			UDim2.fromOffset(12, 0), UDim2.new(1, -100, 1, 0))
 		local ub = button(row, {
@@ -485,7 +485,7 @@ end
 
 
 local authorLabel = label(sidebar, "Author: " .. AUTHOR, 10, FONT_BOLD, SUB_TEXT,
-	UDim2.fromOffset(12, 118), UDim2.fromOffset(142, 18))
+	UDim2.fromOffset(12, 118), UDim2.fromOffset(106, 18))
 gradient(authorLabel, WHITE, ACCENT_HI, 0)
 
 local COPY_TEXT = "Copy Discord Link"
@@ -493,9 +493,9 @@ local copyBtn = button(sidebar, {
 	text = COPY_TEXT,
 	textSize = 10,
 	pos = UDim2.fromOffset(8, 142),
-	size = UDim2.fromOffset(146, 30),
-	c0 = Color3.fromRGB(44, 10, 15),
-	c1 = Color3.fromRGB(14, 8, 9),
+	size = UDim2.fromOffset(106, 28),
+	c0 = Color3.fromRGB(10, 30, 70),
+	c1 = Color3.fromRGB(8, 14, 28),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.25,
 	radius = 10,
@@ -519,34 +519,34 @@ copyBtn.MouseButton1Click:Connect(function()
 end)
 
 local postLabel = label(sidebar, "Scan:0 Post:0", 9, FONT_MED, MUTED,
-	UDim2.fromOffset(12, 178), UDim2.fromOffset(142, 14))
+	UDim2.fromOffset(12, 178), UDim2.fromOffset(106, 14))
 postLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-local W_MIN, W_MAX, H_MIN, H_MAX, MARGIN = 640, 800, 300, 502, 8
+local W_MIN, W_MAX, H_MIN, H_MAX, MARGIN = 400, 450, 260, 300, 8
 local userScale = 1
 
 local zoomOut = button(sidebar, {
 	text = "-",
 	textSize = 16,
 	anchor = Vector2.new(0, 1),
-	pos = UDim2.new(0, 8, 1, -67),
-	size = UDim2.fromOffset(40, 28),
-	c0 = Color3.fromRGB(44, 10, 15),
-	c1 = Color3.fromRGB(14, 8, 9),
+	pos = UDim2.new(0, 6, 1, -62),
+	size = UDim2.fromOffset(32, 24),
+	c0 = Color3.fromRGB(10, 30, 70),
+	c1 = Color3.fromRGB(8, 14, 28),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.25,
 	radius = 8,
 })
 local zoomLabel = label(sidebar, "100%", 10, FONT_BOLD, WHITE,
-	UDim2.new(0, 52, 1, -95), UDim2.fromOffset(58, 28), Enum.TextXAlignment.Center)
+	UDim2.new(0, 40, 1, -88), UDim2.fromOffset(40, 24), Enum.TextXAlignment.Center)
 local zoomIn = button(sidebar, {
 	text = "+",
 	textSize = 16,
 	anchor = Vector2.new(0, 1),
-	pos = UDim2.new(0, 114, 1, -67),
-	size = UDim2.fromOffset(40, 28),
-	c0 = Color3.fromRGB(44, 10, 15),
-	c1 = Color3.fromRGB(14, 8, 9),
+	pos = UDim2.new(0, 82, 1, -62),
+	size = UDim2.fromOffset(32, 24),
+	c0 = Color3.fromRGB(10, 30, 70),
+	c1 = Color3.fromRGB(8, 14, 28),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.25,
 	radius = 8,
@@ -584,10 +584,10 @@ local hideBtn = button(sidebar, {
 	text = "Hide",
 	textSize = 12,
 	anchor = Vector2.new(0, 1),
-	pos = UDim2.new(0, 11, 1, -23),
-	size = UDim2.fromOffset(138, 36),
-	c0 = Color3.fromRGB(44, 10, 15),
-	c1 = Color3.fromRGB(14, 8, 9),
+	pos = UDim2.new(0, 6, 1, -23),
+	size = UDim2.fromOffset(108, 32),
+	c0 = Color3.fromRGB(10, 30, 70),
+	c1 = Color3.fromRGB(8, 14, 28),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.25,
 	radius = 10,
@@ -599,7 +599,7 @@ local showBtn, showBg = button(gui, {
 	anchor = Vector2.new(0.5, 0),
 	pos = UDim2.new(0.5, 0, 0, 12),
 	size = UDim2.fromOffset(150, 30),
-	c0 = Color3.fromRGB(60, 10, 17),
+	c0 = Color3.fromRGB(10, 35, 80),
 	c1 = Color3.fromRGB(12, 8, 9),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.15,
@@ -618,12 +618,12 @@ end)
 
 local content = new("Frame", {
 	Name = "Content",
-	Position = UDim2.fromOffset(182, 0),
-	Size = UDim2.new(1, -182, 1, 0),
+	Position = UDim2.fromOffset(128, 0),
+	Size = UDim2.new(1, -128, 1, 0),
 	BackgroundTransparency = 1,
 }, main)
 
-local TRACK_OFF = Color3.fromRGB(38, 24, 26)
+local TRACK_OFF = Color3.fromRGB(24, 30, 42)
 local function toggleCard(text, x, onChanged)
 	local card = new("Frame", {
 		Position = x == 0 and UDim2.new(0, 0, 0, 20) or UDim2.new(0.5, 6, 0, 20),
@@ -633,7 +633,7 @@ local function toggleCard(text, x, onChanged)
 		BorderSizePixel = 0,
 	}, content)
 	corner(card, 10)
-	gradient(card, Color3.fromRGB(46, 9, 15), Color3.fromRGB(12, 9, 10), 0)
+	gradient(card, Color3.fromRGB(9, 28, 55), Color3.fromRGB(9, 14, 22), 0)
 	accentStroke(card, 1.2, 0.2)
 
 	label(card, text, 12, FONT_BOLD, WHITE,
@@ -723,7 +723,7 @@ local feedBox = new("Frame", {
 	BorderSizePixel = 0,
 }, content)
 corner(feedBox, 12)
-gradient(feedBox, Color3.fromRGB(16, 6, 8), Color3.fromRGB(5, 5, 6), 90)
+gradient(feedBox, Color3.fromRGB(6, 12, 24), Color3.fromRGB(5, 6, 10), 90)
 stroke(feedBox, ACCENT, 1, 0.6)
 
 local feed = new("ScrollingFrame", {
@@ -866,7 +866,7 @@ local function addRow(data, order)
 		BorderSizePixel = 0,
 	}, feed)
 	corner(row, 10)
-	gradient(row, Color3.fromRGB(58, 10, 17), Color3.fromRGB(15, 11, 12), 0)
+	gradient(row, Color3.fromRGB(10, 32, 70), Color3.fromRGB(11, 16, 26), 0)
 	accentStroke(row, 1, 0.5)
 
 	local bar = new("Frame", {
@@ -891,7 +891,7 @@ local function addRow(data, order)
 	title.RichText = true
 	title.TextScaled = true
 	new("UITextSizeConstraint", { MaxTextSize = 18, MinTextSize = 9 }, title)
-	title.Text = ("%s  <font color=\"rgb(255,70,80)\">[ %s ]</font>"):format(
+	title.Text = ("%s  <font color=\"rgb(70,140,255)\">[ %s ]</font>"):format(
 		escapeRich(data.name), formatValue(data.value))
 
 	local sub = label(row, "", 11, FONT_BOLD, SUB_TEXT,
@@ -920,10 +920,10 @@ local function addRow(data, order)
 		fc0, fc1, ftext = ACCENT_HI, ACCENT, WHITE
 		fstroke, fstrokeT = WHITE, 0.3
 	elseif canForce then
-		fc0, fc1, ftext = Color3.fromRGB(44, 11, 16), Color3.fromRGB(16, 9, 10), WHITE
+		fc0, fc1, ftext = Color3.fromRGB(11, 28, 60), Color3.fromRGB(9, 16, 28), WHITE
 		fstroke, fstrokeT = ACCENT, 0.15
 	else
-		fc0, fc1, ftext = Color3.fromRGB(34, 26, 27), Color3.fromRGB(24, 19, 20), Color3.fromRGB(95, 75, 76)
+		fc0, fc1, ftext = Color3.fromRGB(26, 30, 40), Color3.fromRGB(19, 24, 34), Color3.fromRGB(75, 95, 120)
 		fstroke, fstrokeT = nil, nil
 	end
 	local force = button(row, {
@@ -962,8 +962,8 @@ local function addRow(data, order)
 		anchor = Vector2.new(1, 0.5),
 		pos = UDim2.new(1, -130, 0.5, 0),
 		size = UDim2.fromOffset(28, 26),
-		c0 = Color3.fromRGB(80, 20, 20),
-		c1 = Color3.fromRGB(40, 10, 10),
+		c0 = Color3.fromRGB(20, 40, 90),
+		c1 = Color3.fromRGB(10, 22, 50),
 		strokeColor = ACCENT,
 		strokeTransparency = 0.3,
 	})
@@ -985,7 +985,7 @@ local function addRow(data, order)
 			Font = FONT_BOLD,
 			TextColor3 = WHITE,
 			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Color3.fromRGB(180, 30, 40),
+			BackgroundColor3 = Color3.fromRGB(30, 90, 180),
 			BackgroundTransparency = 0.35,
 			ZIndex = 5,
 			BorderSizePixel = 0,
