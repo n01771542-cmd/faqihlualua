@@ -146,25 +146,45 @@ local autoHopToken = 0
 local function scanQuietServers()
 	local cursor = ""
 	local servers1P, servers2P = {}, {}
+	local lastErr = nil
 
 	for _ = 1, MAX_SCAN_PAGES do
+		-- servers/0 = format yang sama dengan script hop kamu (lebih stabil di executor)
 		local url = string.format(
-			"https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100",
+			"https://games.roblox.com/v1/games/%d/servers/0?sortOrder=Asc&limit=100",
 			PlaceId
 		)
 		if cursor ~= "" then
-			url = url .. "&cursor=" .. cursor
+			url = url .. "&cursor=" .. HttpService:UrlEncode(tostring(cursor))
 		end
 
 		local res = RequestAPI({ Url = url, Method = "GET" })
 		if not (res and res.Body) then
+			-- fallback endpoint Public
+			url = string.format(
+				"https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100",
+				PlaceId
+			)
+			if cursor ~= "" then
+				url = url .. "&cursor=" .. HttpService:UrlEncode(tostring(cursor))
+			end
+			res = RequestAPI({ Url = url, Method = "GET" })
+		end
+
+		if not (res and res.Body) then
+			lastErr = "no response"
 			break
 		end
 
 		local ok, decoded = pcall(function()
 			return HttpService:JSONDecode(res.Body)
 		end)
-		if not ok or type(decoded) ~= "table" or type(decoded.data) ~= "table" then
+		if not ok or type(decoded) ~= "table" then
+			lastErr = "bad json"
+			break
+		end
+		if type(decoded.data) ~= "table" then
+			lastErr = decoded.message or decoded.errors and "api error" or "no data"
 			break
 		end
 
@@ -172,12 +192,18 @@ local function scanQuietServers()
 			local playing = tonumber(server.playing) or 0
 			local maxP = tonumber(server.maxPlayers) or 0
 			local id = server.id and tostring(server.id) or nil
-			if id and id ~= tostring(game.JobId) and not _G.LeonBlacklist[id] and (maxP - playing) >= 1 then
-				local entry = { id = id, playing = playing, maxPlayers = maxP }
-				if playing == 1 then
-					servers1P[#servers1P + 1] = entry
-				elseif playing == 2 and maxPlayersPrefer >= 2 then
-					servers2P[#servers2P + 1] = entry
+			if id and id ~= tostring(game.JobId) and not _G.LeonBlacklist[id] then
+				-- slot kosong minimal 1 (bisa join)
+				if (maxP <= 0 or (maxP - playing) >= 1) then
+					local entry = { id = id, playing = playing, maxPlayers = maxP }
+					if playing == 1 then
+						servers1P[#servers1P + 1] = entry
+					elseif playing == 2 and maxPlayersPrefer >= 2 then
+						servers2P[#servers2P + 1] = entry
+					elseif playing == 0 and maxPlayersPrefer >= 1 then
+						-- empty server jarang muncul, tapi terima sebagai 1P-tier
+						servers1P[#servers1P + 1] = entry
+					end
 				end
 			end
 		end
@@ -562,7 +588,7 @@ local function renderList(list)
 	if not list or #list == 0 then
 		if emptyLbl.Parent then
 			emptyLbl.Visible = true
-			emptyLbl.Text = "No quiet server found"
+			emptyLbl.Text = "No quiet server found — coba Refresh"
 		end
 		countLbl.Text = "0 found"
 		return
@@ -589,11 +615,16 @@ local function doScan()
 			latestServers = list
 			renderList(list)
 			statusLabel.Text = #list > 0 and "Ready" or "Empty"
+			if #list == 0 and emptyLbl.Parent then
+				emptyLbl.Visible = true
+				emptyLbl.Text = "0 server 1P/2P di halaman ini"
+			end
 		else
 			statusLabel.Text = "Scan fail"
+			warn("[Leon4951] scan error:", list)
 			if emptyLbl.Parent then
 				emptyLbl.Visible = true
-				emptyLbl.Text = "Scan failed — retry"
+				emptyLbl.Text = "Scan failed — executor HTTP?"
 			end
 		end
 	end)
