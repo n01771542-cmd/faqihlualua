@@ -3,7 +3,15 @@
   Visual-only: item, avatar, dan animasi yang dipilih langsung dipasang di
   karakter kamu.
 
-  VERSI FULL (OPTIMAL v8): antrian render, katalog instan, tab ramping, bug UI fix.
+  VERSI FULL (v9):
+  UPDATE v9:
+   - Tab CATALOG (gabungan topi/wajah/baju/celana/aksesoris): kepala, wajah, baju, celana, lainnya. Isinya semua item dari
+     semua avatar yang dimuat di tab AVATAR; nama + harga diambil dari shop Roblox (batch), bisa dicari (nama / ID / jenis).
+     Daftar disimpan ke leon4951hub_catalog.json. Grid virtual (hanya ~30 kartu nyata) = tanpa lag. Ketik ID + Enter = tambah item.
+   - Item dipilih di CATALOG sekarang DIVERIFIKASI di karakter: kalau tidak muncul dicoba jalur lain (GetObjects / LoadAsset /
+     donor 1 item); kalau tetap gagal dibatalkan dan penyebabnya ditulis di log (tombol logo F menyalin log).
+   - Tab AVATAR ringan: kartu dibuat sebagai cangkang, isi (foto/nama/hati) baru dibuat saat dekat layar (maks 10 / 0,12 dtk).
+  VERSI v8: antrian render, katalog instan, tab ramping, bug UI fix.
     Tab: avatar | karakter | animasi | sepatu | favorit | dipakai
   UPDATE v8:
    - Tab baru: TOPI / WAJAH / BAJU / CELANA / AKSESORIS. Item diambil dari semua avatar pemain yang ditemukan di tab avatar;
@@ -476,6 +484,16 @@ function E.onChanged(fn)
 end
 
 E.smoothDt = 1 / 60
+E.sliceStart = os.clock()
+-- potong kerja berat per frame: dipanggil di dalam loop, menunggu frame berikutnya kalau jatah ~4 ms habis
+function E.slice(budget)
+	if os.clock() - (E.sliceStart or 0) > (budget or 0.004) then
+		task.wait()
+		E.sliceStart = os.clock()
+		return true
+	end
+	return false
+end
 do
 	local hb
 	hb = RunService.Heartbeat:Connect(function(dt)
@@ -484,6 +502,7 @@ do
 			return
 		end
 		E.smoothDt = E.smoothDt * 0.9 + dt * 0.1
+		E.sliceStart = os.clock()
 	end)
 end
 -- kalau FPS turun, kerjaan latar belakang diperlambat sebentar supaya game tidak lag
@@ -2015,12 +2034,350 @@ function E.queueLook(nl, onDone)
 end
 
 ------------------------------------------------------------------------
+-- VERIFIKASI NYATA + PENYELAMAT  (v9)
+--   Sebelumnya "Dipakai" diputuskan dari DESCRIPTION (daftar item), bukan dari karakter yang
+--   kelihatan. Kalau Roblox diam-diam membuang item (off-sale / belum dimiliki / UGC terbatas /
+--   batas 10 aksesori) toast & centang tetap bilang berhasil. Sekarang:
+--     1) item dicek di rig yang benar-benar tampil (boneka skin atau karakter),
+--     2) kalau tidak muncul -> dicoba jalur lain (GetObjects / LoadAsset / donor 1 item), 2x,
+--     3) kalau tetap gagal -> dibatalkan (centang tidak bohong) + penyebabnya ditulis di log.
+------------------------------------------------------------------------
+local TEMPLATE_PROP = { Shirt = "ShirtTemplate", Pants = "PantsTemplate", ShirtGraphic = "Graphic" }
+E.itemFail = {}
+
+local function rigOf()
+	local char = player.Character
+	if not char or not char.Parent then
+		return nil
+	end
+	if E.skinActive and not E.remote then
+		local skin = char:FindFirstChild(SKIN_NAME)
+		if skin then
+			return skin
+		end
+	end
+	return char
+end
+
+local function handleSig(acc)
+	local h = acc and acc:FindFirstChild("Handle")
+	if not h then
+		return nil
+	end
+	local mid
+	pcall(function()
+		if h:IsA("MeshPart") then
+			mid = h.MeshId
+		else
+			local sm = h:FindFirstChildOfClass("SpecialMesh")
+			mid = sm and sm.MeshId
+		end
+	end)
+	if type(mid) ~= "string" or mid == "" then
+		return nil
+	end
+	return mid
+end
+
+-- foto jumlah + bentuk aksesori yang sedang terpasang di rig
+function E.accSnapshot()
+	local snap = { n = 0, sigs = {} }
+	local rig = rigOf()
+	if not rig then
+		return snap
+	end
+	for _, ch in ipairs(rig:GetChildren()) do
+		if ch:IsA("Accessory") then
+			snap.n = snap.n + 1
+			local s = handleSig(ch)
+			if s then
+				snap.sigs[s] = (snap.sigs[s] or 0) + 1
+			end
+		end
+	end
+	return snap
+end
+
+-- "sidik jari" pakaian klasik / wajah di rig (template baju, celana, kaos, tekstur wajah)
+function E.classicSig(tid)
+	local rig = rigOf()
+	if not rig then
+		return ""
+	end
+	if tid == 18 then
+		local head = rig:FindFirstChild("Head")
+		local f = head and (head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal"))
+		return f and tostring(f.Texture) or ""
+	end
+	local class = FAST_CLASS[tid]
+	if not class then
+		return ""
+	end
+	for _, ch in ipairs(rig:GetChildren()) do
+		if ch:IsA(class) then
+			local ok, v = pcall(function()
+				return ch[TEMPLATE_PROP[class]]
+			end)
+			return ok and tostring(v) or ""
+		end
+	end
+	return ""
+end
+
+-- hasil: "yes" | "no" | "unsure"  (+ alasan)
+function E.verifyItem(id, tid, before)
+	local rig = rigOf()
+	if not rig then
+		return "unsure", "karakter belum siap"
+	end
+	if ACC[tid] then
+		local tag = "AS_" .. tostring(id)
+		for _, ch in ipairs(rig:GetChildren()) do
+			if ch.Name == tag or ch:GetAttribute("ASF") == id or ch:GetAttribute("AS") == id then
+				return "yes", "tertanda"
+			end
+		end
+		if before and before.acc then
+			local after = E.accSnapshot()
+			if after.n > before.acc.n then
+				return "yes", "jumlah aksesori bertambah"
+			end
+			for s in pairs(after.sigs) do
+				if not before.acc.sigs[s] then
+					return "yes", "bentuk baru muncul"
+				end
+			end
+			return "no", string.format("tidak ada aksesori baru di karakter (%d -> %d)", before.acc.n, after.n)
+		end
+		return "unsure", "tidak ada foto sebelum pasang"
+	end
+	if tid == 11 or tid == 12 or tid == 2 or tid == 18 then
+		local sig = E.classicSig(tid)
+		if sig == "" then
+			return "no", "tidak ada hasil di karakter"
+		end
+		if before and before.sig ~= nil then
+			if sig == before.sig then
+				return "unsure", "tampilan tidak berubah"
+			end
+			return "yes", "berubah"
+		end
+		return "unsure", "tidak ada foto sebelum pasang"
+	end
+	return "unsure", "tipe tidak diverifikasi"
+end
+
+-- jalur penyelamat: muat aset lewat jalur lain lalu pasang langsung di rig.
+-- return: ok, alasan, apakahAsetTermuat
+function E.rescueItem(id, tid)
+	local rig = rigOf()
+	if not rig then
+		return false, "karakter belum siap", false
+	end
+	local objs, kind = loadAsset(id, tid)
+	if not objs then
+		return false, "aset tidak bisa dimuat (GetObjects, LoadAsset & donor semua gagal)", false
+	end
+	local okFlag, why = false, nil
+	local ok, err = pcall(function()
+		if ACC[tid] then
+			local src = findIn(objs, "Accessory")
+			if not src then
+				why = "aset ini bukan Accessory"
+				return
+			end
+			local sig = handleSig(src)
+			if sig then
+				for _, ch in ipairs(rig:GetChildren()) do
+					if ch:IsA("Accessory") and handleSig(ch) == sig then
+						okFlag = true -- sudah ada (identik)
+						return
+					end
+				end
+			end
+			local c = src:Clone()
+			c.Name = "AS_" .. tostring(id)
+			c:SetAttribute("ASF", id)
+			if rig.Name ~= SKIN_NAME then
+				c:SetAttribute("AS", id)
+			end
+			local a, how = attachAccessory(c, rig)
+			okFlag = (a and c.Parent == rig) and true or false
+			if not okFlag then
+				why = tostring(how)
+				pcall(function()
+					c:Destroy()
+				end)
+			end
+		elseif tid == 18 then
+			local decal = findIn(objs, "Decal")
+			local head = rig:FindFirstChild("Head")
+			local face = head and (head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal"))
+			if not decal or not face then
+				why = "decal wajah / kepala tidak ditemukan"
+				return
+			end
+			face.Texture = decal.Texture
+			okFlag = true
+		else
+			local class = FAST_CLASS[tid]
+			local inst = class and findIn(objs, class)
+			if not inst then
+				why = "aset bukan " .. tostring(class)
+				return
+			end
+			local prop = TEMPLATE_PROP[class]
+			local want = inst[prop]
+			local cur
+			for _, ch in ipairs(rig:GetChildren()) do
+				if ch:IsA(class) then
+					cur = ch
+					break
+				end
+			end
+			if cur and cur[prop] == want then
+				okFlag = true -- sudah terpasang
+				return
+			end
+			for _, ch in ipairs(rig:GetChildren()) do
+				if ch:IsA(class) then
+					ch:Destroy()
+				end
+			end
+			local c = inst:Clone()
+			c.Name = "AS_" .. tostring(id)
+			c:SetAttribute("ASF", id)
+			if rig.Name ~= SKIN_NAME then
+				c:SetAttribute("AS", id)
+			end
+			c.Parent = rig
+			okFlag = true
+		end
+	end)
+	for _, o in ipairs(objs) do
+		pcall(function()
+			o:Destroy()
+		end)
+	end
+	if not ok then
+		return false, tostring(err), true
+	end
+	logf("penyelamat %s via %s -> %s%s", tostring(id), tostring(kind), okFlag and "BERHASIL" or "GAGAL",
+		(not okFlag and why) and (" : " .. why) or "")
+	return okFlag, why, true
+end
+
+-- verifikasi + penyelamatan + pembatalan. return: "yes" | "no" | "unsure" | "skip", alasan
+function E.verifyAndRescue(id, tid, before)
+	if not (ACC[tid] or tid == 11 or tid == 12 or tid == 2 or tid == 18) then
+		return "skip"
+	end
+	pcall(E.ensureWorn, id)
+	local v, why = E.verifyItem(id, tid, before)
+	if v == "yes" then
+		return "yes", why
+	end
+	while E.busy do
+		task.wait(0.05)
+	end
+	E.busy = true
+	local okR, rok, rwhy = pcall(function()
+		local a, b, c = E.rescueItem(id, tid)
+		if a then
+			return a, b, c
+		end
+		task.wait(1.2) -- kegagalan sementara (throttle / aset belum siap): coba sekali lagi
+		return E.rescueItem(id, tid)
+	end)
+	E.busy = false
+	if okR and rok then
+		E.lastMethod = "penyelamat"
+		fire()
+		return "yes", "diselamatkan"
+	end
+	if v == "no" then
+		-- batalkan: daftar "dipakai", centang & cermin tidak boleh bohong
+		if E.look then
+			pcall(removeFromDesc, E.look, id)
+		end
+		E.itemFail[id] = tostring(rwhy or why)
+		fire()
+		return "no", tostring(rwhy or why)
+	end
+	return "unsure", tostring(rwhy or why)
+end
+
+-- diagnosa satu item: jalur mana yang gagal? (hasil masuk log; tombol logo "F" menyalinnya)
+function E.diagItem(id, tid)
+	local lines = {}
+	local function add(f, ...)
+		lines[#lines + 1] = string.format(f, ...)
+	end
+	local okG, rG = pcall(function()
+		return game:GetObjects("rbxassetid://" .. tostring(id))
+	end)
+	local gOk = okG and type(rG) == "table" and #rG > 0
+	add("GetObjects : %s", gOk and "OK" or (okG and "kosong" or ("ERROR " .. tostring(rG))))
+	if gOk then
+		for _, o in ipairs(rG) do
+			pcall(function()
+				o:Destroy()
+			end)
+		end
+	end
+	local okL, rL = pcall(function()
+		return InsertService:LoadAsset(id)
+	end)
+	local lOk = okL and rL ~= nil
+	add("LoadAsset  : %s", lOk and "OK" or (okL and "kosong" or ("ERROR " .. tostring(rL))))
+	if lOk then
+		pcall(function()
+			rL:Destroy()
+		end)
+	end
+	local dOk = false
+	pcall(function()
+		local d = Instance.new("HumanoidDescription")
+		if addToDesc(d, id, tid) then
+			local m = buildDonor(d)
+			if m then
+				dOk = m:FindFirstChildOfClass("Accessory") ~= nil or m:FindFirstChildOfClass("Shirt") ~= nil
+					or m:FindFirstChildOfClass("Pants") ~= nil or m:FindFirstChildOfClass("ShirtGraphic") ~= nil
+					or tid == 18
+				pcall(function()
+					m:Destroy()
+				end)
+			end
+		end
+	end)
+	add("Donor 1 item: %s", dOk and "OK (Roblox mau memuat item ini)" or "TIDAK memuat item ini")
+	local nAcc = 0
+	pcall(function()
+		nAcc = #E.look:GetAccessories(true)
+	end)
+	add("Aksesori di description sekarang: %d (batas Roblox: 10)", nAcc)
+	add("Kemampuan executor: GetObjects=%s LoadAsset=%s Donor=%s", tostring(E.cap.getObjects), tostring(E.cap.insert),
+		tostring(E.cap.donor))
+	if not gOk and not lOk and not dOk then
+		add("KESIMPULAN: aset TIDAK bisa dimuat dari sisi klien. Penyebab umum: off-sale / belum dimiliki akun ini /")
+		add("             UGC terbatas / sudah dihapus, atau executor memblokir GetObjects+LoadAsset.")
+	elseif not dOk and (gOk or lOk) then
+		add("KESIMPULAN: donor Roblox menolak item ini, tapi bisa dimuat langsung (GetObjects/LoadAsset) -> penyelamat dipakai.")
+	elseif nAcc >= 10 then
+		add("KESIMPULAN: kemungkinan terkena batas 10 aksesori. Lepas satu aksesori lalu coba lagi.")
+	else
+		add("KESIMPULAN: aset bisa dimuat. Kalau tetap tidak terlihat, kirim log ini.")
+	end
+	return table.concat(lines, "\n")
+end
+
+------------------------------------------------------------------------
 -- API tingkat tinggi
 ------------------------------------------------------------------------
 function E.toggleAsset(id, itemName, onDone)
-	local function finish(ok)
+	local function finish(ok, verdict)
 		if onDone then
-			onDone(ok)
+			onDone(ok, verdict)
 		end
 		return ok
 	end
@@ -2039,22 +2396,53 @@ function E.toggleAsset(id, itemName, onDone)
 	local t0 = os.clock()
 	local base = E.pending or E.look
 	local worn = (collect(base))[id] == true
+	-- foto karakter SEBELUM pasang (hanya sah kalau antrian sedang kosong), dipakai untuk verifikasi nyata
+	local before
+	if not worn and not E.pending and not E.busy and not E.worker then
+		before = {}
+		if ACC[tid] then
+			before.acc = E.accSnapshot()
+		end
+		if tid == 11 or tid == 12 or tid == 2 or tid == 18 then
+			before.sig = E.classicSig(tid)
+		end
+	end
 	local nl = base:Clone()
 	if worn then
 		removeFromDesc(nl, id)
 	else
 		addToDesc(nl, id, tid)
 	end
+	E.itemFail[id] = nil
 	E.queueLook(nl, function(ok)
-		if ok then
-			if worn then
-				toast("Dilepas: " .. tostring(itemName or id), "warn")
-			elseif E.isWorn(id) then
-				local okW = E.ensureWorn(id)
-				toast(string.format("Dipakai: %s  (%s, %.1f dtk)", tostring(itemName or id), E.lastMethod, os.clock() - t0), okW and "ok" or "warn")
-			end
+		if not ok then
+			return finish(false)
 		end
-		finish(ok)
+		local nm = tostring(itemName or id)
+		if worn then
+			toast("Dilepas: " .. nm, "warn")
+			return finish(true)
+		end
+		if not E.isWorn(id) then
+			return finish(true)
+		end
+		local okV, verdict, why = pcall(E.verifyAndRescue, id, tid, before)
+		if not okV then
+			logf("verifikasi error: %s", tostring(verdict))
+			verdict, why = "unsure", tostring(verdict)
+		end
+		if verdict == "yes" or verdict == "skip" then
+			toast(string.format("Dipakai: %s  (%s, %.1f dtk)", nm, E.lastMethod, os.clock() - t0), "ok")
+		elseif verdict == "no" then
+			toast("Tidak muncul di karakter: " .. nm .. " — " .. tostring(why) .. "  (dibatalkan; log diagnosa ada di logo F)", "danger")
+			task.spawn(function()
+				local okD, txt = pcall(E.diagItem, id, tid)
+				logf("DIAGNOSA %s (%s):\n%s", tostring(id), nm, okD and txt or tostring(txt))
+			end)
+		else
+			toast("Terpasang, tapi tidak bisa dipastikan muncul: " .. nm .. " (" .. tostring(why) .. ")", "warn")
+		end
+		return finish(true, verdict)
 	end)
 	return true
 end
@@ -3888,68 +4276,141 @@ local function UI_SHOWN(g)
 	return g ~= nil
 end
 
+-- ===== KARTU PEMAIN RINGAN (v9) =====
+-- Dulu tiap kartu langsung membuat ~10 instance + 1 coroutine + preload gambar, jadi 100-900 kartu
+-- yang muncul sekaligus = lag / FPS drop. Sekarang kartu hanya cangkang (2 instance); isinya
+-- (foto, nama, hati, preload) baru dibuat saat kartu dekat layar, maksimal 10 kartu / 0,12 dtk
+-- dengan batas waktu 5 ms per putaran.
+E.lazy = { list = {} }
+
+local function lazyNear(card, sc)
+	if not card.Visible then
+		return false
+	end
+	if not sc:IsA("ScrollingFrame") then
+		return true
+	end
+	local h = sc.AbsoluteWindowSize.Y
+	if h <= 0 then
+		return false
+	end
+	local top = sc.AbsolutePosition.Y
+	local y = card.AbsolutePosition.Y
+	return y + 120 > top - 160 and y < top + h + 360
+end
+
+task.spawn(function()
+	while not stale() do
+		task.wait(0.12)
+		local list = E.lazy.list
+		local n = #list
+		if n > 0 then
+			local shown, keep, made, i, t0 = {}, {}, 0, 1, os.clock()
+			while i <= n do
+				local rec = list[i]
+				i = i + 1
+				local card = rec[1]
+				local sc = card.Parent
+				if sc then
+					local vis = shown[sc]
+					if vis == nil then
+						vis = UI_SHOWN(sc)
+						shown[sc] = vis
+					end
+					if vis and made < 10 and os.clock() - t0 < 0.005 and lazyNear(card, sc) then
+						made = made + 1
+						pcall(rec[2])
+					else
+						keep[#keep + 1] = rec
+						if os.clock() - t0 > 0.006 then
+							while i <= n do
+								keep[#keep + 1] = list[i]
+								i = i + 1
+							end
+						end
+					end
+				end
+			end
+			for j = n + 1, #E.lazy.list do
+				keep[#keep + 1] = E.lazy.list[j] -- kartu baru yang masuk selagi putaran berjalan
+			end
+			E.lazy.list = keep
+		end
+	end
+end)
+
 local function userCard(parent, userId, name, order, sub)
 	local card = mk("TextButton", { BackgroundColor3 = T.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order or 0, Parent = parent })
 	corner(card, 10)
-	local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
-		BorderSizePixel = 0, Parent = card })
-	corner(img, 27)
-	-- foto profil: ukuran kecil (cepat) + preload paralel + huruf pengganti selagi memuat
-	local initial = mk("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		Text = string.upper(string.sub(tostring(name), 1, 1)), TextColor3 = T.Dim, TextSize = 20, Font = Enum.Font.GothamBold, Parent = img })
-	img.Image = thumbURL("AvatarHeadShot", userId, 100)
-	img:GetPropertyChangedSignal("IsLoaded"):Connect(function()
-		if img.IsLoaded then
-			initial.Visible = false
+	local idleText = sub or "klik untuk pakai"
+	card:SetAttribute("Idle", idleText)
+	local hint, hydrated = nil, false
+
+	local function hydrate()
+		if hydrated or not card.Parent then
+			return
 		end
-	end)
-	E.preloadImg(img)
-	task.spawn(function()
-		-- cadangan: kalau belum jadi, ulangi dengan ukuran lain
-		local sizes = { 150, 60, 180, 100, 352 }
-		local tries, lastSet = 0, os.clock()
-		task.wait(3 + math.random())
-		while img.Parent and not img.IsLoaded and tries < #sizes do
-			task.wait(1.5)
-			if img.Parent and not img.IsLoaded then
-				if UI_SHOWN(img) then
-					if os.clock() - lastSet > 2.5 then
-						tries = tries + 1
-						img.Image = thumbURL("AvatarHeadShot", userId, sizes[tries])
-						lastSet = os.clock()
-						E.preloadImg(img)
+		hydrated = true
+		local img = mk("ImageLabel", { Size = UDim2.fromOffset(54, 54), Position = UDim2.new(0.5, -27, 0, 5), BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, Parent = card })
+		corner(img, 27)
+		-- foto profil: ukuran kecil (cepat) + preload paralel + huruf pengganti selagi memuat
+		local initial = mk("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+			Text = string.upper(string.sub(tostring(name), 1, 1)), TextColor3 = T.Dim, TextSize = 20, Font = Enum.Font.GothamBold, Parent = img })
+		img.Image = thumbURL("AvatarHeadShot", userId, 100)
+		img:GetPropertyChangedSignal("IsLoaded"):Connect(function()
+			if img.IsLoaded then
+				initial.Visible = false
+			end
+		end)
+		E.preloadImg(img)
+		task.spawn(function()
+			-- cadangan: kalau belum jadi, ulangi dengan ukuran lain
+			local sizes = { 150, 60, 180, 100, 352 }
+			local tries, lastSet = 0, os.clock()
+			task.wait(3 + math.random())
+			while img.Parent and not img.IsLoaded and tries < #sizes do
+				task.wait(1.5)
+				if img.Parent and not img.IsLoaded then
+					if UI_SHOWN(img) then
+						if os.clock() - lastSet > 2.5 then
+							tries = tries + 1
+							img.Image = thumbURL("AvatarHeadShot", userId, sizes[tries])
+							lastSet = os.clock()
+							E.preloadImg(img)
+						end
+					else
+						lastSet = os.clock() -- tab tersembunyi: tunggu sampai terlihat
 					end
-				else
-					lastSet = os.clock() -- tab tersembunyi: tunggu sampai terlihat
 				end
 			end
-		end
-		if img.IsLoaded then
-			initial.Visible = false
-		end
-	end)
-	local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
-	nm.Position = UDim2.fromOffset(3, 61)
-	nm.Size = UDim2.new(1, -6, 0, 14)
-	nm.TextTruncate = Enum.TextTruncate.AtEnd
-	local idleText = sub or "klik untuk pakai"
-	local hint = label(card, idleText, 9, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
-	hint.Position = UDim2.fromOffset(3, 76)
-	hint.Size = UDim2.new(1, -6, 0, 12)
-	hint.TextTruncate = Enum.TextTruncate.AtEnd
-	hint.Name = "HintLbl"
-	card:SetAttribute("Idle", idleText)
+			if img.IsLoaded then
+				initial.Visible = false
+			end
+		end)
+		local nm = label(card, name, 11, T.Text, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+		nm.Position = UDim2.fromOffset(3, 61)
+		nm.Size = UDim2.new(1, -6, 0, 14)
+		nm.TextTruncate = Enum.TextTruncate.AtEnd
+		hint = label(card, card:GetAttribute("Idle") or idleText, 9, T.Dim, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+		hint.Position = UDim2.fromOffset(3, 76)
+		hint.Size = UDim2.new(1, -6, 0, 12)
+		hint.TextTruncate = Enum.TextTruncate.AtEnd
+		hint.Name = "HintLbl"
 
-	local paintHeart = addHeart(card, function() return FAV.avatars[tostring(userId)] ~= nil end, function() FAV.toggleAvatar(userId, name) end)
-	FAV.listen(function()
-		if not card.Parent then
-			return false
-		end
-		paintHeart()
-	end)
+		local paintHeart = addHeart(card, function() return FAV.avatars[tostring(userId)] ~= nil end, function() FAV.toggleAvatar(userId, name) end)
+		FAV.listen(function()
+			if not card.Parent then
+				return false
+			end
+			paintHeart()
+		end)
+	end
+	table.insert(E.lazy.list, { card, hydrate })
 
 	local hoverTok = 0
 	card.MouseEnter:Connect(function()
+		hydrate()
 		tween(card, { BackgroundColor3 = T.Surface2 }, 0.12)
 		if userId ~= player.UserId then
 			hoverTok = hoverTok + 1
@@ -3976,11 +4437,14 @@ local function userCard(parent, userId, name, order, sub)
 		if busyCard then
 			return
 		end
+		hydrate()
 		busyCard = true
 		local t0 = os.clock()
 		task.spawn(function()
 			while busyCard do
-				hint.Text = string.format("memuat %.1f dtk", os.clock() - t0)
+				if hint then
+					hint.Text = string.format("memuat %.1f dtk", os.clock() - t0)
+				end
 				task.wait(0.1)
 			end
 		end)
@@ -3992,9 +4456,11 @@ local function userCard(parent, userId, name, order, sub)
 				ok = E.applyUser(userId, name)
 			end
 			busyCard = false
-			hint.Text = ok and string.format("✓ %.1f dtk", os.clock() - t0) or (card:GetAttribute("Idle") or idleText)
+			if hint then
+				hint.Text = ok and string.format("✓ %.1f dtk", os.clock() - t0) or (card:GetAttribute("Idle") or idleText)
+			end
 			task.delay(1.5, function()
-				if card.Parent and not busyCard then
+				if card.Parent and not busyCard and hint then
 					hint.Text = card:GetAttribute("Idle") or idleText
 				end
 			end)
@@ -4581,6 +5047,7 @@ local function buildAvatars(page)
 			if a and myToken == token then
 				settleEntry(id, a)
 				softStatus(" pemain • gulir untuk lagi")
+				E.slice(0.003)
 			end
 		end
 		aWorkers = aWorkers - 1
@@ -5349,158 +5816,657 @@ local function buildFavorites(page)
 end
 
 ----------------------------------------------------------------------------
--- [10c] TAB ITEM DARI SEMUA AVATAR: topi / wajah / baju / celana / aksesoris
---   Item dikumpulkan otomatis dari avatar pemain yang dimuat di tab AVATAR.
---   Klik satu item = hanya bagian itu yang dipasang ke karakter kamu.
+-- [10c] TAB CATALOG (v9): semua item dari semua avatar yang pernah dimuat di tab AVATAR
+--   kepala / wajah / baju / celana / lainnya dalam SATU tab, bisa dicari (nama dari shop Roblox).
+--   - nama + harga diambil batch dari katalog Roblox di latar belakang (hemat request, anti lag)
+--   - daftar disimpan ke file (leon4951hub_catalog.json) -> buka lagi langsung penuh & bisa dicari
+--   - grid tervirtualisasi: hanya ~30 kartu yang nyata dibuat, berapa pun jumlah itemnya
+--   - klik item = hanya bagian itu dipasang, lalu DIVERIFIKASI di karakter (lihat E.verifyAndRescue)
 ----------------------------------------------------------------------------
 local Harvest = {}
 do
-local HARV_MAX = 300
+local CAT_FILE = "leon4951hub_catalog.json"
+local HARV_MAX = 700 -- per kategori
 local HARV_CATS = {
-	{ key = "topi", name = "topi", title = "TOPI", tids = { 8 } },
-	{ key = "wajah", name = "wajah", title = "WAJAH", tids = { 18, 42 } },
+	{ key = "kepala", name = "kepala", title = "KEPALA", tids = { 8, 41 } },
+	{ key = "wajah", name = "wajah", title = "WAJAH", tids = { 18, 42, 76, 77 } },
 	{ key = "baju", name = "baju", title = "BAJU", tids = { 11, 2, 64, 65, 67, 68 } },
 	{ key = "celana", name = "celana", title = "CELANA", tids = { 12, 66, 69, 72 } },
-	{ key = "aksesoris", name = "aksesoris", title = "AKSESORIS", tids = { 41, 43, 44, 45, 46, 47 } },
+	{ key = "lainnya", name = "lainnya", title = "LAINNYA", tids = { 43, 44, 45, 46, 47 } },
+}
+local TYPE_LABEL = {
+	[8] = "topi hat", [41] = "rambut hair", [42] = "aksesori wajah face", [43] = "leher neck", [44] = "bahu shoulder",
+	[45] = "depan front", [46] = "punggung back", [47] = "pinggang waist", [11] = "kemeja shirt baju",
+	[2] = "kaos grafis t-shirt baju", [64] = "kaos tshirt layered baju", [65] = "kemeja shirt layered baju",
+	[67] = "jaket jacket baju", [68] = "sweater baju", [12] = "celana pants", [66] = "celana pants layered",
+	[69] = "celana pendek shorts", [72] = "rok skirt dress", [18] = "wajah face", [76] = "alis eyebrow",
+	[77] = "bulu mata eyelash",
 }
 local HARV_BY_TID, TYPE2TID = {}, {}
 for tid, a in pairs(ACC) do
 	TYPE2TID[a[1]] = tid
 end
 for _, c in ipairs(HARV_CATS) do
-	c.list, c.map = {}, {}
+	c.list = {}
 	for _, t in ipairs(c.tids) do
 		HARV_BY_TID[t] = c
 	end
 end
 local HARV_CLASSIC = { { "Shirt", 11 }, { "GraphicTShirt", 2 }, { "Pants", 12 }, { "Face", 18 } }
 
-local function harvAdd(id, tid)
-	if not tid then
-		return
+Harvest.all, Harvest.byId, Harvest.listeners = {}, {}, {}
+Harvest.q, Harvest.resolving, Harvest.namedCount = {}, false, 0
+local dirty = false
+
+local function recKey(rec)
+	rec.key = string.lower(tostring(rec.Name or "") .. " " .. string.format("%.0f", rec.Id) .. " " .. (TYPE_LABEL[rec.tid] or ""))
+	rec.lname = string.lower(tostring(rec.Name or "\255"))
+end
+
+local function harvAdd(id, tid, name, price, fromFile)
+	if type(id) ~= "number" or not tid or Harvest.byId[id] then
+		return nil
 	end
 	local c = HARV_BY_TID[tid]
-	if not c or c.map[id] or #c.list >= HARV_MAX then
-		return
+	if not c or #c.list >= HARV_MAX then
+		return nil
 	end
-	local rec = { Id = id, tid = tid, Order = #c.list + 1 }
-	c.map[id] = rec
+	local rec = { Id = id, Type = "Asset", tid = tid, cat = c, Order = #Harvest.all + 1 }
+	if name == nil and E.names[id] then
+		name = E.names[id]
+	end
+	if name then
+		rec.Name, rec.Price, rec.named = name, price, true
+		Harvest.namedCount = Harvest.namedCount + 1
+	else
+		Harvest.q[#Harvest.q + 1] = rec
+	end
+	recKey(rec)
+	Harvest.byId[id] = rec
+	Harvest.all[#Harvest.all + 1] = rec
 	c.list[#c.list + 1] = rec
 	E.types[id] = tid
+	if not fromFile then
+		dirty = true
+	end
+	return rec
+end
+
+local function notify()
+	for _, fn in ipairs(Harvest.listeners) do
+		pcall(fn)
+	end
+end
+
+-- ===== simpan / muat daftar katalog =====
+local function catSave()
+	if type(writefile) ~= "function" then
+		return
+	end
+	local items = {}
+	for _, r in ipairs(Harvest.all) do
+		items[#items + 1] = { i = string.format("%.0f", r.Id), t = r.tid, n = r.named and r.Name or nil, p = r.Price }
+	end
+	pcall(function()
+		writefile(CAT_FILE, HttpService:JSONEncode({ v = 1, items = items }))
+	end)
+end
+
+pcall(function()
+	if type(readfile) == "function" and type(isfile) == "function" and isfile(CAT_FILE) then
+		local d = HttpService:JSONDecode(readfile(CAT_FILE))
+		if type(d) == "table" and type(d.items) == "table" then
+			for _, r in ipairs(d.items) do
+				local id, tid = tonumber(r.i), tonumber(r.t)
+				if id and tid then
+					harvAdd(id, tid, type(r.n) == "string" and r.n or nil, tonumber(r.p), true)
+				end
+			end
+		end
+	end
+end)
+
+task.spawn(function()
+	while not stale() do
+		task.wait(15)
+		if dirty then
+			dirty = false
+			catSave()
+		end
+	end
+end)
+
+-- ===== nama + harga dari shop Roblox, batch 30 id, pelan-pelan (tidak lag, tidak kena rate limit) =====
+local function pumpNames()
+	if Harvest.resolving then
+		return
+	end
+	Harvest.resolving = true
+	task.spawn(function()
+		local lastNotify = 0
+		while #Harvest.q > 0 and not stale() do
+			E.pace()
+			local ids, byId = {}, {}
+			while #Harvest.q > 0 and #ids < 30 do
+				local rec = table.remove(Harvest.q, 1)
+				if not rec.named then
+					ids[#ids + 1] = rec.Id
+					byId[rec.Id] = rec
+				end
+			end
+			if #ids > 0 then
+				local det = fetchDetails(ids, Enum.AvatarItemType.Asset)
+				local missing = {}
+				for _, id in ipairs(ids) do
+					local rec, d = byId[id], det[id]
+					if d and d.Name then
+						rec.Name, rec.Price, rec.named = tostring(d.Name), tonumber(d.PriceInRobux or d.Price), true
+						E.names[id] = rec.Name
+						Harvest.namedCount = Harvest.namedCount + 1
+						recKey(rec)
+					else
+						missing[#missing + 1] = rec
+					end
+				end
+				-- yang tidak ada di hasil batch (off-sale / dihapus): tanya satu-satu, dibatasi
+				for k, rec in ipairs(missing) do
+					if k <= 4 then
+						local info = productInfo(rec.Id, Enum.InfoType.Asset)
+						if info and info.Name then
+							rec.Name, rec.Price, rec.named = tostring(info.Name), tonumber(info.PriceInRobux), true
+							E.names[rec.Id] = rec.Name
+							Harvest.namedCount = Harvest.namedCount + 1
+							recKey(rec)
+						end
+						task.wait(0.15)
+					end
+					if not rec.named then
+						rec.tries = (rec.tries or 0) + 1
+						if rec.tries >= 2 then
+							rec.Name, rec.named = "Item #" .. string.format("%.0f", rec.Id), true
+							Harvest.namedCount = Harvest.namedCount + 1
+							recKey(rec)
+						else
+							Harvest.q[#Harvest.q + 1] = rec
+						end
+					end
+				end
+				dirty = true
+				if os.clock() - lastNotify > 0.8 then
+					lastNotify = os.clock()
+					notify()
+				end
+			end
+			task.wait(0.45)
+		end
+		Harvest.resolving = false
+		notify()
+	end)
 end
 
 E.harvestHook = function(desc)
+	local added = false
 	local ok, accs = pcall(function()
 		return desc:GetAccessories(true)
 	end)
 	if ok then
 		for _, a in ipairs(accs) do
-			harvAdd(a.AssetId, TYPE2TID[a.AccessoryType.Name])
+			if harvAdd(a.AssetId, TYPE2TID[a.AccessoryType.Name]) then
+				added = true
+			end
 		end
 	end
 	for _, p in ipairs(HARV_CLASSIC) do
 		local v = getProp(desc, p[1])
 		if type(v) == "number" and v > 0 then
-			harvAdd(v, p[2])
+			if harvAdd(v, p[2]) then
+				added = true
+			end
 		end
+	end
+	if added then
+		pumpNames()
+		notify()
 	end
 end
 
-local function buildHarvest(page, cat)
-	local info = label(page, "", 10, T.Dim, Enum.Font.Gotham)
-	info.Size = UDim2.new(1, 0, 0, 16)
-	local grid = makeScroll(page, UDim2.new(1, 0, 1, -22), UDim2.fromOffset(0, 22))
-	mk("UIGridLayout", {
-		CellSize = UDim2.fromOffset(84, 110), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = grid,
-	})
-	pad(grid, 0, 2, 0, 10)
-	local cards, made = {}, 0
+-- item lama dari file yang belum punya nama: lanjutkan di latar belakang
+task.delay(3, function()
+	if #Harvest.q > 0 then
+		pumpNames()
+	end
+end)
 
-	local function setInfo()
-		if made == 0 then
-			info.Text = "Menunggu avatar pemain dimuat di tab AVATAR..."
-		else
-			info.Text = made .. " item dari avatar pemain  •  klik untuk pakai"
+-- tambah item lewat ID (dari kotak cari, tekan Enter)
+function Harvest.addById(id)
+	id = tonumber(id)
+	if not id or id <= 0 then
+		return nil
+	end
+	if Harvest.byId[id] then
+		return Harvest.byId[id]
+	end
+	local tid = E.assetType(id)
+	if not tid or not HARV_BY_TID[tid] then
+		toast("ID " .. string.format("%.0f", id) .. " bukan item yang didukung Catalog (topi, rambut, wajah, baju, celana, dll)", "warn")
+		return nil
+	end
+	local rec = harvAdd(id, tid)
+	if rec then
+		pumpNames()
+		notify()
+	end
+	return rec
+end
+
+----------------------------------------------------------------------------
+-- UI: halaman CATALOG (grid virtual)
+----------------------------------------------------------------------------
+local CELL_W, CELL_H, GAP = 84, 112, 6
+
+local function priceLabel(rec)
+	if not rec.named then
+		return "memuat nama...", T.Dim
+	end
+	if rec.Price == nil then
+		return "Tidak dijual", T.Dim
+	elseif rec.Price == 0 then
+		return "Gratis", T.Ok
+	end
+	return "R$ " .. commas(rec.Price), T.Dim
+end
+
+local function buildCatalog(page)
+	-- baris cari
+	local row = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = page })
+	local sbFrame = mk("Frame", { Size = UDim2.new(1, -108, 1, 0), BackgroundColor3 = T.Surface, BorderSizePixel = 0, Parent = row })
+	corner(sbFrame, 8)
+	stroke(sbFrame, T.Stroke, 1)
+	local box = mk("TextBox", {
+		Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = "",
+		PlaceholderText = "🔍 Cari nama / ID / jenis (jaket, rambut, topi...)", PlaceholderColor3 = T.Dim, TextColor3 = T.Text,
+		ClearTextOnFocus = false, TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = sbFrame,
+	})
+	local sortBtn = button(row, { text = "Urut: temuan", size = UDim2.fromOffset(68, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, -34, 0, 0), textSize = 9 })
+	local clearBtn = button(row, { text = "✕", size = UDim2.fromOffset(30, 30), anchor = Vector2.new(1, 0),
+		position = UDim2.new(1, 0, 0, 0), textSize = 12 })
+
+	-- chip kategori
+	local chipRow = mk("Frame", { Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1, Parent = page })
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = chipRow,
+	})
+	local info = label(page, "", 10, T.Dim, Enum.Font.Gotham)
+	info.Position = UDim2.fromOffset(0, 60)
+	info.Size = UDim2.new(1, 0, 0, 14)
+	info.TextTruncate = Enum.TextTruncate.AtEnd
+
+	local scroll = makeScroll(page, UDim2.new(1, 0, 1, -78), UDim2.fromOffset(0, 78))
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+	local emptyLbl = mk("TextLabel", {
+		Size = UDim2.new(1, -20, 0, 60), Position = UDim2.fromOffset(10, 100), BackgroundTransparency = 1, TextWrapped = true,
+		Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = T.Dim, Text = "", Visible = false, Parent = page,
+	})
+
+	local catKey, sortAZ, filtered = "all", false, {}
+	local cols, xOff = 1, 0
+	local pool, poolN = {}, 0
+	local chips = {}
+
+	local function countsText()
+		local nAll, per = #Harvest.all, {}
+		for _, c in ipairs(HARV_CATS) do
+			per[c.key] = #c.list
+		end
+		return nAll, per
+	end
+
+	local function paintChips()
+		local nAll, per = countsText()
+		for key, rec in pairs(chips) do
+			local active = key == catKey
+			local n = key == "all" and nAll or per[key] or 0
+			rec.btn.Text = rec.base .. " " .. n
+			rec.btn.BackgroundColor3 = active and T.Accent or T.Surface2
+			rec.btn.TextColor3 = active and Color3.new(1, 1, 1) or T.Text
 		end
 	end
-	setInfo()
 
-	local function refreshImages()
-		local top = grid.AbsolutePosition.Y
-		local h = grid.AbsoluteWindowSize.Y
-		if h <= 0 then
+	local function resetPool()
+		for s = 1, poolN do
+			local c = pool[s]
+			c.idx, c.rec = nil, nil
+			c.frame.Visible = false
+		end
+	end
+
+	local function layout()
+		local w = scroll.AbsoluteSize.X - 8
+		if w <= 0 then
+			return false
+		end
+		cols = math.max(1, math.floor((w + GAP) / (CELL_W + GAP)))
+		xOff = math.max(0, math.floor((w - (cols * (CELL_W + GAP) - GAP)) / 2))
+		local rows = math.ceil(#filtered / cols)
+		scroll.CanvasSize = UDim2.fromOffset(0, rows * (CELL_H + GAP) + 12)
+		return true
+	end
+
+	local function paintState(c, wornSet)
+		local rec = c.rec
+		if not rec then
 			return
 		end
-		for _, c in ipairs(cards) do
-			if not c.imgLoaded and c.card.AbsoluteSize.Y > 0 then
-				local y = c.card.AbsolutePosition.Y
-				if y + 120 > top - 300 and y < top + h + 300 then
-					c.loadImg()
+		local st = rec.state
+		if st == "wait" then
+			c.badge.Text, c.badge.BackgroundColor3, c.badge.Visible = "⏳", T.Warn, true
+			c.st.Color, c.st.Transparency = T.Warn, 0
+		elseif st == "fail" then
+			c.badge.Text, c.badge.BackgroundColor3, c.badge.Visible = "✗", T.Danger, true
+			c.st.Color, c.st.Transparency = T.Danger, 0
+		elseif wornSet[rec.Id] then
+			local unsure = st == "unsure"
+			c.badge.Text, c.badge.BackgroundColor3, c.badge.Visible = unsure and "?" or "✓", unsure and T.Warn or T.Ok, true
+			c.st.Color, c.st.Transparency = unsure and T.Warn or T.Ok, 0
+		else
+			c.badge.Visible = false
+			c.st.Color, c.st.Transparency = T.Stroke, 0.3
+		end
+	end
+
+	local function setTexts(c)
+		local rec = c.rec
+		if not rec then
+			return
+		end
+		local nmText = rec.named and rec.Name or "memuat..."
+		if c.lastName ~= nmText then
+			c.lastName = nmText
+			c.nm.Text = nmText
+		end
+		local ptxt, pcol = priceLabel(rec)
+		c.pr.Text, c.pr.TextColor3 = ptxt, pcol
+	end
+
+	local function pick(rec)
+		if rec.busy then
+			return
+		end
+		rec.busy, rec.state = true, "wait"
+		E.pendingClicks = E.pendingClicks + 1
+		local wornSet = collect(E.look)
+		for _, c in ipairs(pool) do
+			if c.rec == rec then
+				paintState(c, wornSet)
+			end
+		end
+		task.spawn(E.toggleAsset, rec.Id, rec.Name or ("Item #" .. string.format("%.0f", rec.Id)), function(ok, verdict)
+			E.pendingClicks = math.max(0, E.pendingClicks - 1)
+			rec.busy = false
+			if not ok or verdict == "no" then
+				rec.state = "fail"
+			elseif verdict == "unsure" then
+				rec.state = "unsure"
+			else
+				rec.state = nil
+			end
+			local ws = collect(E.look)
+			for _, c in ipairs(pool) do
+				if c.rec == rec then
+					paintState(c, ws)
 				end
+			end
+		end)
+	end
+
+	local function newCard()
+		local frame = mk("TextButton", {
+			AutoButtonColor = false, Text = "", BackgroundColor3 = T.Surface, BorderSizePixel = 0,
+			Size = UDim2.fromOffset(CELL_W, CELL_H), Visible = false, Parent = scroll,
+		})
+		corner(frame, 10)
+		local st = stroke(frame, T.Stroke, 1.5, 0.3)
+		local img = mk("ImageLabel", {
+			Size = UDim2.new(1, -8, 0, 62), Position = UDim2.fromOffset(4, 4), BackgroundColor3 = T.Surface2,
+			BorderSizePixel = 0, ScaleType = Enum.ScaleType.Fit, Parent = frame,
+		})
+		corner(img, 8)
+		local nm = mk("TextLabel", {
+			Size = UDim2.new(1, -8, 0, 26), Position = UDim2.fromOffset(4, 69), BackgroundTransparency = 1, TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.AtEnd, TextYAlignment = Enum.TextYAlignment.Top, Font = Enum.Font.GothamBold,
+			TextSize = 10, TextColor3 = T.Text, Text = "", Parent = frame,
+		})
+		local pr = mk("TextLabel", {
+			Size = UDim2.new(1, -8, 0, 12), Position = UDim2.fromOffset(4, 96), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium,
+			TextSize = 10, TextColor3 = T.Dim, Text = "", Parent = frame,
+		})
+		local badge = mk("TextLabel", {
+			Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 6),
+			BackgroundColor3 = T.Ok, Text = "✓", TextColor3 = Color3.new(1, 1, 1), TextSize = 12, Font = Enum.Font.GothamBold,
+			BorderSizePixel = 0, Visible = false, ZIndex = 3, Parent = frame,
+		})
+		corner(badge, 9)
+		local c = { frame = frame, img = img, nm = nm, pr = pr, st = st, badge = badge }
+		c.paintHeart = addHeart(frame, function()
+			return c.rec ~= nil and FAV.items[FAV.itemKey(c.rec)] ~= nil
+		end, function()
+			if c.rec then
+				FAV.toggleItem(c.rec)
+			end
+		end)
+		FAV.listen(function()
+			if not frame.Parent then
+				return false
+			end
+			c.paintHeart()
+		end)
+		frame.MouseEnter:Connect(function()
+			tween(frame, { BackgroundColor3 = T.Surface2 }, 0.12)
+		end)
+		frame.MouseLeave:Connect(function()
+			tween(frame, { BackgroundColor3 = T.Surface }, 0.15)
+		end)
+		frame.Activated:Connect(function()
+			if c.rec then
+				pick(c.rec)
+			end
+		end)
+		return c
+	end
+
+	local function bind(c, rec, idx, wornSet)
+		if c.rec ~= rec or c.idx ~= idx then
+			c.rec, c.idx, c.lastName = rec, idx, nil
+			local col, rw = (idx - 1) % cols, math.floor((idx - 1) / cols)
+			c.frame.Position = UDim2.fromOffset(xOff + col * (CELL_W + GAP), 2 + rw * (CELL_H + GAP))
+			c.frame.Visible = true
+			c.img.Image = thumbURL("Asset", rec.Id, 150)
+			c.paintHeart()
+		end
+		setTexts(c)
+		paintState(c, wornSet)
+	end
+
+	local function render()
+		if not page.Visible then
+			return
+		end
+		local winH = scroll.AbsoluteWindowSize.Y
+		if winH <= 0 then
+			return
+		end
+		local rowH = CELL_H + GAP
+		local y0 = scroll.CanvasPosition.Y
+		local firstRow = math.max(0, math.floor(y0 / rowH) - 1)
+		local lastRow = math.floor((y0 + winH) / rowH) + 1
+		local first = firstRow * cols + 1
+		local last = math.min(#filtered, (lastRow + 1) * cols)
+		local need = last - first + 1
+		while poolN < need do
+			poolN = poolN + 1
+			pool[poolN] = newCard()
+		end
+		local wornSet = collect(E.look)
+		local P = math.max(poolN, 1)
+		for idx = first, last do
+			bind(pool[((idx - 1) % P) + 1], filtered[idx], idx, wornSet)
+		end
+		for s = 1, poolN do
+			local c = pool[s]
+			if c.idx and (c.idx < first or c.idx > last) then
+				c.frame.Visible = false
+				c.idx, c.rec = nil, nil
 			end
 		end
 	end
 
-	task.spawn(function()
-		while not stale() and page.Parent do
-			task.wait(0.35)
-			if page.Visible then
-				if made < #cat.list then
-					E.pace()
-					local rows, new = {}, 0
-					while made < #cat.list and new < 12 do
-						made = made + 1
-						local rec = cat.list[made]
-						local row = { Id = rec.Id, Type = "Asset", Name = E.names[rec.Id] or "Memuat...", Price = false, Order = rec.Order }
-						cards[#cards + 1] = makeCard(grid, row)
-						rows[#rows + 1] = row
-						new = new + 1
+	local function applyFilter()
+		local words = {}
+		for w in string.gmatch(string.lower(box.Text or ""), "%S+") do
+			words[#words + 1] = w
+		end
+		local out = {}
+		for _, rec in ipairs(Harvest.all) do
+			if catKey == "all" or rec.cat.key == catKey then
+				local ok = true
+				for _, w in ipairs(words) do
+					if not string.find(rec.key, w, 1, true) then
+						ok = false
+						break
 					end
-					setInfo()
-					task.spawn(function()
-						local ids = {}
-						for _, r in ipairs(rows) do
-							ids[#ids + 1] = r.Id
-						end
-						local det = fetchDetails(ids, Enum.AvatarItemType.Asset)
-						if next(det) == nil then
-							task.wait(2)
-							det = fetchDetails(ids, Enum.AvatarItemType.Asset)
-						end
-						for _, r in ipairs(rows) do
-							local d = det[r.Id]
-							if d then
-								r.Name = d.Name or r.Name
-								r.Price = d.PriceInRobux
-								E.names[r.Id] = r.Name
-							else
-								if r.Name == "Memuat..." then
-									r.Name = "Item #" .. r.Id
-								end
-								r.Price = nil
-							end
-							if r.onUpdate then
-								pcall(r.onUpdate)
-							end
-						end
-					end)
 				end
-				pcall(refreshImages)
+				if ok then
+					out[#out + 1] = rec
+				end
 			end
+		end
+		if sortAZ then
+			table.sort(out, function(a, b)
+				if a.lname ~= b.lname then
+					return a.lname < b.lname
+				end
+				return a.Id < b.Id
+			end)
+		end
+		filtered = out
+		layout()
+		resetPool()
+		scroll.CanvasPosition = Vector2.new(0, math.min(scroll.CanvasPosition.Y, math.max(0, scroll.CanvasSize.Y.Offset - scroll.AbsoluteWindowSize.Y)))
+		paintChips()
+		local nAll = #Harvest.all
+		if nAll == 0 then
+			emptyLbl.Text = "Belum ada item.\nBuka tab AVATAR, item dari avatar pemain akan muncul di sini otomatis."
+		elseif #out == 0 then
+			emptyLbl.Text = "Tidak ada item yang cocok.\nKalau kamu mengetik ID angka, tekan Enter untuk menambahkannya."
+		end
+		emptyLbl.Visible = #out == 0
+		local pending = #Harvest.q
+		info.Text = string.format("%d dari %d item  •  nama dimuat %d/%d%s", #out, nAll, Harvest.namedCount, nAll,
+			pending > 0 and "  (menunggu nama dari shop...)" or "")
+		render()
+	end
+
+	-- debounce pencarian
+	local ftok = 0
+	local function scheduleFilter(delay)
+		ftok = ftok + 1
+		local t = ftok
+		task.delay(delay or 0.15, function()
+			if t == ftok and not stale() and page.Parent then
+				applyFilter()
+			end
+		end)
+	end
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		scheduleFilter(0.15)
+	end)
+	box.FocusLost:Connect(function(enter)
+		if not enter then
+			return
+		end
+		local digits = string.match(box.Text or "", "^%s*(%d+)%s*$")
+		if digits and #filtered == 0 then
+			task.spawn(function()
+				local rec = Harvest.addById(digits)
+				if rec then
+					applyFilter()
+				end
+			end)
+		end
+	end)
+	clearBtn.Activated:Connect(function()
+		box.Text = ""
+		applyFilter()
+	end)
+	sortBtn.Activated:Connect(function()
+		sortAZ = not sortAZ
+		sortBtn.Text = sortAZ and "Urut: A-Z" or "Urut: temuan"
+		applyFilter()
+	end)
+
+	-- chip kategori
+	local defs = { { "all", "Semua" } }
+	for _, c in ipairs(HARV_CATS) do
+		defs[#defs + 1] = { c.key, string.sub(c.title, 1, 1) .. string.lower(string.sub(c.title, 2)) }
+	end
+	for i, d in ipairs(defs) do
+		local ch = mk("TextButton", {
+			Size = UDim2.fromOffset(0, 24), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.Surface2, BorderSizePixel = 0,
+			Text = d[2], TextSize = 10, Font = Enum.Font.GothamBold, TextColor3 = T.Text, AutoButtonColor = false, LayoutOrder = i,
+			Parent = chipRow,
+		})
+		corner(ch, 8)
+		pad(ch, 8, 0, 8, 0)
+		chips[d[1]] = { btn = ch, base = d[2] }
+		ch.Activated:Connect(function()
+			catKey = d[1]
+			scroll.CanvasPosition = Vector2.new(0, 0)
+			applyFilter()
+		end)
+	end
+
+	scroll:GetPropertyChangedSignal("CanvasPosition"):Connect(render)
+	scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if layout() then
+			resetPool()
+			render()
 		end
 	end)
 
+	-- item baru / nama baru masuk: segarkan pelan-pelan (maks tiap 0,8 dtk) saat tab terlihat
+	local needFilter = false
+	table.insert(Harvest.listeners, function()
+		if page.Parent and page.Visible then
+			scheduleFilter(0.8)
+		else
+			needFilter = true
+		end
+	end)
+
+	local wasShown = false
+	task.delay(0.1, function()
+		if not stale() and page.Parent then
+			applyFilter()
+		end
+	end)
 	return function()
-		local set = collect(E.look)
-		for _, c in ipairs(cards) do
-			c.update(set)
+		if page.Visible then
+			if not wasShown or needFilter then
+				wasShown, needFilter = true, false
+				applyFilter()
+			else
+				render()
+			end
+		else
+			wasShown = false
 		end
 	end
 end
 
 Harvest.cats = HARV_CATS
-Harvest.build = buildHarvest
+Harvest.build = buildCatalog
 end
 
 ----------------------------------------------------------------------------
@@ -5670,11 +6636,7 @@ end
 local TABS = {
 	{ key = "avatars", name = "avatar" },
 	{ key = "karakter", name = "karakter", group = "KARAKTER / TUBUH" },
-	{ key = "topi", name = "topi", title = "TOPI", harv = Harvest.cats[1] },
-	{ key = "wajah", name = "wajah", title = "WAJAH", harv = Harvest.cats[2] },
-	{ key = "baju", name = "baju", title = "BAJU", harv = Harvest.cats[3] },
-	{ key = "celana", name = "celana", title = "CELANA", harv = Harvest.cats[4] },
-	{ key = "aksesoris", name = "aksesoris", title = "AKSESORIS", harv = Harvest.cats[5] },
+	{ key = "catalog", name = "catalog", title = "CATALOG", harv = true },
 	{ key = "animasi", name = "animasi", group = "ANIMASI" },
 	{ key = "sepatu", name = "sepatu", group = "SEPATU" },
 	{ key = "favorit", name = "favorit", title = "FAVORIT" },
@@ -5695,7 +6657,7 @@ for _, tab in ipairs(TABS) do
 		end
 	elseif tab.harv then
 		UI.builders[tab.key] = function(p)
-			UI.refreshers[tab.key] = Harvest.build(p, tab.harv)
+			UI.refreshers[tab.key] = Harvest.build(p)
 		end
 	end
 end
