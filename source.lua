@@ -9,7 +9,8 @@ local player = Players.LocalPlayer
 if not player then
 	player = Players.PlayerAdded:Wait()
 end
-local playerGui = player:WaitForChild("PlayerGui", 15)
+-- Fast path: PlayerGui almost always exists; short timeout only
+local playerGui = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 2)
 if not playerGui then
 	warn("[Leon4951] PlayerGui not found - aborting")
 	return
@@ -89,13 +90,14 @@ local function findIcon(e)
 	return nil
 end
 
-do
+-- Assets load ASYNC so UI can appear immediately
+task.spawn(function()
 	local ok, err = pcall(function()
-		local dataFolder = ReplicatedStorage:WaitForChild("Data", 5)
+		local dataFolder = ReplicatedStorage:FindFirstChild("Data") or ReplicatedStorage:WaitForChild("Data", 1)
 		if not dataFolder then
 			error("Data folder missing")
 		end
-		local assetsModule = dataFolder:WaitForChild("Assets", 5)
+		local assetsModule = dataFolder:FindFirstChild("Assets") or dataFolder:WaitForChild("Assets", 1)
 		if not assetsModule then
 			error("Assets module missing")
 		end
@@ -123,7 +125,7 @@ do
 	if not ok then
 		warn("[Leon4951] Gagal load Assets (rarity pakai fallback API/default):", err)
 	end
-end
+end)
 
 local function getRarity(petName)
 	return rarityByName[petName]
