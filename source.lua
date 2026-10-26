@@ -1,11 +1,9 @@
 --[[
   Leon4951 — Private Server Hop
-  Quiet-server finder (1P preferred, then 2P). Bottom-to-mid scan + blacklist.
-  Load: UI first, network in background.
+  List quiet servers: Private server | N players  [Hop Now]
 ]]
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
@@ -28,6 +26,8 @@ local TITLE = "Leon4951"
 local AUTHOR = "Leon4951"
 local DISCORD_LINK = "https://discord.gg/REbuVnr4qt"
 local MAX_SCAN_PAGES = 10
+local REFRESH_INTERVAL = 4
+local MAX_ROWS = 40
 
 if not _G.LeonBlacklist then
 	_G.LeonBlacklist = {}
@@ -136,16 +136,16 @@ local function RequestAPI(options)
 end
 
 --------------------------------------------------------------------------------
--- HOP LOGIC (your bottom-to-mid 1P then 2P)
+-- SCAN: collect quiet servers (1P then 2P), bottom-to-mid order
 --------------------------------------------------------------------------------
-local IsSearching = false
-local hopAttempt = 0
 local maxPlayersPrefer = 2
+local latestServers = {} -- { {id=, playing=, maxPlayers=}, ... }
+local autoHop = false
+local autoHopToken = 0
 
-local function FindLowestTailServer()
+local function scanQuietServers()
 	local cursor = ""
-	local servers1P = {}
-	local servers2P = {}
+	local servers1P, servers2P = {}, {}
 
 	for _ = 1, MAX_SCAN_PAGES do
 		local url = string.format(
@@ -172,11 +172,12 @@ local function FindLowestTailServer()
 			local playing = tonumber(server.playing) or 0
 			local maxP = tonumber(server.maxPlayers) or 0
 			local id = server.id and tostring(server.id) or nil
-			if id and not _G.LeonBlacklist[id] and (maxP - playing) >= 1 then
+			if id and id ~= tostring(game.JobId) and not _G.LeonBlacklist[id] and (maxP - playing) >= 1 then
+				local entry = { id = id, playing = playing, maxPlayers = maxP }
 				if playing == 1 then
-					servers1P[#servers1P + 1] = server
+					servers1P[#servers1P + 1] = entry
 				elseif playing == 2 and maxPlayersPrefer >= 2 then
-					servers2P[#servers2P + 1] = server
+					servers2P[#servers2P + 1] = entry
 				end
 			end
 		end
@@ -187,49 +188,56 @@ local function FindLowestTailServer()
 		end
 	end
 
-	local function pickFromTail(list)
+	-- bottom → mid preference: reverse each list, take from near end toward half
+	local function orderTail(list)
+		local out = {}
 		if #list == 0 then
-			return nil, nil
+			return out
 		end
-		local startIndex = #list - 6
-		if startIndex < 1 then
-			startIndex = #list
-		end
-		local minLimit = math.floor(#list * 0.5)
-		if minLimit < 1 then
-			minLimit = 1
-		end
+		local startIndex = math.max(1, #list - 6)
+		local minLimit = math.max(1, math.floor(#list * 0.5))
 		for i = startIndex, minLimit, -1 do
-			local s = list[i]
-			if s and s.id and not _G.LeonBlacklist[tostring(s.id)] then
-				return tostring(s.id), tonumber(s.playing) or 0
-			end
+			out[#out + 1] = list[i]
+		end
+		-- append rest (still quiet) so list is not empty
+		local seen = {}
+		for _, e in ipairs(out) do
+			seen[e.id] = true
 		end
 		for i = #list, 1, -1 do
-			local s = list[i]
-			if s and s.id and not _G.LeonBlacklist[tostring(s.id)] then
-				return tostring(s.id), tonumber(s.playing) or 0
+			local e = list[i]
+			if not seen[e.id] then
+				out[#out + 1] = e
+				seen[e.id] = true
 			end
 		end
-		return nil, nil
+		return out
 	end
 
-	local id, n = pickFromTail(servers1P)
-	if id then
-		return id, n
-	end
+	local ordered = orderTail(servers1P)
 	if maxPlayersPrefer >= 2 then
-		return pickFromTail(servers2P)
+		for _, e in ipairs(orderTail(servers2P)) do
+			ordered[#ordered + 1] = e
+		end
 	end
-	return nil, nil
+
+	-- dedupe + cap
+	local final, seen = {}, {}
+	for _, e in ipairs(ordered) do
+		if not seen[e.id] then
+			seen[e.id] = true
+			final[#final + 1] = e
+			if #final >= MAX_ROWS then
+				break
+			end
+		end
+	end
+	return final
 end
 
 local function joinServer(jobId)
 	jobId = tostring(jobId or "")
-	if jobId == "" or jobId == "nil" then
-		return false
-	end
-	if jobId == tostring(game.JobId) then
+	if jobId == "" or jobId == tostring(game.JobId) then
 		return false
 	end
 	_G.LeonBlacklist[jobId] = true
@@ -239,10 +247,9 @@ local function joinServer(jobId)
 	if ok then
 		return true
 	end
-	ok = pcall(function()
+	return pcall(function()
 		TeleportService:TeleportToPlaceInstance(PlaceId, jobId)
 	end)
-	return ok
 end
 
 --------------------------------------------------------------------------------
@@ -304,6 +311,7 @@ do
 	end)
 end
 
+-- Sidebar
 local sidebar = new("Frame", {
 	Name = "Sidebar",
 	Size = UDim2.new(0, 120, 1, 0),
@@ -332,14 +340,49 @@ new("Frame", {
 	BackgroundColor3 = ACCENT_HI,
 	BorderSizePixel = 0,
 }, sidebar)
-local statusLabel = label(sidebar, "Ready", 9, FONT_MED, SUB_TEXT,
+local statusLabel = label(sidebar, "Scanning...", 9, FONT_MED, SUB_TEXT,
 	UDim2.fromOffset(22, 44), UDim2.fromOffset(90, 16))
 
-label(sidebar, "Author: " .. AUTHOR, 9, FONT_BOLD, SUB_TEXT,
-	UDim2.fromOffset(10, 100), UDim2.fromOffset(100, 16))
+label(sidebar, "Max players", 9, FONT_MED, MUTED,
+	UDim2.fromOffset(10, 72), UDim2.fromOffset(100, 14))
 
-local copyBtn = button(sidebar, {
-	text = "Copy Discord",
+local maxValueLbl = label(sidebar, "2", 16, FONT_BOLD, WHITE,
+	UDim2.fromOffset(10, 88), UDim2.fromOffset(30, 22))
+
+local max1 = button(sidebar, {
+	text = "1",
+	textSize = 11,
+	pos = UDim2.fromOffset(40, 88),
+	size = UDim2.fromOffset(32, 24),
+	c0 = ACCENT,
+	c1 = ACCENT_DARK,
+	strokeColor = ACCENT_HI,
+	radius = 6,
+})
+local max2 = button(sidebar, {
+	text = "2",
+	textSize = 11,
+	pos = UDim2.fromOffset(76, 88),
+	size = UDim2.fromOffset(32, 24),
+	c0 = ACCENT,
+	c1 = ACCENT_DARK,
+	strokeColor = ACCENT_HI,
+	radius = 6,
+})
+
+local function setMax(n)
+	maxPlayersPrefer = n
+	maxValueLbl.Text = tostring(n)
+end
+max1.MouseButton1Click:Connect(function()
+	setMax(1)
+end)
+max2.MouseButton1Click:Connect(function()
+	setMax(2)
+end)
+
+local autoBtn = button(sidebar, {
+	text = "Auto Hop: OFF",
 	textSize = 10,
 	pos = UDim2.fromOffset(6, 124),
 	size = UDim2.fromOffset(108, 28),
@@ -349,19 +392,21 @@ local copyBtn = button(sidebar, {
 	strokeTransparency = 0.25,
 	radius = 8,
 })
-copyBtn.MouseButton1Click:Connect(function()
-	local fn = setclipboard or toclipboard
-	if fn and pcall(fn, DISCORD_LINK) then
-		copyBtn.Text = "Copied!"
-	else
-		copyBtn.Text = "Failed"
-	end
-	task.delay(1.2, function()
-		if copyBtn.Parent then
-			copyBtn.Text = "Copy Discord"
-		end
-	end)
-end)
+
+local refreshBtn = button(sidebar, {
+	text = "Refresh",
+	textSize = 10,
+	pos = UDim2.fromOffset(6, 158),
+	size = UDim2.fromOffset(108, 26),
+	c0 = Color3.fromRGB(10, 30, 70),
+	c1 = Color3.fromRGB(8, 14, 28),
+	strokeColor = ACCENT,
+	strokeTransparency = 0.3,
+	radius = 8,
+})
+
+label(sidebar, "Author: " .. AUTHOR, 9, FONT_BOLD, SUB_TEXT,
+	UDim2.fromOffset(10, 196), UDim2.fromOffset(100, 14))
 
 local hideBtn = button(sidebar, {
 	text = "Hide",
@@ -399,6 +444,7 @@ showBtn.MouseButton1Click:Connect(function()
 	showBg.Visible = false
 end)
 
+-- Content
 local content = new("Frame", {
 	Name = "Content",
 	Position = UDim2.fromOffset(128, 0),
@@ -406,92 +452,29 @@ local content = new("Frame", {
 	BackgroundTransparency = 1,
 }, main)
 
-label(content, "PRIVATE SERVER HOP", 11, FONT_BOLD, ACCENT_HI,
-	UDim2.fromOffset(10, 12), UDim2.fromOffset(220, 18))
+label(content, "PRIVATE SERVERS", 11, FONT_BOLD, ACCENT_HI,
+	UDim2.fromOffset(10, 10), UDim2.fromOffset(160, 18))
+
+local countLbl = label(content, "0 found", 9, FONT_MED, MUTED,
+	UDim2.new(1, -90, 0, 12), UDim2.fromOffset(80, 16), Enum.TextXAlignment.Right)
 
 local currentLbl = label(content,
-	("Now: %d player(s)  ·  Job %s"):format(#Players:GetPlayers(), tostring(game.JobId):sub(1, 8)),
-	10, FONT_MED, MUTED,
-	UDim2.fromOffset(10, 32), UDim2.new(1, -20, 0, 16))
+	("You: %dP · %s"):format(#Players:GetPlayers(), tostring(game.JobId):sub(1, 8)),
+	9, FONT_MED, MUTED,
+	UDim2.fromOffset(10, 30), UDim2.new(1, -20, 0, 14))
 
-local maxCard = new("Frame", {
-	Position = UDim2.fromOffset(10, 56),
-	Size = UDim2.new(1, -20, 0, 40),
+local feedBox = new("Frame", {
+	Position = UDim2.fromOffset(8, 50),
+	Size = UDim2.new(1, -16, 1, -58),
 	BackgroundColor3 = WHITE,
-	BackgroundTransparency = 0.08,
+	BackgroundTransparency = 0.18,
 	BorderSizePixel = 0,
 }, content)
-corner(maxCard, 8)
-gradient(maxCard, Color3.fromRGB(9, 28, 55), Color3.fromRGB(9, 14, 22), 0)
-accentStroke(maxCard, 1, 0.35)
+corner(feedBox, 10)
+gradient(feedBox, Color3.fromRGB(6, 12, 24), Color3.fromRGB(5, 6, 10), 90)
+stroke(feedBox, ACCENT, 1, 0.55)
 
-label(maxCard, "Max players (you included)", 10, FONT_MED, SUB_TEXT,
-	UDim2.fromOffset(12, 4), UDim2.new(0.55, 0, 0, 14))
-
-local maxValueLbl = label(maxCard, "2", 14, FONT_BOLD, WHITE,
-	UDim2.fromOffset(12, 18), UDim2.fromOffset(40, 18))
-
-local function setMax(n)
-	maxPlayersPrefer = n
-	maxValueLbl.Text = tostring(n)
-end
-
-local max1 = button(maxCard, {
-	text = "1",
-	textSize = 11,
-	anchor = Vector2.new(1, 0.5),
-	pos = UDim2.new(1, -56, 0.5, 0),
-	size = UDim2.fromOffset(36, 26),
-	c0 = ACCENT,
-	c1 = ACCENT_DARK,
-	strokeColor = ACCENT_HI,
-	radius = 6,
-})
-local max2 = button(maxCard, {
-	text = "2",
-	textSize = 11,
-	anchor = Vector2.new(1, 0.5),
-	pos = UDim2.new(1, -14, 0.5, 0),
-	size = UDim2.fromOffset(36, 26),
-	c0 = ACCENT,
-	c1 = ACCENT_DARK,
-	strokeColor = ACCENT_HI,
-	radius = 6,
-})
-max1.MouseButton1Click:Connect(function()
-	setMax(1)
-end)
-max2.MouseButton1Click:Connect(function()
-	setMax(2)
-end)
-
-local hopBtn = button(content, {
-	text = "START AUTO HOP",
-	textSize = 13,
-	pos = UDim2.fromOffset(10, 108),
-	size = UDim2.new(1, -20, 0, 44),
-	c0 = ACCENT,
-	c1 = ACCENT_DARK,
-	strokeColor = ACCENT_HI,
-	strokeTransparency = 0.15,
-	radius = 10,
-})
-
-local hopDetail = label(content, "Status: Idle  ·  Target: 1P then 2P (bottom → mid)", 10, FONT_MED, MUTED,
-	UDim2.fromOffset(10, 160), UDim2.new(1, -20, 0, 16))
-
-local logBox = new("Frame", {
-	Position = UDim2.fromOffset(10, 184),
-	Size = UDim2.new(1, -20, 1, -196),
-	BackgroundColor3 = WHITE,
-	BackgroundTransparency = 0.15,
-	BorderSizePixel = 0,
-}, content)
-corner(logBox, 10)
-gradient(logBox, Color3.fromRGB(6, 12, 24), Color3.fromRGB(5, 6, 10), 90)
-stroke(logBox, ACCENT, 1, 0.55)
-
-local logScroll = new("ScrollingFrame", {
+local feed = new("ScrollingFrame", {
 	Position = UDim2.fromOffset(6, 6),
 	Size = UDim2.new(1, -12, 1, -12),
 	BackgroundTransparency = 1,
@@ -500,117 +483,160 @@ local logScroll = new("ScrollingFrame", {
 	ScrollBarImageColor3 = ACCENT,
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-}, logBox)
+}, feedBox)
 new("UIListLayout", {
-	Padding = UDim.new(0, 4),
+	Padding = UDim.new(0, 6),
 	SortOrder = Enum.SortOrder.LayoutOrder,
-}, logScroll)
+}, feed)
+new("UIPadding", { PaddingRight = UDim.new(0, 4) }, feed)
 
-local logOrder = 0
-local function addLog(text)
-	logOrder += 1
-	local row = label(logScroll, text, 10, FONT_MED, SUB_TEXT,
-		UDim2.fromOffset(0, 0), UDim2.new(1, -4, 0, 16))
-	row.LayoutOrder = logOrder
-	local kids = {}
-	for _, c in ipairs(logScroll:GetChildren()) do
-		if c:IsA("TextLabel") then
-			kids[#kids + 1] = c
-		end
-	end
-	if #kids > 40 then
-		for i = 1, #kids - 40 do
-			kids[i]:Destroy()
+local emptyLbl = label(feed, "Scanning quiet servers...", 11, FONT_MED, MUTED,
+	UDim2.fromOffset(0, 0), UDim2.new(1, 0, 0, 28), Enum.TextXAlignment.Center)
+
+local function clearFeed()
+	for _, c in ipairs(feed:GetChildren()) do
+		if c:IsA("Frame") or (c:IsA("TextLabel") and c ~= emptyLbl) then
+			c:Destroy()
 		end
 	end
 end
 
-local function setHopUI(searching)
-	if searching then
-		hopBtn.Text = "STOP SEARCHING"
-		hopBtn.TextColor3 = Color3.fromRGB(255, 160, 160)
-		statusLabel.Text = "Hopping..."
-	else
-		hopBtn.Text = "START AUTO HOP"
-		hopBtn.TextColor3 = WHITE
-		statusLabel.Text = "Ready"
-	end
+local function addRow(entry, order)
+	local row = new("Frame", {
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, 48),
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.06,
+		BorderSizePixel = 0,
+	}, feed)
+	corner(row, 8)
+	gradient(row, Color3.fromRGB(10, 32, 70), Color3.fromRGB(11, 16, 26), 0)
+	accentStroke(row, 1, 0.45)
+
+	-- left accent bar
+	local bar = new("Frame", {
+		Position = UDim2.fromOffset(5, 8),
+		Size = UDim2.fromOffset(4, 32),
+		BackgroundColor3 = WHITE,
+		BorderSizePixel = 0,
+	}, row)
+	corner(bar, 2)
+	gradient(bar, ACCENT_HI, ACCENT_DARK, 90)
+
+	-- "Private server"
+	label(row, "Private server", 12, FONT_BOLD, WHITE,
+		UDim2.fromOffset(16, 6), UDim2.new(1, -100, 0, 18))
+
+	-- player count
+	local n = entry.playing or 0
+	local countText = n == 1 and "1 player" or (tostring(n) .. " players")
+	label(row, countText, 10, FONT_MED, SUB_TEXT,
+		UDim2.fromOffset(16, 26), UDim2.new(1, -100, 0, 14))
+
+	local hop = button(row, {
+		text = "Hop Now",
+		textSize = 10,
+		anchor = Vector2.new(1, 0.5),
+		pos = UDim2.new(1, -10, 0.5, 0),
+		size = UDim2.fromOffset(72, 28),
+		c0 = ACCENT,
+		c1 = ACCENT_DARK,
+		strokeColor = ACCENT_HI,
+		strokeTransparency = 0.2,
+		radius = 7,
+	})
+	hop.MouseButton1Click:Connect(function()
+		statusLabel.Text = "Joining..."
+		hop.Text = "..."
+		joinServer(entry.id)
+	end)
 end
 
-local function StartAutoHop()
-	if IsSearching then
-		IsSearching = false
-		setHopUI(false)
-		hopDetail.Text = "Status: Stopped"
-		addLog("Stopped by user")
+local function renderList(list)
+	local scroll = feed.CanvasPosition
+	clearFeed()
+	if emptyLbl.Parent then
+		emptyLbl.Visible = false
+	end
+
+	if not list or #list == 0 then
+		if emptyLbl.Parent then
+			emptyLbl.Visible = true
+			emptyLbl.Text = "No quiet server found"
+		end
+		countLbl.Text = "0 found"
 		return
 	end
 
-	IsSearching = true
-	hopAttempt = 0
-	setHopUI(true)
-	addLog("Scan started · max " .. tostring(maxPlayersPrefer) .. "P · bottom→mid")
+	for i, e in ipairs(list) do
+		addRow(e, i)
+	end
+	countLbl.Text = #list .. " found"
+	feed.CanvasPosition = scroll
+end
 
+local scanning = false
+local function doScan()
+	if scanning then
+		return
+	end
+	scanning = true
+	statusLabel.Text = "Scanning..."
 	task.spawn(function()
-		while IsSearching and gui.Parent do
-			hopAttempt += 1
-			hopDetail.Text = string.format("Scanning... (#%d)  ·  prefer ≤%dP", hopAttempt, maxPlayersPrefer)
-			statusLabel.Text = "Scan #" .. hopAttempt
-
-			local foundJobId, playerCount = FindLowestTailServer()
-
-			if foundJobId then
-				_G.LeonBlacklist[foundJobId] = true
-				hopDetail.Text = string.format("Found %dP · joining %s", playerCount, foundJobId:sub(1, 8))
-				addLog(string.format("Found %dP → %s", playerCount, foundJobId:sub(1, 12)))
-				statusLabel.Text = "Joining..."
-
-				local failConn
-				failConn = TeleportService.TeleportInitFailed:Connect(function(_, result, err)
-					if failConn then
-						failConn:Disconnect()
-					end
-					addLog("Teleport failed: " .. tostring(result or err))
-					hopDetail.Text = "Failed — retrying..."
-					statusLabel.Text = "Retry"
-				end)
-
-				joinServer(foundJobId)
-				task.wait(5)
-				if failConn then
-					pcall(function()
-						failConn:Disconnect()
-					end)
-				end
-			else
-				hopDetail.Text = string.format("No match · retry (#%d)", hopAttempt)
-				addLog("No quiet server this pass")
-				task.wait(0.35)
-			end
-		end
-
-		if gui.Parent then
-			setHopUI(false)
-			if not hopDetail.Text:find("Stopped") then
-				hopDetail.Text = "Status: Idle"
+		local ok, list = pcall(scanQuietServers)
+		scanning = false
+		if ok and type(list) == "table" then
+			latestServers = list
+			renderList(list)
+			statusLabel.Text = #list > 0 and "Ready" or "Empty"
+		else
+			statusLabel.Text = "Scan fail"
+			if emptyLbl.Parent then
+				emptyLbl.Visible = true
+				emptyLbl.Text = "Scan failed — retry"
 			end
 		end
 	end)
 end
 
-hopBtn.MouseButton1Click:Connect(StartAutoHop)
+refreshBtn.MouseButton1Click:Connect(doScan)
 
-TeleportService.TeleportInitFailed:Connect(function(_, result, errorMessage)
-	warn("[Leon4951] TeleportInitFailed:", tostring(result), tostring(errorMessage))
-	if statusLabel and statusLabel.Parent then
-		statusLabel.Text = "Join failed"
+autoBtn.MouseButton1Click:Connect(function()
+	autoHop = not autoHop
+	if autoHop then
+		autoBtn.Text = "Auto Hop: ON"
+		autoHopToken += 1
+		local my = autoHopToken
+		task.spawn(function()
+			while autoHop and autoHopToken == my and gui.Parent do
+				if #latestServers > 0 then
+					local target = latestServers[1]
+					statusLabel.Text = "Auto join..."
+					joinServer(target.id)
+					task.wait(5)
+				else
+					doScan()
+					task.wait(2)
+				end
+				task.wait(1)
+			end
+		end)
+	else
+		autoBtn.Text = "Auto Hop: OFF"
+		autoHopToken += 1
+		statusLabel.Text = "Ready"
 	end
+end)
+
+TeleportService.TeleportInitFailed:Connect(function(_, result, err)
+	warn("[Leon4951] Teleport failed:", result, err)
+	statusLabel.Text = "Join failed"
 end)
 
 task.spawn(function()
 	while gui.Parent do
 		pcall(function()
-			currentLbl.Text = ("Now: %d player(s)  ·  Job %s"):format(
+			currentLbl.Text = ("You: %dP · %s"):format(
 				#Players:GetPlayers(),
 				tostring(game.JobId):sub(1, 8)
 			)
@@ -619,5 +645,15 @@ task.spawn(function()
 	end
 end)
 
-addLog("UI ready · private hop logic loaded")
+-- auto refresh list
+task.spawn(function()
+	doScan()
+	while gui.Parent do
+		task.wait(REFRESH_INTERVAL)
+		if not autoHop then
+			doScan()
+		end
+	end
+end)
+
 print("[Leon4951] Ready")
