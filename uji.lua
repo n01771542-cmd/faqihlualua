@@ -1,0 +1,1818 @@
+-- ============================================================================
+-- LEON4951 HUB v2 - FINAL REDESIGN EDITION WITH NEW LOGO & TOGGLE
+-- (+ tombol SALIN loadstring di sebelah tombol RUN)
+-- ============================================================================
+
+-- [ PRE-INITIALIZATION CLEANUP ]
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local function DestroyOldUI(name)
+    local old = CoreGui:FindFirstChild(name) or (LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name))
+    if old then
+        pcall(function() old:Destroy() end)
+    end
+end
+
+DestroyOldUI("leon4951HubGuiV2")
+
+-- [ 1. SERVICES ]
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+
+-- [ 2. CONFIGURASI & THEME ]
+local Theme = {
+    Background = Color3.fromRGB(7, 10, 17),
+    SidebarBg = Color3.fromRGB(10, 15, 24),
+    CardBg = Color3.fromRGB(14, 20, 32),
+    CardBorder = Color3.fromRGB(34, 48, 73),
+
+    Accent = Color3.fromRGB(0, 122, 255),            -- Warna Biru Utama
+    AccentBlue = Color3.fromRGB(0, 122, 255),         -- Alias untuk Accent
+    AccentLight = Color3.fromRGB(82, 151, 255),
+    TabActiveBg = Color3.fromRGB(18, 32, 54),
+    TabActiveBorder = Color3.fromRGB(0, 122, 255),
+
+    FilterActiveBg = Color3.fromRGB(18, 38, 65),     -- Latar belakang saat filter dipilih
+
+    BadgeBg = Color3.fromRGB(14, 20, 32),
+    RunPillBg = Color3.fromRGB(20, 35, 60),
+
+    TextPrimary = Color3.fromRGB(245, 247, 255),
+    TextSecondary = Color3.fromRGB(180, 195, 220),
+    TextMuted = Color3.fromRGB(130, 145, 175),
+    BorderColor = Color3.fromRGB(0, 122, 255),
+
+    GoldBadge = Color3.fromRGB(255, 185, 0),
+    KeyTagBg = Color3.fromRGB(255, 75, 90),
+    KeyTagPill = Color3.fromRGB(50, 18, 22),
+    NoKeyTagBg = Color3.fromRGB(46, 146, 116),
+    NoKeyTagPill = Color3.fromRGB(18, 48, 43),
+    WaGreen = Color3.fromRGB(37, 211, 102),
+    WaDarkGreen = Color3.fromRGB(18, 38, 28)
+}
+
+local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
+
+-- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
+local RawScriptDataStealAnEgg = {
+    {"SOURCES HUB","No Key",true,"loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
+    {"DHII'S HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
+    {"Lych x putra hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
+    {"VIREX HUB","No Key",true,"loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
+    {"TEDDY HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua\"))()"},
+    {"GOHA HUB","No Key",true,"loadstring(game:HttpGet(\"https://api.goha.dev/loader\"))()"},
+    {"Night Hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau\"))()"},
+    {"REALKID HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua\"))()"},
+    {"CODIUM HUB","No Key",true,"loadstring(game:HttpGet(\"https://getcodium.xyz/loader.luau\"))()"},
+    {"NO-LAG X HUB","No Key",true,"loadstring(game:HttpGet(\"https://nolag.wtf/script.lua\"))()"},
+    {"LINKHIVE HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua\"))()"},
+    {"Chilli hub v5","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua\"))()"},
+    {"VENYX HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub\"))()"},
+    {"LUKZ HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua\"))()"},
+    {"SENA EXCLUSIVE","Key",true,"loadstring(game:HttpGet(\"https://senahub.xyz/senaexclusive\"))()"},
+    {"PET SPAWNER TERBAGUS","No Key",true,"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner"},
+    {"YANTO HUB KEY : YANTOHUB","Key",true,"https://raw.githubusercontent.com/YantoRoblox/Script-Free-YantoHUB/refs/heads/main/YantoHUB"},
+    {"FYY HUB","No Key",true,"https://FyyCommunity.my.id"},
+    {"SPEED HUB","Key",false,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
+    {"BIGFROOT HUB","Key",false,"https://raw.githubusercontent.com/hanniii1/Loader/refs/heads/main/BFLoader.lua"},
+    {"CHIYO HUB","Key",false,"https://raw.githubusercontent.com/kaisenlmao/loader/refs/heads/main/chiyo.lua"},
+    {"CLOVER HUB","Key",true,"https://cloverhub.app/clover.lua"},
+    {"ZERO POINT HUB","No Key",false,"https://raw.githubusercontent.com/JaxRol/ZeroPoint/refs/heads/main/KeySystem"},
+    {"UB HUB","No Key",false,"https://raw.githubusercontent.com/TeamUBHub/UBLoader/refs/heads/main/Loader.lua"},
+    {"VALINC HUB","No Key",false,"https://api.valincsyndicate.com/v1/releases/5502cba03703f4a3628d522d396b80d8.lua"},
+    {"OUROBOROS HUB","No Key",false,"https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua"},
+    {"OMG HUB","Key",false,"https://raw.githubusercontent.com/Omgshit/Scripts/main/MainLoader.lua"},
+    {"NASI RENDANG LUA","Key",true,"https://raw.githubusercontent.com/JualNasiRendang/loader/refs/heads/main/main.lua"},
+    {"UNKNOWN HUB","Key",false,"https://unknownhub.win/api/projects/54474b4c5d5a4f459909c4cb70e7b4f3/loader"},
+    {"RIFT","Key",false,"https://rifton.top/loader.lua"},
+    {"AIR FLOW","Key",false,"https://airflowscript.com/loader"},
+    {"SOLIX HUB","Key",false,"https://raw.githubusercontent.com/bao8jl/solixhub/main/loader"},
+    {"HOSHI HUB","No Key",false,"https://hoshihub.site/loader.lua"},
+    {"ZERO IMPACT","Key",false,"https://www.zeroimpact.online/raw/loader"},
+    {"SNOWY HUB","Key",false,"https://flowauth.net/v1/ui/a87f00d9adf63658655fcd02ab86a4ef.lua"},
+    {"AJJANS HUB","Key",true,"https://raw.githubusercontent.com/virtuososvisualedits-prog/Ww/refs/heads/main/final-obfuscated.lua"},
+    {"NEMESIS HUB","Key",false,"https://raw.githubusercontent.com/x2zu/loader/main/freeloader.lua"},
+    {"NIGHT HUB","No Key",false,"https://pastefy.app/J29hE5fR/raw"},
+    {"LUMIN HUB","No Key",false,"http://luminon.top/loader.lua"},
+    {"CIAO HUB SERVER HOP","No Key",false,"https://pastefy.app/YoZocJ8O/raw"},
+    {"ZHENN HUB SPAWNER","Key",false,"https://raw.githubusercontent.com/ZhennHub/PetSpawner/refs/heads/main/lua"},
+    {"DECODEX","No Key",false,"https://raw.githubusercontent.com/ItzYumi/Decode/refs/heads/main/DE%3ACODE.lua"},
+    {"CRZ HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
+    {"KEXXE HUB","Key",false,"https://raw.githubusercontent.com/premiumbuddy/kex/refs/heads/main/kexxxx"},
+    {"NOVA HUB","Key",false,"https://raw.githubusercontent.com/NovaHubRBLX/NovaHub/refs/heads/main/novahub.lua"},
+    {"VANTAGE","Key",false,"https://raw.githubusercontent.com/MisterNovitski/Vantage/refs/heads/main/mm2.txt"},
+    {"SPORTSCLUB HUB","Key",false,"https://loader.sportsclub.fun/loader.luau"},
+    {"SCRIPTVERSE HUB","Key",false,"https://scriptversekey.xyz/s/steal-an-egg"},
+    {"GS HUB","Key",false,"https://gist.githubusercontent.com/spiritualgaming1123-beep/46ef55c5f8284e076aafc5ebd12233f4/raw/5b24749c3931c1838a76e64c9af508dcdd03700a/gistfile1.lua"},
+    {"PROBEST","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/0199b576f5c2d5a34159f0f9f4e1de0a566b4d1da5b1cfa5d2f71ade9bdcaa24/download"},
+    {"SYSHUB FUN","Key",false,"https://syshub.fun/free"},
+    {"FOXNAME","No Key",true,"https://raw.githubusercontent.com/caomod2077/Script/refs/heads/main/Fn-stealanegg.lua"},
+    {"DUPE EGG + DUPE PET","No Key",false,"https://raw.githubusercontent.com/INF-Hub-PL/StealAEggScript/refs/heads/main/Pet_SpawnerV1"},
+    {"RONNEI HUB","No Key",true,"https://raw.githubusercontent.com/elonmod/skibidi/refs/heads/main/Ronneihub-keyless.lua"},
+    {"AXONIC HUB","Key",false,"https://raw.githubusercontent.com/Kenniel123/Steal-A-Egg/refs/heads/main/Steal%20A%20Egg"},
+    {"NEOX HUB","Key",false,"https://raw.githubusercontent.com/hassanxzayn-lua/NEOXHUBMAIN/refs/heads/main/loader"},
+    {"LENNON V5","No Key",true,"https://api.luarmor.net/files/v4/loaders/4595fe31a5f7a8b4f4dd7071f3119ef7.lua"},
+    {"SAIOPS HUB","Key",false,"https://api.saiops.cc/scripts/Steal-An-Egg-Script.lua"},
+    {"ZEROIN HUB","Key",false,"https://zeroinhub.com/api/script"},
+    {"ONHUB VIET","Key",false,"https://raw.githubusercontent.com/ronnei/freemium/refs/heads/main/loader.lua"},
+    {"MIRANDA HUB V4","No Key",true,"https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/stealeggies"},
+    {"PROJECT-MADARA","No Key",false,"https://raw.githubusercontent.com/IsThisMe01/Project-Madara/refs/heads/main/stealanegg"},
+    {"NEVERLOSE","Key",false,"https://raw.githubusercontent.com/inrate1337/NeverloseLoaderRoblox/refs/heads/main/main.luau"},
+    {"SPIRITUAL GAMING HUB","Key",false,"https://gist.githubusercontent.com/spiritualgaming1123-beep/f2c8c4009b2c4d4dda1b3d5fcb263ef3/raw/121ff8c9b59476a7a362b543edc61499e5832937/gistfile1.lua"},
+    {"CRYSTALIZED HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/a62237c6a75399adc9add4151ebeeb91c1f965fab665a650dcbc699a5622b37f/download"},
+    {"OCTOPUS HUB","Key",false,"https://www.octopushub.xyz/loader"},
+    {"SYSNEROX","Key",false,"https://raw.githubusercontent.com/DrakarDev/Hud/refs/heads/main/steal_an_egg.lua"},
+    {"JINHUB","Key",false,"https://jinhub.my.id/scripts/Universal.lua"},
+    {"OVERFLOW","Key",false,"https://overflow.cx/loader.lua"},
+    {"BLYXO HUB","No Key",true,"https://flowauth.net/v1/loaders/69d3463240384f3a73fbe32c178093a2.lua"},
+    {"SENA beta","No Key",true,"https://senahub.xyz/raw/loader"},
+    {"TOOLBOX","No Key",false,"https://raw.githubusercontent.com/Abdullahking20/loader-lua/main/loader"},
+    {"SOLVEXGUI HUB","Key",false,"https://raw.githubusercontent.com/Solvexxxx/Scripts/refs/heads/main/SolvexGUI_SAE.lua"},
+    {"SPEED BYPASS","No Key",false,"https://pastefy.app/iedWaiQX/raw"},
+    {"SAKURA HUB","Key",false,"https://flowauth.net/v1/ui/d00ec69382de97372fc9559efc722298.lua"},
+    {"LUNARIS HUB","Key",false,"https://jnkie.com/loaders/lunaris"},
+    {"FORGE HUB","Key",false,"https://cdn.forgehub.store/loader"},
+    {"BASEMENT HUB","Key",false,"https://thebsmt.xyz/BSMT"},
+    {"KALI HUB","Key",false,"https://kalihub.xyz/loader.lua"},
+    {"CORE HUB","Key",false,"https://getcore.lol/loader.lua"},
+    {"INDRA HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/2b7d97ed2525cef705b26f22d6964b87dd4b64a1bf533ac61d9edf6df14e8471/download"},
+    {"PET/EGG SPAWNER","No Key",false,"https://api.luarmor.net/files/v4/loaders/d8f1c691a58edb11ef782849f80e9b61.lua"},
+    {"APEL HUB","Key",false,"https://apelhub.com/loader.lua"},
+    {"PANDA HUB","Key",false,"https://raw.githubusercontent.com/Muhammad6196/Project-Infinity-X/refs/heads/main/main.lua"},
+    {"LUCID HUB","Key",false,"https://gist.githubusercontent.com/IlyassSama/d4c20dcabe62c225b3e96a43cdb0eae9/raw/82020fd08fbff2ad69731e650d960f7d59a07fac/notifier.lua"},
+    {"FISHY","Key",false,"https://jnkie.com/loaders/fishyhub"},
+    {"SCRIPTFARMER","Key",false,"https://scriptfarmer.dpdns.org/loader/stealanegg-serverhoper"},
+    {"VIVID LUA","Key",false,"https://vivid.vividhub.workers.dev/loader.lua"},
+    {"BERRI HUB","Key",false,"https://raw.githubusercontent.com/moshixzn/ahhagdienavd/refs/heads/main/loader.lua.txt"},
+    {"NOCTRUNHUB","Key",false,"https://raw.githubusercontent.com/insanecontenty2k-blip/scriptss/main/universalscriptsofop"},
+    {"CITRA HUB","No Key",false,"https://raw.githubusercontent.com/gilgameshfate59/ohbfoosk8tid/main/CitraLoader.lua"},
+    {"VINCI HUB","No Key",true,"https://raw.githubusercontent.com/tutorkah104-rgb/Steal-an-Egg/refs/heads/main/Vincitore.luau"},
+    {"HORIZON HUB ANTI HIT","No Key",false,"script_key = \"Trial\"; loadstring(game:HttpGet(\"https://api.getpolsec.com/scripts/hosted/6582551b42d21c6b7eb55f1d76d8d50ce53cb35592093d6615b5e83437594dc0.lua\"))()"},
+    {"CHILLI HUB","No Key",true,"https://raw.githubusercontent.com/tienkhanh1/spicy/main/Chilli.lua"},
+    {"TSUO HUB","No Key",true,"https://raw.githubusercontent.com/Tsuo7/TsuoHub/main/stealanegg"},
+    {"LKZ HUB","No Key",true,"https://raw.githubusercontent.com/LucasggkX/LKZ-Hub/refs/heads/main/Loader.lua"},
+    {"REZZY HUB","Key",false,"https://raw.githubusercontent.com/Roman666Cabj/Nether/refs/heads/main/RezzyStealAnEgg.lua"},
+    {"RAVANGE HUB","Key",false,"https://raw.githubusercontent.com/Revenge-Hub-Roblox/Scripts/refs/heads/main/Loader.lua"},
+    {"ZNEX HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/181cfe2bd5df35ce78607b5ffb37c6666abd76eda11ff33b0f24a1b2d8ee935f/download"},
+    {"ASVARA HUB","Key",false,"https://raw.githubusercontent.com/asvraRoblox/stealegg/refs/heads/main/main"},
+    {"VSN","No Key",false,"https://raw.githubusercontent.com/NetNullv1/VSN/refs/heads/main/HUB"},
+    {"SHADOW HUB","Key",false,"https://pastebin.com/raw/QAvDbBKa"},
+    {"VELOX HUB","Key",false,"https://api.jnkie.com/api/v1/luascripts/public/f0b3ce85f588800ae7e46415fc4dd79ff2b0d09c9b6a8e19cea8a67b47f1bcbd/download"},
+    {"KING VYPER (KEY: KV-FREE-TRIAL-WOKS)","Key",false,"https://kingvypers.site/raw/TrialLoader"},
+    {"HIP-HUP","Key",true,"https://hiphub.cloud/api/script-roblox/loader"},
+    {"BK HUB","No Key",true,"https://api.luarmor.net/files/v4/loaders/9ee4edde227ac85f50872bf9e4226508.lua"},
+    {"AXURS","No Key",false,"https://raw.githubusercontent.com/XE3Scripts/Axur-sGamesHub/refs/heads/main/StealAnEgg"},
+    {"POTATO HUB","Key",false,"https://raw.githubusercontent.com/potatohub67/potatoscripts/refs/heads/main/stealaegg.lua"},
+    {"JANE HUB","No Key",false,"https://flowauth.net/v1/loaders/3c4e87ed34813171b0f8d53a108a7d88.lua"},
+    {"WIS HUB","No Key",true,"https://api.wishub.cloud/files/loader.lua"},
+    {"SENA V7 NEW","Key",true,"https://senahub.xyz/senaloader"},
+    {"VOIDHUB","No Key",false,"loadstring(game:HttpGet(\"https://voidon.top/api/loader/main\"))()"},
+    {"LIMBO HUB","No Key",false,"loadstring(game:HttpGet(\"https://limbohub.my.id/loader.lua\"))()"},
+    {"OXIDE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua\"))()"},
+    {"PULSE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PulseZax/Loader/refs/heads/main/.lua\"))()"},
+    {"YARHM HUB","No Key",false,"loadstring(game:HttpGet(\"https://yarhm.com\"))()"},
+    {"RIFT GOHA","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
+    {"ATHERHUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v3/loaders/2529a5f9dfddd5523ca4e22f21cceffa.lua\"))()"},
+    {"VANITY HUB","Key",false,"loadstring(game:HttpGet(\"https://vanityscript.xyz/loader\"))()"},
+    {"RONIX HUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v3/loaders/fda9babd071d6b536a745774b6bc681c.lua\"))()"},
+    {"MONARCHH","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/nobuxy/monarch.win/refs/heads/main/Monarch.lua\"))()"},
+    {"UNREXL","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/unrexl/Scripts/refs/heads/main/StealaEgg\"))()"},
+    {"WADIDIS HUB","Key",false,"loadstring(game:HttpGet(\"https://api.jnkie.com/api/v1/luascripts/public/809c81e15814d1c016f44d9fe56587f5f38c55a97f203f11bc1a3f7cc3725c5f/download\"))()"},
+    {"H4XSCRIPTS","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/H4xScripts/Loader/refs/heads/main/loader.lua\", true))()"},
+    {"RBX LIFE / DIVINE EGG","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/SynergyNetworkz/VULN/refs/heads/main/STEALANEGG.lua\"))()"},
+    {"THAN HUB","Key",false,"loadstring(game:HttpGet(\"https://api.luarmor.net/files/v4/loaders/d1c82862a093e64c6bd82bb6d6f7a46b.lua\"))()"},
+    {"TOKINU","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Tokinu-Scripts/Steal-An-Egg/refs/heads/main/Instant/Tp\"))()"},
+    {"NEVA HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/VEZ2/NEVAHUB/main/2\"))()"},
+    {"LEVON HUB","No Key",false,"loadstring(game:HttpGet('https://pastefy.app/nasHhfko/raw'))()"},
+}
+
+local RawNewScriptsData = {
+    {"OTC","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Aerlro/OTC/refs/heads/main/Steal%20an%20Egg/main.lua\"))()"},
+    {"AKIPOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/akipox/Roblox/main/Mods/Games/StealanEgg.lua\"))()"},
+    {"MENGHUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/GrexXMeng/Mengs/refs/heads/main/StealAnEgg.lua\"))()"},
+    {"MY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/pespapankon-del/MyHub/main/Games/StealAnEgg.lua\"))()"},
+    {"TUROK JAPAN HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/lvjunling/r-s-zh/refs/heads/main/stealegg/lua_zh_mobile.lua\"))()"},
+    {"FROST","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Frost-GG-Hud/Loader/main/src/Loader.luau\"))()"},
+    {"SOLARIS","Key",false,"loadstring(game:HttpGet(\"https://api.obscuravm.com/scripts/1231452106622100334\"))()"},
+    {"SEISEN V1","Key",false,"loadstring(game:HttpGet(\"https://api.jnkie.com/api/v1/luascripts/public/8ac2e97282ac0718aeeb3bb3856a2821d71dc9e57553690ab508ebdb0d1569da/download\"))()"},
+    {"SELUX","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/seltonmt012/sel01-rbx/main/loader.lua\"))()"},
+    {"SYSCALL","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/enzukaix/Syscall/refs/heads/main/Loader.lua\"))()"},
+    {"RBXZ HUB","Key",false,"loadstring(game:HttpGet(\"https://rbxscriptz.fun/RBXZ-HUB\"))()"},
+    {"SEISEN V2","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Mentos4/roblox/refs/heads/main/Script/Steal%20an%20Egg\"))()"},
+    {"VOID SHELL HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/VoidShell-null/VoidShell-Hub/refs/heads/main/Scripts/StealAnEgg.luau\"))()"},
+    {"NOYCHOX","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/yNopaak/STEAL-AN-EGG-NOYCHOX/main/main.lua\"))()"},
+    {"PELATICO","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PELATICO/steal-an-egg-hub/main/main.lua\"))()"},
+    {"XENON BYTE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/fivetagz-prog/xenon-byte-steal-an-egg/refs/heads/main/xenon-byte-sac.lua\"))()"},
+    {"VORTEX X SAGE","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Israel-Vortex/vortex-x-scripts/refs/heads/main/Official-Vortex-Software/Dev-Project/StealAnEgg.lua\"))()"},
+    {"PHUCMAX VIET","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/phucmax/THANHPHUC/refs/heads/main/PHUCMAX(2).lua\"))()"},
+    {"DRAGON SECURITY HUB V2.5","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/conmemaynguhsjs/scrip/refs/heads/main/gemini-code-1789308407861.lua.txt\"))()"},
+    {"BUGXIE Visual Spawner","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/rblxscripts-stealanegg-spawner\"))()"},
+    {"BUGXIE Hit Aura","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/bugxiefun/roblox-scripts/refs/heads/main/steal%20an%20egg%20hit%20aura-obfuscated.lua\"))()"},
+    {"CLOUT HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ClouthubOnTop/Loader/main/main.lua\"))()"},
+    {"LUXY","No Key",false,"loadstring(game:HttpGet(\"https://flowauth.net/v1/loaders/16b55b285584ec6d065913f5d59fb105.lua\"))()"},
+    {"OJIASA","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ojiasa/Steal-an-egg/main/main.lua\"))()"},
+    {"DODOYUNG24","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Dodoyung24/script-core/main/Steal-An-Egg\"))()"},
+    {"MIRACLE HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/miracleverytime/miraclehub-shared/main/loader.lua\"))()"},
+
+    -- [ SCRIPT BARU ]
+    {"PAYOMBOYZZ HUB","Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/payomboyz333/Anime-Card-Farm/refs/heads/main/start.txt\"))()"},
+    {"KIRA-HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua\"))()"},
+    {"TRIPSHUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TripNation/Trips-Hub/main/games/steal_an_egg.lua\"))()"},
+    {"VANTABLACK","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tranduykhanh08428-web/VantablackHub/refs/heads/main/Stealanegg.lua.txt\"))()"},
+    {"YOKUDO HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/betdoyvaka/stealanegg/main/Loader.lua\"))()"},
+    {"LSS HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/LSSHub_Steal_An_Hub.lua\"))()"},
+    {"CYRUS HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/CyrusOffc/scriptcyrus/refs/heads/main/loader\"))()"},
+    {"TITANIC HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/TITANIC-HUB/StealAnEgg/main/Loader.lua\"))()"},
+    {"ASTRAL HUB","No Key",false,"loadstring(game:HttpGet(\"https://api.polsec.sh/loader/57d088befe906a8e/76f9bde1349c5eb9\"))()"},
+    {"THANHDUY HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Game/refs/heads/main/Steal-An-Egg.lua\"))()"},
+    {"LEON HOP SERVER","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/n01771542-cmd/faqihhlua/main/leon4951.lua\"))()"},
+    {"CM HUB","Key",false,"loadstring(game:HttpGet(\"https://cmhub-key-system.vercel.app/roblox/loader.lua\"))()"},
+    {"SYNEXHUD","Key",false,"loadstring(game:HttpGet(\"https://synex.lat/loaders/stealegg.lua\"))()"},
+    {"POLLUTED HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/PollutedHub/Sae/refs/heads/main/SaePolluted\"))()"},
+    {"NOX HUB","No Key",false,"loadstring(game:HttpGet(\"https://noxscript.com/loader\"))()"},
+    {"SIGIL HUB V3","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/ThanhDuyHub/Curu/refs/heads/main/Steal-An-Egg-V3.lua\"))()"},
+    {"SKRR HUB","No Key",false,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/skrrhubontop-design/skrrhub/main/skrrhub.txt\"))()"},
+}
+
+local function NormalizeScriptData(raw)
+    local result = {}
+    for i, entry in ipairs(raw) do
+        local name = entry[1]
+        local isRec = entry[3]
+        -- strip any leading "! " we may have put in raw data
+        name = name:gsub("^!%s*", "")
+        if isRec and not string.find(name, "REC") then
+            -- red ! on the RIGHT + gold REC badge
+            name = name .. ' <font color="rgb(255, 50, 50)"><b>!</b></font> <font color="rgb(255, 185, 0)"><b>REC</b></font> 🔥'
+        end
+        result[i] = {
+            name = name,
+            status = entry[2],
+            recommended = isRec,
+            url = entry[4],
+        }
+    end
+    return result
+end
+
+local ScriptDataStealAnEgg = NormalizeScriptData(RawScriptDataStealAnEgg)
+-- permanently fold previous "new scripts" into main list
+local _prevNew = NormalizeScriptData(RawNewScriptsData)
+for _, s in ipairs(_prevNew) do
+    table.insert(ScriptDataStealAnEgg, s)
+end
+
+local CleanedScripts = ScriptDataStealAnEgg
+
+-- [ SYSTEM CONFIG FAVORITE & HISTORY ]
+local FavoriteConfigName = "leon4951hub_favorites.json"
+local FavoriteList = {}
+
+local function LoadFavorites()
+    if not readfile then return end
+    local success, raw = pcall(readfile, FavoriteConfigName)
+    if not success or type(raw) ~= "string" or raw == "" then return end
+    local decodedOk, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if decodedOk and type(decoded) == "table" then
+        FavoriteList = decoded
+    end
+end
+
+local function SaveFavorites()
+    if writefile then
+        pcall(function()
+            writefile(FavoriteConfigName, HttpService:JSONEncode(FavoriteList))
+        end)
+    end
+end
+
+LoadFavorites()
+
+local FavoriteScriptsData = {}
+local function RefreshFavoritesData()
+    FavoriteScriptsData = {}
+    for _, s in ipairs(CleanedScripts) do
+        local id = s.name .. "|" .. s.url
+        if FavoriteList[id] then
+            table.insert(FavoriteScriptsData, s)
+        end
+    end
+end
+RefreshFavoritesData()
+
+local HistoryConfigName = "leon4951hub_history.json"
+local HistoryList = {}
+
+local function LoadHistory()
+    if not readfile then return end
+    local success, raw = pcall(readfile, HistoryConfigName)
+    if not success or type(raw) ~= "string" or raw == "" then return end
+    local decodedOk, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if decodedOk and type(decoded) == "table" then
+        HistoryList = decoded
+    end
+end
+
+local function SaveHistory()
+    if writefile then
+        pcall(function()
+            writefile(HistoryConfigName, HttpService:JSONEncode(HistoryList))
+        end)
+    end
+end
+
+LoadHistory()
+
+local MonthShortNames = {
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
+}
+
+local RenderContent
+local Categories
+
+local function AddToHistory(scriptEntry)
+    local t = os.date("*t")
+    local monthStr = MonthShortNames[t.month] or tostring(t.month)
+
+    local timeStr = string.format("%04d %s %02d:%02d", t.year, monthStr, t.hour, t.min)
+
+    for i = #HistoryList, 1, -1 do
+        if HistoryList[i].name == scriptEntry.name and HistoryList[i].url == scriptEntry.url then
+            table.remove(HistoryList, i)
+        end
+    end
+
+    table.insert(HistoryList, 1, {
+        name = scriptEntry.name,
+        status = scriptEntry.status,
+        recommended = scriptEntry.recommended,
+        url = scriptEntry.url,
+        time = timeStr
+    })
+
+    if #HistoryList > 30 then
+        table.remove(HistoryList)
+    end
+
+    SaveHistory()
+    if Categories and Categories[2] then
+        Categories[2].scripts = HistoryList
+    end
+end
+
+Categories = {
+    {
+        key = "StealAnEgg",
+        name = "steal an egg",
+        type = "script_list",
+        scripts = CleanedScripts,
+    },
+    {
+        key = "History",
+        name = "histori",
+        type = "history_list",
+        scripts = HistoryList,
+    },
+    {
+        key = "Favorite",
+        name = "favorite",
+        type = "script_list",
+        scripts = FavoriteScriptsData,
+    },
+    {
+        key = "InfoAllScript",
+        name = "info/all script",
+        type = "info",
+        scripts = CleanedScripts,
+    },
+}
+
+local activeCategoryIndex = 1
+local activeFilter = "ALL"
+
+-- [ 4. ROOT UI ]
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "leon4951HubGuiV2"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+-- [ SALIN LOADSTRING ]
+local function BuildLoadstring(entry)
+    local raw = (entry and entry.url) or ""
+    if string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+        return raw
+    end
+    local pure = raw:match('HttpGet%s*%(%s*["\']([^"\']+)["\']')
+    return 'loadstring(game:HttpGet("' .. (pure or raw) .. '"))()'
+end
+
+local function MakeCopyButton(parent, entry, size, position, textSize)
+    local b = Instance.new("TextButton")
+    b.Name = "CopyButton"
+    b.Size = size
+    b.Position = position
+    b.BackgroundColor3 = Theme.CardBg
+    b.Text = "SALIN"
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = textSize or 9
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.AutoButtonColor = false
+    b.ZIndex = 5
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+
+    local s = Instance.new("UIStroke")
+    s.Color = Theme.CardBorder
+    s.Thickness = 1
+    s.Parent = b
+
+    b.MouseEnter:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
+    end)
+    b.MouseLeave:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.12), { BackgroundColor3 = Theme.CardBg }):Play()
+    end)
+
+    b.MouseButton1Click:Connect(function()
+        local text = BuildLoadstring(entry)
+        local ok = pcall(function()
+            if setclipboard then
+                setclipboard(text)
+            elseif toclipboard then
+                toclipboard(text)
+            else
+                error("tidak ada clipboard")
+            end
+        end)
+        b.Text = ok and "✓" or "GAGAL"
+        task.delay(1.2, function()
+            if b and b.Parent then
+                b.Text = "SALIN"
+            end
+        end)
+    end)
+    return b
+end
+
+-- [ ONE-TIME NEW SCRIPT NOTIFICATION ]
+local NotifConfigName = "leon4951hub_newscript_notif_v17.json"
+local NEW_SCRIPTS = {
+    {name = "SOURCES HUB", status = "No Key", url = "https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew"},
+    {name = "DHII'S HUB", status = "No Key", url = "https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua"},
+    {name = "Lych x putra hub", status = "No Key", url = "https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua"},
+    {name = "VIREX HUB", status = "No Key", url = "https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD"},
+    {name = "TEDDY HUB", status = "No Key", url = "https://raw.githubusercontent.com/teddyhubdev/diepvy/refs/heads/main/TeddyHub.lua"},
+    {name = "GOHA HUB", status = "No Key", url = "https://api.goha.dev/loader"},
+    {name = "Night Hub", status = "No Key", url = "https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau"},
+    {name = "REALKID HUB", status = "No Key", url = "https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua"},
+    {name = "CODIUM HUB", status = "No Key", url = "https://getcodium.xyz/loader.luau"},
+    {name = "NO-LAG X HUB", status = "No Key", url = "https://nolag.wtf/script.lua"},
+    {name = "LINKHIVE HUB", status = "No Key", url = "https://raw.githubusercontent.com/afkar-gg/sc/refs/heads/main/Linkhive/Steal-An-Egg/main.lua"},
+    {name = "Chilli hub v5", status = "No Key", url = "https://raw.githubusercontent.com/ronnei/hihi/refs/heads/main/chillihubv5.lua"},
+    {name = "VENYX HUB", status = "No Key", url = "https://raw.githubusercontent.com/tienkhanh1/Venyx/main/VenyxHub"},
+    {name = "LUKZ HUB", status = "No Key", url = "https://raw.githubusercontent.com/lukzscript/mihubs/main/stealaneggv2.lua"},
+    {name = "SENA EXCLUSIVE", status = "Key", url = "https://senahub.xyz/senaexclusive"},
+}
+
+
+local function HasSeenNewScriptNotif()
+    if not readfile then return false end
+    local ok, raw = pcall(readfile, NotifConfigName)
+    if not ok or type(raw) ~= "string" or raw == "" then return false end
+    local dok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    return dok and type(data) == "table" and data.seen == true
+end
+
+local function MarkNewScriptNotifSeen()
+    if writefile then
+        pcall(function()
+            writefile(NotifConfigName, HttpService:JSONEncode({seen = true, version = 17}))
+        end)
+    end
+end
+
+local function ShowNewScriptNotification()
+    if HasSeenNewScriptNotif() then return end
+
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Name = "NewScriptNotif"
+    NotifFrame.Size = UDim2.fromOffset(340, 260)
+    NotifFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    NotifFrame.Position = UDim2.fromScale(0.5, 0.5)
+    NotifFrame.BackgroundColor3 = Theme.Background
+    NotifFrame.BorderSizePixel = 0
+    NotifFrame.ZIndex = 200
+    NotifFrame.Parent = ScreenGui
+    Instance.new("UICorner", NotifFrame).CornerRadius = UDim.new(0, 12)
+
+    local nStroke = Instance.new("UIStroke")
+    nStroke.Color = Theme.Accent
+    nStroke.Thickness = 2
+    nStroke.Parent = NotifFrame
+
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
+    titleBar.BackgroundColor3 = Theme.CardBg
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = NotifFrame
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
+
+    local titleFix = Instance.new("Frame")
+    titleFix.Size = UDim2.new(1, 0, 0, 12)
+    titleFix.Position = UDim2.new(0, 0, 1, -12)
+    titleFix.BackgroundColor3 = Theme.CardBg
+    titleFix.BorderSizePixel = 0
+    titleFix.Parent = titleBar
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 13
+    titleLbl.TextColor3 = Theme.Accent
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Size = UDim2.new(1, -40, 1, 0)
+    titleLbl.Position = UDim2.new(0, 12, 0, 0)
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Text = "New Script"
+    titleLbl.Parent = titleBar
+
+    local closeX = Instance.new("TextButton")
+    closeX.Size = UDim2.fromOffset(24, 24)
+    closeX.Position = UDim2.new(1, -28, 0, 3)
+    closeX.BackgroundColor3 = Theme.CardBg
+    closeX.Text = "X"
+    closeX.Font = Enum.Font.GothamBold
+    closeX.TextSize = 12
+    closeX.TextColor3 = Theme.TextPrimary
+    closeX.AutoButtonColor = false
+    closeX.Parent = titleBar
+    Instance.new("UICorner", closeX).CornerRadius = UDim.new(0, 6)
+
+    local listScroll = Instance.new("ScrollingFrame")
+    listScroll.Size = UDim2.new(1, -12, 1, -38)
+    listScroll.Position = UDim2.new(0, 6, 0, 34)
+    listScroll.BackgroundTransparency = 1
+    listScroll.BorderSizePixel = 0
+    listScroll.ScrollBarThickness = 2
+    listScroll.ScrollBarImageColor3 = Theme.Accent
+    listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    listScroll.Parent = NotifFrame
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = listScroll
+
+    local function runScript(entry)
+        if not entry or not entry.url or entry.url == "" then
+            warn("[LEON4951] Notif: entry kosong")
+            return
+        end
+        MarkNewScriptNotifSeen()
+        pcall(function()
+            if NotifFrame and NotifFrame.Parent then NotifFrame:Destroy() end
+        end)
+        pcall(function()
+            if ToggleMainUI then ToggleMainUI(false) end
+        end)
+        local targetUrl = entry.url
+        task.defer(function()
+            local ok, err = pcall(function()
+                local src = game:HttpGet(targetUrl)
+                local fn, cerr = loadstring(src)
+                if not fn then error(cerr or "compile fail") end
+                fn()
+            end)
+            if not ok then
+                warn("[LEON4951] Notif gagal: " .. tostring(entry.name) .. " | " .. tostring(err))
+            end
+        end)
+    end
+
+    for i = 1, #NEW_SCRIPTS, 2 do
+        local left = NEW_SCRIPTS[i]
+        local right = NEW_SCRIPTS[i + 1]
+
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 46)
+        row.BackgroundTransparency = 1
+        row.LayoutOrder = i
+        row.Parent = listScroll
+
+        local function makeCard(parent, entry, xScale)
+            if not entry then return end
+            local card = Instance.new("Frame")
+            card.Size = UDim2.new(0.485, 0, 1, 0)
+            card.Position = UDim2.new(xScale, 0, 0, 0)
+            card.BackgroundColor3 = Theme.CardBg
+            card.Parent = parent
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 7)
+
+            local cStroke = Instance.new("UIStroke")
+            cStroke.Color = Theme.CardBorder
+            cStroke.Thickness = 1
+            cStroke.Parent = card
+
+            local isKey = (entry.status == "Key")
+            local statusColor = isKey and "rgb(255, 75, 90)" or "rgb(46, 146, 116)"
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.TextSize = 9
+            nameLbl.TextColor3 = Theme.TextPrimary
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Size = UDim2.new(1, -8, 0, 14)
+            nameLbl.Position = UDim2.new(0, 5, 0, 3)
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.RichText = true
+            -- name + status side by side + red !
+            nameLbl.Text = entry.name .. ' <font color="' .. statusColor .. '">(' .. entry.status .. ')</font> <font color="rgb(255, 50, 50)"><b>!</b></font>'
+            nameLbl.Parent = card
+
+            local execBtn = Instance.new("TextButton")
+            execBtn.Size = UDim2.new(1, -58, 0, 18)
+            execBtn.Position = UDim2.new(0, 5, 1, -22)
+            execBtn.BackgroundColor3 = Theme.RunPillBg
+            execBtn.Text = "Run"
+            execBtn.Font = Enum.Font.GothamBold
+            execBtn.TextSize = 10
+            execBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            execBtn.AutoButtonColor = true
+            execBtn.Active = true
+            execBtn.ZIndex = 210
+            execBtn.Parent = card
+            Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 5)
+
+            local fired = false
+            local function doRun()
+                if fired then return end
+                fired = true
+                runScript(entry)
+            end
+            execBtn.MouseButton1Click:Connect(doRun)
+            execBtn.Activated:Connect(doRun)
+
+            local cp = MakeCopyButton(card, entry, UDim2.fromOffset(44, 18), UDim2.new(1, -50, 1, -22), 8)
+            cp.ZIndex = 210
+        end
+
+        makeCard(row, left, 0)
+        if right then
+            makeCard(row, right, 0.515)
+        end
+    end
+
+    local function closeNotif()
+        MarkNewScriptNotifSeen()
+        TweenService:Create(NotifFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+        task.delay(0.16, function()
+            if NotifFrame then NotifFrame:Destroy() end
+        end)
+    end
+
+    closeX.MouseButton1Click:Connect(closeNotif)
+end
+
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.fromOffset(560, 340)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.fromScale(0.5, 0.5)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = false
+MainFrame.Active = true
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 20)
+
+-- OUTLINE UTAMA UI
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.BorderColor
+MainStroke.Thickness = 6
+MainStroke.Parent = MainFrame
+
+local MainScale = Instance.new("UIScale")
+MainScale.Scale = 0
+MainScale.Parent = MainFrame
+
+-- [ 5. LOGO VEKTOR "F" BARU ]
+local function CreateFLogo(size, rotation)
+    local container = Instance.new("Frame")
+    container.Size = size
+    container.BackgroundTransparency = 1
+    container.Rotation = rotation or -12
+
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, math.floor(size.Y.Offset * 0.28))
+    topBar.BackgroundColor3 = Theme.AccentBlue
+    topBar.BorderSizePixel = 0
+    topBar.Parent = container
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 2)
+
+    local midBar = Instance.new("Frame")
+    midBar.Size = UDim2.new(0.68, 0, 0, math.floor(size.Y.Offset * 0.24))
+    midBar.Position = UDim2.new(0.2, 0, 0.4, 0)
+    midBar.BackgroundColor3 = Theme.AccentBlue
+    midBar.BorderSizePixel = 0
+    midBar.Parent = container
+    Instance.new("UICorner", midBar).CornerRadius = UDim.new(0, 2)
+
+    local stem = Instance.new("Frame")
+    stem.Size = UDim2.new(0, math.floor(size.X.Offset * 0.28), 1, 0)
+    stem.Position = UDim2.new(0.08, 0, 0, 0)
+    stem.BackgroundColor3 = Theme.AccentBlue
+    stem.BorderSizePixel = 0
+    stem.Parent = container
+    Instance.new("UICorner", stem).CornerRadius = UDim.new(0, 2)
+
+    return container
+end
+
+local ToggleMainUI
+local RunAndClose
+
+-- [ 6. HEADER ]
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 52)
+Header.BackgroundTransparency = 1
+Header.Active = true
+Header.Parent = MainFrame
+
+local LogoF = CreateFLogo(UDim2.fromOffset(26, 26), -12)
+LogoF.Position = UDim2.new(0, 16, 0, 13)
+LogoF.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.TextColor3 = Theme.Accent
+Title.BackgroundTransparency = 1
+Title.Size = UDim2.new(0, 200, 0, 26)
+Title.Position = UDim2.new(0, 50, 0, 13)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.RichText = true
+Title.Text = "LEON4951 HUB"
+Title.Parent = Header
+
+-- TOMBOL X (CLOSE) DIPERBESAR UKURANNYA
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.fromOffset(36, 36)
+CloseBtn.Position = UDim2.new(1, -44, 0, 8)
+CloseBtn.BackgroundColor3 = Theme.CardBg
+CloseBtn.Text = "X"
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 16
+CloseBtn.TextColor3 = Theme.TextPrimary
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = Header
+
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 10)
+
+local CloseStroke = Instance.new("UIStroke")
+CloseStroke.Color = Theme.CardBorder
+CloseStroke.Thickness = 1.5
+CloseStroke.Parent = CloseBtn
+
+CloseBtn.MouseButton1Click:Connect(function()
+    if ToggleMainUI then
+        ToggleMainUI(false)
+    end
+end)
+
+local WaBtn = Instance.new("TextButton")
+WaBtn.Name = "WaChannelBtn"
+WaBtn.Size = UDim2.fromOffset(120, 26)
+WaBtn.Position = UDim2.new(1, -175, 0, 13)
+WaBtn.BackgroundColor3 = Theme.WaGreen
+WaBtn.Text = "💬 SALURAN WA"
+WaBtn.Font = Enum.Font.GothamBold
+WaBtn.TextSize = 9
+WaBtn.TextColor3 = Theme.TextPrimary
+WaBtn.AutoButtonColor = false
+WaBtn.Parent = Header
+
+Instance.new("UICorner", WaBtn).CornerRadius = UDim.new(0, 8)
+
+local WaStroke = Instance.new("UIStroke")
+WaStroke.Color = Theme.WaDarkGreen
+WaStroke.Thickness = 1.5
+WaStroke.Parent = WaBtn
+
+WaBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(WA_CHANNEL_LINK)
+    elseif toclipboard then
+        toclipboard(WA_CHANNEL_LINK)
+    end
+
+    local origText = WaBtn.Text
+    WaBtn.Text = "✓ COPIED!"
+    task.delay(1.5, function()
+        if WaBtn and WaBtn.Parent then
+            WaBtn.Text = origText
+        end
+    end)
+end)
+
+local HeaderLine = Instance.new("Frame")
+HeaderLine.Size = UDim2.new(1, -32, 0, 1)
+HeaderLine.Position = UDim2.new(0, 16, 0, 48)
+HeaderLine.BackgroundColor3 = Theme.CardBorder
+HeaderLine.BorderSizePixel = 0
+HeaderLine.Parent = MainFrame
+
+-- [ 7. BODY: SIDEBAR + KONTEN ]
+local Body = Instance.new("Frame")
+Body.Name = "Body"
+Body.Size = UDim2.new(1, -32, 1, -56)
+Body.Position = UDim2.new(0, 16, 0, 52)
+Body.BackgroundTransparency = 1
+Body.Parent = MainFrame
+
+local Sidebar = Instance.new("ScrollingFrame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 135, 1, 0)
+Sidebar.BackgroundTransparency = 1
+Sidebar.BorderSizePixel = 0
+Sidebar.ScrollBarThickness = 0
+Sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Sidebar.CanvasSize = UDim2.new(0, 0, 0, 0)
+Sidebar.Parent = Body
+
+local SidebarLayout = Instance.new("UIListLayout")
+SidebarLayout.Padding = UDim.new(0, 6)
+SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarLayout.Parent = Sidebar
+
+local Content = Instance.new("Frame")
+Content.Name = "Content"
+Content.Size = UDim2.new(1, -145, 1, 0)
+Content.Position = UDim2.new(0, 145, 0, 0)
+Content.BackgroundTransparency = 1
+Content.Parent = Body
+
+local ContentHeader = Instance.new("Frame")
+ContentHeader.Name = "ContentHeader"
+ContentHeader.Size = UDim2.new(1, 0, 0, 54)
+ContentHeader.BackgroundTransparency = 1
+ContentHeader.Parent = Content
+
+local ContentTitle = Instance.new("TextLabel")
+ContentTitle.Font = Enum.Font.GothamBold
+ContentTitle.TextSize = 16
+ContentTitle.TextColor3 = Theme.TextPrimary
+ContentTitle.BackgroundTransparency = 1
+ContentTitle.Size = UDim2.new(0, 130, 0, 20)
+ContentTitle.Position = UDim2.new(0, 0, 0, 0)
+ContentTitle.TextXAlignment = Enum.TextXAlignment.Left
+ContentTitle.Text = "SCRIPTS"
+ContentTitle.Parent = ContentHeader
+
+-- [ PENCARIAN: LATAR GELAP DENGAN OUTLINE HITAM TIPIS ]
+local SearchBox = Instance.new("TextBox")
+SearchBox.Name = "SearchBox"
+SearchBox.Size = UDim2.new(1, -140, 0, 26)
+SearchBox.Position = UDim2.new(0, 135, 0, -3)
+SearchBox.BackgroundColor3 = Theme.CardBg
+SearchBox.PlaceholderText = "🔍 Cari nama script..."
+SearchBox.PlaceholderColor3 = Color3.fromRGB(180, 195, 220)
+SearchBox.Text = ""
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBox.Font = Enum.Font.GothamBold
+SearchBox.TextSize = 10
+SearchBox.Visible = false
+SearchBox.Parent = ContentHeader
+
+Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(1, 0)
+
+-- OUTLINE KOTAK PENCARIAN DIUBAH MENJADI HITAM TIPIS
+local SearchBoxBorder = Instance.new("UIStroke")
+SearchBoxBorder.Color = Color3.fromRGB(0, 0, 0)
+SearchBoxBorder.Thickness = 1
+SearchBoxBorder.Parent = SearchBox
+
+local ContentSub = Instance.new("TextLabel")
+ContentSub.Font = Enum.Font.Gotham
+ContentSub.TextSize = 10
+ContentSub.TextColor3 = Theme.TextMuted
+ContentSub.BackgroundTransparency = 1
+ContentSub.Size = UDim2.new(1, 0, 0, 14)
+ContentSub.Position = UDim2.new(0, 0, 0, 20)
+ContentSub.TextXAlignment = Enum.TextXAlignment.Left
+ContentSub.Text = "Click run to execute a script!"
+ContentSub.Parent = ContentHeader
+
+local FilterContainer = Instance.new("Frame")
+FilterContainer.Size = UDim2.new(1, 0, 0, 20)
+FilterContainer.Position = UDim2.new(0, 0, 0, 36)
+FilterContainer.BackgroundTransparency = 1
+FilterContainer.Parent = ContentHeader
+
+local FilterLayout = Instance.new("UIListLayout")
+FilterLayout.FillDirection = Enum.FillDirection.Horizontal
+FilterLayout.Padding = UDim.new(0, 6)
+FilterLayout.SortOrder = Enum.SortOrder.LayoutOrder
+FilterLayout.Parent = FilterContainer
+
+local filterButtons = {}
+
+local ScriptScroll = Instance.new("ScrollingFrame")
+ScriptScroll.Size = UDim2.new(1, 0, 1, -60)
+ScriptScroll.Position = UDim2.new(0, 0, 0, 60)
+ScriptScroll.BackgroundTransparency = 1
+ScriptScroll.BorderSizePixel = 0
+ScriptScroll.ScrollBarThickness = 3
+ScriptScroll.ScrollBarImageColor3 = Theme.Accent
+ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScriptScroll.Parent = Content
+
+local RenderSidebarTabs
+
+-- [ 8. RENDER KONTEN ]
+RenderContent = function(categoryIndex)
+    local category = Categories[categoryIndex]
+
+    for _, child in ipairs(ScriptScroll:GetChildren()) do
+        if not child:IsA("UIListLayout") and not child:IsA("UIGridLayout") then
+            child:Destroy()
+        end
+    end
+
+    local oldLayout = ScriptScroll:FindFirstChildOfClass("UIListLayout") or ScriptScroll:FindFirstChildOfClass("UIGridLayout")
+    if oldLayout then oldLayout:Destroy() end
+
+    ContentTitle.Text = string.upper(category.name)
+
+    if category.type == "info" then
+        FilterContainer.Visible = false
+        SearchBox.Visible = false
+        ContentSub.Text = "Database Overview & Statistics"
+
+        local ListLayout = Instance.new("UIListLayout")
+        ListLayout.Padding = UDim.new(0, 8)
+        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        ListLayout.Parent = ScriptScroll
+
+        local totalCount = #CleanedScripts
+        local keyCount = 0
+        local noKeyCount = 0
+
+        for _, s in ipairs(CleanedScripts) do
+            if s.status == "Key" then keyCount = keyCount + 1
+            elseif s.status == "No Key" then noKeyCount = noKeyCount + 1 end
+        end
+
+        local StatsBanner = Instance.new("Frame")
+        StatsBanner.Name = "StatsBanner"
+        StatsBanner.Size = UDim2.new(1, 0, 0, 32)
+        StatsBanner.BackgroundColor3 = Theme.CardBg
+        StatsBanner.LayoutOrder = 1
+        StatsBanner.Parent = ScriptScroll
+        Instance.new("UICorner", StatsBanner).CornerRadius = UDim.new(0, 8)
+
+        local BannerStroke = Instance.new("UIStroke")
+        BannerStroke.Color = Theme.CardBorder
+        BannerStroke.Thickness = 1
+        BannerStroke.Parent = StatsBanner
+
+        local StatsText = Instance.new("TextLabel")
+        StatsText.Font = Enum.Font.GothamBold
+        StatsText.TextSize = 10
+        StatsText.TextColor3 = Theme.TextSecondary
+        StatsText.BackgroundTransparency = 1
+        StatsText.Size = UDim2.new(1, -16, 1, 0)
+        StatsText.Position = UDim2.new(0, 8, 0, 0)
+        StatsText.TextXAlignment = Enum.TextXAlignment.Left
+        StatsText.RichText = true
+        StatsText.Text = "📊 <font color=\"rgb(245, 247, 255)\">TOTAL:</font> " .. totalCount .. "   |   <font color=\"rgb(255, 75, 90)\">🔑 KEY:</font> " .. keyCount .. "   |   <font color=\"rgb(46, 146, 116)\">🔓 NO KEY:</font> " .. noKeyCount
+        StatsText.Parent = StatsBanner
+
+        local GridContainer = Instance.new("Frame")
+        GridContainer.Name = "GridContainer"
+        GridContainer.Size = UDim2.new(1, 0, 0, 0)
+        GridContainer.AutomaticSize = Enum.AutomaticSize.Y
+        GridContainer.BackgroundTransparency = 1
+        GridContainer.LayoutOrder = 2
+        GridContainer.Parent = ScriptScroll
+
+        local GridLayout = Instance.new("UIGridLayout")
+        GridLayout.CellSize = UDim2.new(0.485, 0, 0, 36)
+        GridLayout.CellPadding = UDim2.new(0.03, 0, 0, 6)
+        GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        GridLayout.Parent = GridContainer
+
+        for idx, scriptEntry in ipairs(CleanedScripts) do
+            local card = Instance.new("Frame")
+            card.Name = "Card_" .. idx
+            card.BackgroundColor3 = Theme.CardBg
+            card.Parent = GridContainer
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+
+            local cardStroke = Instance.new("UIStroke")
+            cardStroke.Color = Theme.CardBorder
+            cardStroke.Thickness = 1
+            cardStroke.Parent = card
+
+            local indicator = Instance.new("Frame")
+            indicator.Size = UDim2.new(0, 3, 0, 16)
+            indicator.Position = UDim2.new(0, 6, 0.5, -8)
+            indicator.BackgroundColor3 = (scriptEntry.status == "Key") and Theme.KeyTagBg or Theme.NoKeyTagBg
+            indicator.BorderSizePixel = 0
+            indicator.Parent = card
+            Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.TextSize = 10
+            nameLbl.TextColor3 = Theme.TextPrimary
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Size = UDim2.new(1, -16, 1, 0)
+            nameLbl.Position = UDim2.new(0, 14, 0, 0)
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.RichText = true
+            nameLbl.Text = scriptEntry.name
+            nameLbl.Parent = card
+        end
+
+        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+        return
+    end
+
+    if category.key == "StealAnEgg" or category.key == "Favorite" then
+        FilterContainer.Visible = true
+        SearchBox.Visible = true
+    else
+        FilterContainer.Visible = true
+        SearchBox.Visible = false
+    end
+
+    ContentSub.Text = "Click run to execute a script!"
+
+    if category.key == "History" then
+        FilterContainer.Visible = false
+        SearchBox.Visible = false
+        ContentSub.Text = "Recently executed scripts history"
+
+        local ListLayout = Instance.new("UIListLayout")
+        ListLayout.Padding = UDim.new(0, 8)
+        ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        ListLayout.Parent = ScriptScroll
+
+        if #category.scripts == 0 then
+            local empty = Instance.new("TextLabel")
+            empty.Font = Enum.Font.GothamBold
+            empty.TextSize = 11
+            empty.TextColor3 = Theme.TextMuted
+            empty.BackgroundTransparency = 1
+            empty.Size = UDim2.new(1, 0, 0, 40)
+            empty.Text = "Belum ada histori eksekusi script."
+            empty.Parent = ScriptScroll
+            return
+        end
+
+        for i, scriptEntry in ipairs(category.scripts) do
+            local card = Instance.new("Frame")
+            card.Name = "HistCard_" .. i
+            card.Size = UDim2.new(1, 0, 0, 52)
+            card.BackgroundColor3 = Theme.CardBg
+            card.LayoutOrder = i
+            card.Parent = ScriptScroll
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+
+            local cardStroke = Instance.new("UIStroke")
+            cardStroke.Color = Theme.CardBorder
+            cardStroke.Thickness = 1
+            cardStroke.Parent = card
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.TextSize = 11
+            nameLbl.TextColor3 = Theme.TextPrimary
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Size = UDim2.new(1, -70, 0, 18)
+            nameLbl.Position = UDim2.new(0, 10, 0, 6)
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.RichText = true
+            nameLbl.Text = scriptEntry.name
+            nameLbl.Parent = card
+
+            local isKey = (scriptEntry.status == "Key")
+            local tagPill = Instance.new("Frame")
+            tagPill.Size = isKey and UDim2.fromOffset(40, 16) or UDim2.fromOffset(52, 16)
+            tagPill.Position = UDim2.new(0, 10, 0, 28)
+            tagPill.BackgroundColor3 = isKey and Theme.KeyTagPill or Theme.NoKeyTagPill
+            tagPill.Parent = card
+            Instance.new("UICorner", tagPill).CornerRadius = UDim.new(0, 4)
+
+            local tagStroke = Instance.new("UIStroke")
+            tagStroke.Color = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+            tagStroke.Thickness = 1
+            tagStroke.Parent = tagPill
+
+            local statusText = Instance.new("TextLabel")
+            statusText.Font = Enum.Font.GothamBold
+            statusText.TextSize = 8
+            statusText.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+            statusText.BackgroundTransparency = 1
+            statusText.Size = UDim2.fromScale(1, 1)
+            statusText.Text = string.upper(scriptEntry.status)
+            statusText.Parent = tagPill
+
+            local timeLbl = Instance.new("TextLabel")
+            timeLbl.Font = Enum.Font.GothamBold
+            timeLbl.TextSize = 10
+            timeLbl.TextColor3 = Theme.AccentLight
+            timeLbl.BackgroundTransparency = 1
+            timeLbl.Size = UDim2.new(1, -135, 0, 16)
+            timeLbl.Position = UDim2.new(0, 68, 0, 28)
+            timeLbl.TextXAlignment = Enum.TextXAlignment.Left
+            timeLbl.TextTruncate = Enum.TextTruncate.None
+            timeLbl.Text = scriptEntry.time or "-"
+            timeLbl.Parent = card
+
+            local runBtn = Instance.new("TextButton")
+            runBtn.Name = "RunButton"
+            runBtn.Size = UDim2.fromOffset(54, 24)
+            runBtn.Position = UDim2.new(1, -62, 0.5, -12)
+            runBtn.BackgroundColor3 = Theme.RunPillBg
+            runBtn.Text = "RUN"
+            runBtn.Font = Enum.Font.GothamBold
+            runBtn.TextSize = 11
+            runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            runBtn.AutoButtonColor = false
+            runBtn.Parent = card
+            Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
+
+            local runStroke = Instance.new("UIStroke")
+            runStroke.Color = Color3.fromRGB(20, 20, 20)
+            runStroke.Thickness = 1
+            runStroke.Parent = runBtn
+
+            runBtn.MouseEnter:Connect(function()
+                TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
+            end)
+            runBtn.MouseLeave:Connect(function()
+                TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
+            end)
+
+            runBtn.MouseButton1Click:Connect(function()
+                RunAndClose(scriptEntry)
+            end)
+
+            MakeCopyButton(card, scriptEntry, UDim2.fromOffset(42, 24), UDim2.new(1, -110, 0.5, -12), 9)
+        end
+
+        ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+        return
+    end
+
+    local GridLayout = Instance.new("UIGridLayout")
+    GridLayout.CellSize = UDim2.new(0.485, 0, 0, 68)
+    GridLayout.CellPadding = UDim2.new(0.03, 0, 0, 8)
+    GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    GridLayout.Parent = ScriptScroll
+
+    local searchText = string.lower(SearchBox.Text)
+    local filteredScripts = {}
+
+    for _, scriptEntry in ipairs(category.scripts) do
+        local matchesFilter = false
+        if activeFilter == "ALL" then
+            matchesFilter = true
+        elseif activeFilter == "Key" then
+            matchesFilter = (scriptEntry.status == "Key")
+        elseif activeFilter == "No Key" then
+            matchesFilter = (scriptEntry.status == "No Key")
+        elseif activeFilter == "Recommended" then
+            matchesFilter = (scriptEntry.recommended == true)
+        end
+
+        local matchesSearch = (searchText == "") or (string.find(string.lower(scriptEntry.name), searchText, 1, true) ~= nil)
+
+        if matchesFilter and matchesSearch then
+            table.insert(filteredScripts, scriptEntry)
+        end
+    end
+
+    if #filteredScripts == 0 then
+        GridLayout:Destroy()
+        local empty = Instance.new("TextLabel")
+        empty.Font = Enum.Font.GothamBold
+        empty.TextSize = 11
+        empty.TextColor3 = Theme.TextMuted
+        empty.BackgroundTransparency = 1
+        empty.Size = UDim2.new(1, 0, 0, 40)
+        empty.Text = "Tidak ada script yang cocok."
+        empty.Parent = ScriptScroll
+        return
+    end
+
+    for i, scriptEntry in ipairs(filteredScripts) do
+        local card = Instance.new("Frame")
+        card.Name = "Card_" .. i
+        card.BackgroundColor3 = Theme.CardBg
+        card.LayoutOrder = i
+        card.Parent = ScriptScroll
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
+
+        local cardStroke = Instance.new("UIStroke")
+        cardStroke.Color = Theme.CardBorder
+        cardStroke.Thickness = 1.5
+        cardStroke.Parent = card
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 11
+        nameLabel.TextColor3 = Theme.TextPrimary
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Size = UDim2.new(1, -36, 0, 22)
+        nameLabel.Position = UDim2.new(0, 10, 0, 6)
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLabel.RichText = true
+        nameLabel.Text = scriptEntry.name
+        nameLabel.Parent = card
+
+        local isKey = (scriptEntry.status == "Key")
+        local tagPill = Instance.new("Frame")
+        tagPill.Size = isKey and UDim2.fromOffset(42, 18) or UDim2.fromOffset(56, 18)
+        tagPill.Position = UDim2.new(0, 10, 0, 36)
+        tagPill.BackgroundColor3 = isKey and Theme.KeyTagPill or Theme.NoKeyTagPill
+        tagPill.Parent = card
+        Instance.new("UICorner", tagPill).CornerRadius = UDim.new(0, 5)
+
+        local tagStroke = Instance.new("UIStroke")
+        tagStroke.Color = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+        tagStroke.Thickness = 1
+        tagStroke.Parent = tagPill
+
+        local statusText = Instance.new("TextLabel")
+        statusText.Font = Enum.Font.GothamBold
+        statusText.TextSize = 9
+        statusText.TextColor3 = isKey and Theme.KeyTagBg or Theme.NoKeyTagBg
+        statusText.BackgroundTransparency = 1
+        statusText.Size = UDim2.fromScale(1, 1)
+        statusText.Text = string.upper(scriptEntry.status)
+        statusText.Parent = tagPill
+
+        local runBtn = Instance.new("TextButton")
+        runBtn.Name = "RunButton"
+        runBtn.Size = UDim2.fromOffset(54, 22)
+        runBtn.Position = UDim2.new(1, -62, 1, -30)
+        runBtn.BackgroundColor3 = Theme.RunPillBg
+        runBtn.Text = "RUN"
+        runBtn.Font = Enum.Font.GothamBold
+        runBtn.TextSize = 11
+        runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        runBtn.AutoButtonColor = false
+        runBtn.Parent = card
+        Instance.new("UICorner", runBtn).CornerRadius = UDim.new(1, 0)
+
+        local runStroke = Instance.new("UIStroke")
+        runStroke.Color = Color3.fromRGB(20, 20, 20)
+        runStroke.Thickness = 1
+        runStroke.Parent = runBtn
+
+        runBtn.MouseEnter:Connect(function()
+            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.Accent }):Play()
+        end)
+        runBtn.MouseLeave:Connect(function()
+            TweenService:Create(runBtn, TweenInfo.new(0.12), { BackgroundColor3 = Theme.RunPillBg }):Play()
+        end)
+
+        runBtn.MouseButton1Click:Connect(function()
+            RunAndClose(scriptEntry)
+        end)
+
+        MakeCopyButton(card, scriptEntry, UDim2.fromOffset(42, 22), UDim2.new(1, -110, 1, -30), 9)
+
+        local favBtn = Instance.new("TextButton")
+        favBtn.Name = "FavoriteBtn"
+        favBtn.Size = UDim2.fromOffset(24, 24)
+        favBtn.Position = UDim2.new(1, -28, 0, 4)
+        favBtn.BackgroundTransparency = 1
+        local fKeyId = scriptEntry.name .. "|" .. scriptEntry.url
+        favBtn.Text = FavoriteList[fKeyId] and "★" or "☆"
+        favBtn.Font = Enum.Font.GothamBold
+        favBtn.TextSize = 16
+        favBtn.TextColor3 = FavoriteList[fKeyId] and Theme.GoldBadge or Theme.TextMuted
+        favBtn.AutoButtonColor = false
+        favBtn.Parent = card
+
+        favBtn.MouseButton1Click:Connect(function()
+            if FavoriteList[fKeyId] then
+                FavoriteList[fKeyId] = nil
+                favBtn.Text = "☆"
+                favBtn.TextColor3 = Theme.TextMuted
+            else
+                FavoriteList[fKeyId] = true
+                favBtn.Text = "★"
+                favBtn.TextColor3 = Theme.GoldBadge
+            end
+            SaveFavorites()
+            RefreshFavoritesData()
+            Categories[3].scripts = FavoriteScriptsData
+        end)
+    end
+
+    ScriptScroll.CanvasPosition = Vector2.new(0, 0)
+end
+
+-- [ 9. CREATING FILTER TABS ]
+local filterDefs = {
+    { id = "ALL", text = "ALL" },
+    { id = "Key", text = "🔑 KEY" },
+    { id = "No Key", text = "🔓 NO KEY" },
+    { id = "Recommended", text = "🌟 REC" }
+}
+
+for _, fDef in ipairs(filterDefs) do
+    local isSelected = (activeFilter == fDef.id)
+    local fBtn = Instance.new("TextButton")
+    fBtn.Name = "Filter_" .. fDef.id
+    fBtn.Size = UDim2.fromOffset(66, 20)
+    fBtn.BackgroundColor3 = isSelected and Theme.FilterActiveBg or Theme.CardBg
+    fBtn.Text = fDef.text
+    fBtn.Font = Enum.Font.GothamBold
+    fBtn.TextSize = 8
+    fBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fBtn.AutoButtonColor = false
+    fBtn.Parent = FilterContainer
+    Instance.new("UICorner", fBtn).CornerRadius = UDim.new(0, 5)
+
+    -- OUTLINE HITAM TIPIS PADA TOMBOL FILTER
+    local fStroke = Instance.new("UIStroke")
+    fStroke.Color = Color3.fromRGB(0, 0, 0)
+    fStroke.Thickness = 1
+    fStroke.Parent = fBtn
+
+    filterButtons[fDef.id] = { btn = fBtn, stroke = fStroke }
+
+    fBtn.MouseButton1Click:Connect(function()
+        activeFilter = fDef.id
+        for id, item in pairs(filterButtons) do
+            local active = (id == activeFilter)
+            TweenService:Create(item.btn, TweenInfo.new(0.12), {
+                BackgroundColor3 = active and Theme.FilterActiveBg or Theme.CardBg
+            }):Play()
+            item.btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        end
+        RenderContent(activeCategoryIndex)
+    end)
+end
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    RenderContent(activeCategoryIndex)
+end)
+
+-- [ 10. RENDER TAB SIDEBAR ]
+local sidebarTabButtons = {}
+
+local function SetActiveCategory(index)
+    activeCategoryIndex = index
+
+    RefreshFavoritesData()
+    Categories[2].scripts = HistoryList
+    Categories[3].scripts = FavoriteScriptsData
+
+    for i, btnData in ipairs(sidebarTabButtons) do
+        local isActive = (i == index)
+
+        TweenService:Create(btnData.frame, TweenInfo.new(0.15), {
+            BackgroundColor3 = isActive and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
+        }):Play()
+        btnData.frame.BackgroundTransparency = isActive and 0 or 1
+        btnData.stroke.Color = isActive and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
+        btnData.stroke.Enabled = isActive
+        btnData.label.TextColor3 = isActive and Theme.TextPrimary or Theme.TextMuted
+        btnData.indicator.Visible = isActive
+
+        if isActive and Categories[i].hasNotification then
+            Categories[i].hasNotification = false
+            if btnData.notifBadge then
+                TweenService:Create(btnData.notifBadge, TweenInfo.new(0.15), { TextTransparency = 1 }):Play()
+                task.delay(0.15, function()
+                    if btnData.notifBadge then btnData.notifBadge:Destroy() end
+                end)
+            end
+        end
+    end
+
+    RenderContent(index)
+end
+
+RenderSidebarTabs = function()
+    for _, child in ipairs(Sidebar:GetChildren()) do
+        if not child:IsA("UIListLayout") then
+            child:Destroy()
+        end
+    end
+    sidebarTabButtons = {}
+
+    for i, category in ipairs(Categories) do
+        local tabBtn = Instance.new("TextButton")
+        tabBtn.Name = "Tab_" .. category.key
+        tabBtn.Size = UDim2.new(1, 0, 0, 42)
+        tabBtn.BackgroundColor3 = (i == activeCategoryIndex) and Theme.TabActiveBg or Color3.fromRGB(0, 0, 0)
+        tabBtn.BackgroundTransparency = (i == activeCategoryIndex) and 0 or 1
+        tabBtn.Text = ""
+        tabBtn.AutoButtonColor = false
+        tabBtn.LayoutOrder = i
+        tabBtn.Parent = Sidebar
+        Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 12)
+
+        local tabStroke = Instance.new("UIStroke")
+        tabStroke.Color = (i == activeCategoryIndex) and Theme.TabActiveBorder or Color3.fromRGB(0, 0, 0)
+        tabStroke.Thickness = 1.5
+        tabStroke.Enabled = (i == activeCategoryIndex)
+        tabStroke.Parent = tabBtn
+
+        local indicator = Instance.new("Frame")
+        indicator.Name = "Indicator"
+        indicator.Size = UDim2.new(0, 4, 0, 26)
+        indicator.Position = UDim2.new(0, 5, 0.5, -13)
+        indicator.BackgroundColor3 = Theme.Accent
+        indicator.BorderSizePixel = 0
+        indicator.Visible = (i == activeCategoryIndex)
+        indicator.Parent = tabBtn
+        Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
+
+        local label = Instance.new("TextLabel")
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 11
+        label.TextColor3 = (i == activeCategoryIndex) and Theme.TextPrimary or Theme.TextMuted
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(1, -22, 1, 0)
+        label.Position = UDim2.new(0, 15, 0, 0)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextWrapped = true
+        label.Text = string.upper(category.name)
+        label.Parent = tabBtn
+
+        local notifBadge = nil
+        if category.hasNotification then
+            notifBadge = Instance.new("TextLabel")
+            notifBadge.Name = "NotifBadge"
+            notifBadge.Size = UDim2.fromOffset(14, 14)
+            notifBadge.AnchorPoint = Vector2.new(1, 0.5)
+            notifBadge.Position = UDim2.new(1, -6, 0.5, 0)
+            notifBadge.BackgroundColor3 = Theme.Accent
+            notifBadge.Text = "!"
+            notifBadge.Font = Enum.Font.GothamBold
+            notifBadge.TextSize = 9
+            notifBadge.TextColor3 = Theme.Background
+            notifBadge.Parent = tabBtn
+            Instance.new("UICorner", notifBadge).CornerRadius = UDim.new(1, 0)
+        end
+
+        table.insert(sidebarTabButtons, { frame = tabBtn, stroke = tabStroke, label = label, indicator = indicator, notifBadge = notifBadge })
+
+        tabBtn.MouseButton1Click:Connect(function()
+            SetActiveCategory(i)
+        end)
+    end
+end
+
+RenderSidebarTabs()
+RenderContent(activeCategoryIndex)
+
+-- [ 11. DRAG SYSTEM ]
+local isDragging = false
+local dragStartPos = Vector3.new()
+local startFramePos = UDim2.new()
+local currentDragInput = nil
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = true
+        dragStartPos = input.Position
+        startFramePos = MainFrame.Position
+        currentDragInput = input
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+        currentDragInput = nil
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isDragging and (input == currentDragInput or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStartPos
+        MainFrame.Position = UDim2.new(
+            startFramePos.X.Scale,
+            startFramePos.X.Offset + delta.X,
+            startFramePos.Y.Scale,
+            startFramePos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- [ 11.5 RESIZE SYSTEM ]
+local ResizeHandle = Instance.new("TextButton")
+ResizeHandle.Name = "ResizeHandle"
+ResizeHandle.Size = UDim2.fromOffset(18, 18)
+ResizeHandle.AnchorPoint = Vector2.new(1, 1)
+ResizeHandle.Position = UDim2.new(1, 0, 1, 0)
+ResizeHandle.BackgroundColor3 = Theme.Accent
+ResizeHandle.Text = "◢"
+ResizeHandle.Font = Enum.Font.GothamBold
+ResizeHandle.TextSize = 9
+ResizeHandle.TextColor3 = Theme.Background
+ResizeHandle.AutoButtonColor = false
+ResizeHandle.Parent = MainFrame
+
+Instance.new("UICorner", ResizeHandle).CornerRadius = UDim.new(0, 5)
+
+local isResizing = false
+local resizeStartPos = Vector3.new()
+local startSize = UDim2.new()
+
+ResizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isResizing = true
+        resizeStartPos = input.Position
+        startSize = MainFrame.Size
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isResizing = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - resizeStartPos
+        local newWidth = math.clamp(startSize.X.Offset + delta.X, 480, 950)
+        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 300, 650)
+        MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)
+    end
+end)
+
+-- [ 12. FLOATING TOGGLE BUTTON BARU ]
+local FloatingBtn = Instance.new("TextButton")
+FloatingBtn.Name = "FloatingToggleBtn"
+FloatingBtn.Size = UDim2.fromOffset(44, 44)
+FloatingBtn.AnchorPoint = Vector2.new(0, 0.5)
+FloatingBtn.Position = UDim2.new(0, 20, 0.4, 0)
+FloatingBtn.BackgroundColor3 = Theme.Background
+FloatingBtn.BorderSizePixel = 0
+FloatingBtn.Visible = false
+FloatingBtn.Active = true
+FloatingBtn.Text = ""
+FloatingBtn.Parent = ScreenGui
+
+Instance.new("UICorner", FloatingBtn).CornerRadius = UDim.new(0, 11)
+
+local FloatingStroke = Instance.new("UIStroke")
+FloatingStroke.Color = Theme.AccentBlue
+FloatingStroke.Thickness = 1.5
+FloatingStroke.Parent = FloatingBtn
+
+local FloatingLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
+FloatingLogo.Position = UDim2.new(0.5, -10, 0.5, -10)
+FloatingLogo.Parent = FloatingBtn
+
+local FloatingScale = Instance.new("UIScale")
+FloatingScale.Scale = 1
+FloatingScale.Parent = FloatingBtn
+
+local floatDragging = false
+local floatDragStart = Vector3.new()
+local floatStartPos = UDim2.new()
+local floatInputObj = nil
+
+FloatingBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = true
+        floatDragStart = input.Position
+        floatStartPos = FloatingBtn.Position
+        floatInputObj = input
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input == floatInputObj or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = false
+        floatInputObj = nil
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if floatDragging and (input == floatInputObj or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - floatDragStart
+        FloatingBtn.Position = UDim2.new(
+            floatStartPos.X.Scale,
+            floatStartPos.X.Offset + delta.X,
+            floatStartPos.Y.Scale,
+            floatStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- [ 13. TOGGLE UI <-> FLOATING BUTTON BARU ]
+ToggleMainUI = function(show)
+    if show then
+        MainFrame.Size = UDim2.fromOffset(560, 340)
+        MainFrame.Visible = true
+        MainScale.Scale = 0
+        FloatingBtn.Visible = false
+
+        TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Scale = 1
+        }):Play()
+    else
+        -- INSTANT close to floating toggle (same as X button)
+        MainScale.Scale = 0
+        MainFrame.Visible = false
+        FloatingBtn.Visible = true
+        FloatingScale.Scale = 1
+    end
+end
+
+
+RunAndClose = function(scriptEntry)
+    -- 1) close UI instantly (same as pressing X)
+    if ToggleMainUI then
+        ToggleMainUI(false)
+    else
+        MainFrame.Visible = false
+        MainScale.Scale = 0
+        if FloatingBtn then
+            FloatingBtn.Visible = true
+            FloatingScale.Scale = 1
+        end
+    end
+    -- 2) execute in background so UI never waits
+    if not scriptEntry or not scriptEntry.url or scriptEntry.url == "" then return end
+    AddToHistory(scriptEntry)
+    task.spawn(function()
+        local raw = scriptEntry.url
+        local pureUrl = raw:match('HttpGet%s*%(%s*[\"\']([^\"\']+)[\"\']%s*%)')
+        local ok, err = pcall(function()
+            if pureUrl and pureUrl ~= "" then
+                loadstring(game:HttpGet(pureUrl))()
+            elseif string.sub(raw, 1, 10) == "loadstring" or string.find(raw, "script_key") then
+                local fn, compileErr = loadstring(raw)
+                if not fn then error(compileErr or "loadstring compile failed") end
+                fn()
+            else
+                loadstring(game:HttpGet(raw))()
+            end
+        end)
+        if not ok then
+            warn("[LEON4951] Gagal menjalankan " .. tostring(scriptEntry.name) .. ": " .. tostring(err))
+        end
+    end)
+end
+
+FloatingBtn.MouseButton1Click:Connect(function()
+    ToggleMainUI(true)
+end)
+
+-- [ 14. BOOT LOADING SCREEN ]
+local BootScreen = Instance.new("CanvasGroup")
+BootScreen.Name = "BootScreen"
+BootScreen.Size = UDim2.fromOffset(280, 130)
+BootScreen.AnchorPoint = Vector2.new(0.5, 0.5)
+BootScreen.Position = UDim2.fromScale(0.5, 0.5)
+BootScreen.BackgroundColor3 = Theme.Background
+BootScreen.GroupTransparency = 0
+BootScreen.ZIndex = 100
+BootScreen.Parent = ScreenGui
+
+Instance.new("UICorner", BootScreen).CornerRadius = UDim.new(0, 16)
+
+local BootStroke = Instance.new("UIStroke")
+BootStroke.Color = Theme.Accent
+BootStroke.Thickness = 2
+BootStroke.Parent = BootScreen
+
+local BootLogo = CreateFLogo(UDim2.fromOffset(20, 20), -12)
+BootLogo.Position = UDim2.new(0.5, -10, 0, 20)
+BootLogo.Parent = BootScreen
+
+local BootTitle = Instance.new("TextLabel")
+BootTitle.Font = Enum.Font.GothamBold
+BootTitle.TextSize = 15
+BootTitle.TextColor3 = Theme.Accent
+BootTitle.BackgroundTransparency = 1
+BootTitle.Size = UDim2.new(1, -20, 0, 18)
+BootTitle.Position = UDim2.new(0, 10, 0, 48)
+BootTitle.Text = "LEON4951 HUB"
+BootTitle.Parent = BootScreen
+
+local BootSubText = Instance.new("TextLabel")
+BootSubText.Font = Enum.Font.Gotham
+BootSubText.TextSize = 10
+BootSubText.TextColor3 = Theme.TextMuted
+BootSubText.BackgroundTransparency = 1
+BootSubText.Size = UDim2.new(1, -20, 0, 14)
+BootSubText.Position = UDim2.new(0, 10, 0, 68)
+BootSubText.Text = "Loading..."
+BootSubText.Parent = BootScreen
+
+local BootTrack = Instance.new("Frame")
+BootTrack.Size = UDim2.new(1, -40, 0, 5)
+BootTrack.Position = UDim2.new(0, 20, 1, -24)
+BootTrack.BackgroundColor3 = Theme.CardBg
+BootTrack.BorderSizePixel = 0
+BootTrack.Parent = BootScreen
+Instance.new("UICorner", BootTrack).CornerRadius = UDim.new(1, 0)
+
+local BootFill = Instance.new("Frame")
+BootFill.Size = UDim2.new(0, 0, 1, 0)
+BootFill.BackgroundColor3 = Theme.Accent
+BootFill.BorderSizePixel = 0
+BootFill.Parent = BootTrack
+Instance.new("UICorner", BootFill).CornerRadius = UDim.new(1, 0)
+
+local BootPercentLabel = Instance.new("TextLabel")
+BootPercentLabel.Font = Enum.Font.GothamBold
+BootPercentLabel.TextSize = 9
+BootPercentLabel.TextColor3 = Theme.TextPrimary
+BootPercentLabel.BackgroundTransparency = 1
+BootPercentLabel.TextXAlignment = Enum.TextXAlignment.Right
+BootPercentLabel.Size = UDim2.new(1, -40, 0, 12)
+BootPercentLabel.Position = UDim2.new(0, 20, 1, -38)
+BootPercentLabel.Text = "0%"
+BootPercentLabel.Parent = BootScreen
+
+local BootStatuses = {
+    { 0.00, "Initializing Elegant Theme..." },
+    { 0.20, "Loading UI Components..." },
+    { 0.40, "Filtering Script Database..." },
+    { 0.65, "Preparing Categories..." },
+    { 0.85, "Finalizing UI..." },
+}
+
+local bootDuration = 0.6
+local bootStartTime = os.clock()
+local bootConn
+
+bootConn = RunService.Heartbeat:Connect(function()
+    local elapsed = os.clock() - bootStartTime
+    local pct = math.clamp(elapsed / bootDuration, 0, 1)
+
+    BootFill.Size = UDim2.new(pct, 0, 1, 0)
+    BootPercentLabel.Text = math.floor(pct * 100) .. "%"
+
+    for _, status in ipairs(BootStatuses) do
+        if pct >= status[1] then
+            BootSubText.Text = status[2]
+        end
+    end
+
+    if pct >= 1 then
+        bootConn:Disconnect()
+        bootConn = nil
+        BootSubText.Text = "✓ Ready"
+
+        task.spawn(function()
+            task.wait(0.3)
+
+            TweenService:Create(BootScreen, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                GroupTransparency = 1
+            }):Play()
+
+            task.delay(0.2, function()
+                BootScreen:Destroy()
+
+                MainFrame.Visible = true
+                MainScale.Scale = 0
+                TweenService:Create(MainScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Scale = 1
+                }):Play()
+                task.delay(0.4, function()
+                    pcall(ShowNewScriptNotification)
+                end)
+            end)
+        end)
+    end
+end)
