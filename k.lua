@@ -16,9 +16,9 @@ end
 local playerGui = player:WaitForChild("PlayerGui", 8)
 
 -- ─── CONFIG ───────────────────────────────────────────────────────────────
-local GUI_NAME = "PrivateServerHop"
+local GUI_NAME = "Leon|PrivateServer"
 local TITLE = "Private server"
-local W, H = 280, 320
+local W, H = 280, 310
 local PRIVATE_MAX = 1       -- jumlah pemain maksimum yang diinginkan, termasuk kamu (Sena: Max Players)
 local PAGES = 3              -- halaman daftar server yang diambil (100 server/halaman) - sama seperti Sena
 local JOIN_TIMEOUT = 6       -- detik menunggu teleport sebelum dianggap gagal - sama seperti Sena
